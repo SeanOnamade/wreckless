@@ -2,6 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import initPhysics from './physics';
 import type { PhysicsWorld } from './physics';
+import { DebugUI } from './ui';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -56,6 +57,9 @@ const clock = new THREE.Clock();
 const fixedTimeStep = 1 / 60; // 60 Hz physics
 let accumulator = 0;
 
+// Initialize UI
+const debugUI = new DebugUI();
+
 // Initialize physics
 let physicsWorld: PhysicsWorld | null = null;
 initPhysics(scene, camera).then((world) => {
@@ -76,6 +80,12 @@ function animate() {
       physicsWorld.step(fixedTimeStep);
     }
     accumulator -= fixedTimeStep;
+  }
+  
+  // Update UI
+  if (physicsWorld) {
+    const velocity = physicsWorld.fpsController.getVelocity();
+    debugUI.update(velocity);
   }
   
   renderer.render(scene, camera);

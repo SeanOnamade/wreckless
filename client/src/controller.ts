@@ -25,6 +25,9 @@ export class FirstPersonController {
   private velocity = new THREE.Vector3();
   private direction = new THREE.Vector3();
   private moveVector = new THREE.Vector3();
+  private currentSpeed = 0;
+  private acceleration = 20.0; // How fast we accelerate
+  private deceleration = 15.0; // How fast we stop
   
   constructor(
     camera: THREE.Camera,
@@ -77,6 +80,10 @@ export class FirstPersonController {
       if (e.key === 'Escape' && this.isPointerLocked) {
         document.exitPointerLock();
       }
+      // R to reset position
+      if (e.code === 'KeyR') {
+        this.reset();
+      }
     });
   }
   
@@ -93,22 +100,29 @@ export class FirstPersonController {
     if (this.keys['KeyD']) this.direction.x += 1;
     
     // Normalize diagonal movement
-    if (this.direction.length() > 0) {
+    const inputLength = this.direction.length();
+    if (inputLength > 0) {
       this.direction.normalize();
+      // Accelerate
+      this.currentSpeed = Math.min(this.currentSpeed + this.acceleration * deltaTime, this.moveSpeed);
+    } else {
+      // Decelerate
+      this.currentSpeed = Math.max(this.currentSpeed - this.deceleration * deltaTime, 0);
     }
     
     // Apply camera rotation to movement direction
     this.euler.set(0, this.yaw, 0);
     this.direction.applyEuler(this.euler);
     
-    // Calculate desired movement
-    this.moveVector.copy(this.direction).multiplyScalar(this.moveSpeed * deltaTime);
+    // Calculate desired movement with smooth speed
+    this.moveVector.copy(this.direction).multiplyScalar(this.currentSpeed * deltaTime);
     
-    // Check if grounded
-    const rayOrigin = { x: translation.x, y: translation.y, z: translation.z };
+    // Check if grounded - cast ray from center of capsule
+    const rayOrigin = { x: translation.x, y: translation.y - 0.5, z: translation.z };
     const rayDir = { x: 0, y: -1, z: 0 };
     const ray = new RAPIER.Ray(rayOrigin, rayDir);
-    const hit = this.world.castRay(ray, 1.1, true);
+    const maxDistance = 1.05; // Slightly more than capsule bottom
+    const hit = this.world.castRay(ray, maxDistance, true);
     this.isGrounded = hit !== null;
     
     // Handle jumping
@@ -121,11 +135,15 @@ export class FirstPersonController {
       this.canJump = true;
     }
     
-    // Apply gravity if not grounded
+    // Apply gravity
     if (!this.isGrounded) {
-      this.velocity.y -= 30 * deltaTime; // Increased gravity for more realistic jumps
-    } else if (this.velocity.y < 0) {
-      this.velocity.y = 0;
+      this.velocity.y -= 50 * deltaTime; // Strong gravity to ensure falling
+      this.velocity.y = Math.max(this.velocity.y, -50); // Terminal velocity
+    } else {
+      // Only reset velocity if we're moving down and grounded
+      if (this.velocity.y < 0) {
+        this.velocity.y = 0;
+      }
     }
     
     // Add vertical velocity to movement
@@ -160,5 +178,22 @@ export class FirstPersonController {
   
   getRotation(): THREE.Euler {
     return new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ');
+  }
+  
+  getVelocity(): THREE.Vector3 {
+    return this.velocity.clone();
+  }
+  
+  reset() {
+    // Reset position
+    this.playerBody.setTranslation({ x: 0, y: 2, z: 0 }, true);
+    
+    // Reset velocity
+    this.velocity.set(0, 0, 0);
+    this.currentSpeed = 0;
+    
+    // Reset rotation
+    this.pitch = 0;
+    this.yaw = 0;
   }
 } 
