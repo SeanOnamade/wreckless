@@ -1,0 +1,19 @@
+{
+  "name": "battle-race",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev:client": "npm --workspace client run dev",
+    "dev:server": "npm --workspace server run dev",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build:client": "npm --workspace client run build",
+    "start:server": "npm --workspace server run start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+} 
