@@ -72,7 +72,7 @@ export class FirstPersonController {
       this.keys[e.code] = false;
     });
     
-    // Mouse events
+    // Simple, responsive mouse events
     document.addEventListener('mousemove', (e) => {
       if (this.isPointerLocked) {
         this.yaw -= e.movementX * this.mouseSensitivity;
@@ -101,6 +101,8 @@ export class FirstPersonController {
     });
   }
   
+
+  
   private setupSwingStateListener() {
     // Listen for swing state changes from grapple ability
     window.addEventListener('swingStateChanged', (event: Event) => {
@@ -121,19 +123,13 @@ export class FirstPersonController {
    */
   private handleSwingReleaseMomentum(data: any): void {
     const velocity = data.velocity; // THREE.Vector3 of current swing velocity
-    const reason = data.reason;
-    
-    console.log(`🪝 CONTROLLER: Preserving swing momentum on release (${reason})`);
-    console.log(`🪝 CONTROLLER: Swing velocity: (${velocity.x.toFixed(1)}, ${velocity.y.toFixed(1)}, ${velocity.z.toFixed(1)})`);
-    console.log(`🪝 CONTROLLER: Player velocity BEFORE: (${this.velocity.x.toFixed(1)}, ${this.velocity.y.toFixed(1)}, ${this.velocity.z.toFixed(1)})`);
+    const _reason = data.reason;
     
     // Apply swing momentum to controller velocity system (like blast impulse)
     
     // 1. Apply Y-component to vertical velocity with upward boost on release
     const SWING_RELEASE_BOOST = 18.0; // Upward boost when releasing swing
     this.velocity.y = velocity.y + SWING_RELEASE_BOOST;
-    
-    console.log(`🪝 CONTROLLER: Added upward boost: ${SWING_RELEASE_BOOST} m/s (total Y: ${this.velocity.y.toFixed(1)})`);
     
     // 2. Apply horizontal components to movement system
     const horizontalVelocity = new THREE.Vector3(velocity.x, 0, velocity.z);
@@ -148,11 +144,7 @@ export class FirstPersonController {
       this.currentSpeed = horizontalSpeed;
       this.isRocketJumping = true; // Use rocket jump flag to preserve momentum
       this.rocketJumpSpeed = horizontalSpeed;
-      
-      console.log(`🪝 CONTROLLER: Applied swing momentum: speed=${this.currentSpeed.toFixed(1)}, direction=(${this.direction.x.toFixed(2)}, ${this.direction.z.toFixed(2)})`);
     }
-    
-    console.log(`🪝 CONTROLLER: Player velocity AFTER: (${this.velocity.x.toFixed(1)}, ${this.velocity.y.toFixed(1)}, ${this.velocity.z.toFixed(1)})`);
   }
 
   /**
@@ -170,10 +162,6 @@ export class FirstPersonController {
       return;
     }
     
-    console.log(`🎯 CONTROLLER: Received ${isTF2Style ? 'TF2-style' : '3D'} rocket impulse: (${impulse.x.toFixed(1)}, ${impulse.y.toFixed(1)}, ${impulse.z.toFixed(1)})`);
-    console.log(`🎯 CONTROLLER: Player velocity BEFORE: (${this.velocity.x.toFixed(1)}, ${this.velocity.y.toFixed(1)}, ${this.velocity.z.toFixed(1)})`);
-    console.log(`🎯 CONTROLLER: Player grounded state: ${this.isGrounded}`);
-    
     // Apply the 3D blast impulse to the player's velocity system
     // The controller uses separate systems for Y (this.velocity.y) and horizontal (currentSpeed + direction)
     
@@ -189,19 +177,17 @@ export class FirstPersonController {
       horizontalImpulse.normalize();
       this.direction.copy(horizontalImpulse);
       
-          // TF2-style: NO horizontal speed clamping for true rocket jumping freedom
-    if (isTF2Style) {
-      this.currentSpeed = horizontalSpeed; // Pure horizontal freedom
-      this.isRocketJumping = true; // Flag that we're rocket jumping
-      this.rocketJumpSpeed = horizontalSpeed; // Store the rocket jump speed
-      console.log(`🎯 CONTROLLER: Applied TF2 horizontal rocket velocity: speed=${this.currentSpeed.toFixed(1)} (unclamped), direction=(${this.direction.x.toFixed(2)}, ${this.direction.z.toFixed(2)})`);
-    } else {
-      // Legacy: Apply speed limit for backwards compatibility
-      this.currentSpeed = Math.min(horizontalSpeed, this.maxSpeed);
-      this.isRocketJumping = horizontalSpeed > this.moveSpeed; // Flag if above normal speed
-      this.rocketJumpSpeed = this.currentSpeed;
-      console.log(`🎯 CONTROLLER: Applied horizontal rocket velocity: speed=${this.currentSpeed.toFixed(1)}, direction=(${this.direction.x.toFixed(2)}, ${this.direction.z.toFixed(2)})`);
-    }
+      // TF2-style: NO horizontal speed clamping for true rocket jumping freedom
+      if (isTF2Style) {
+        this.currentSpeed = horizontalSpeed; // Pure horizontal freedom
+        this.isRocketJumping = true; // Flag that we're rocket jumping
+        this.rocketJumpSpeed = horizontalSpeed; // Store the rocket jump speed
+      } else {
+        // Legacy: Apply speed limit for backwards compatibility
+        this.currentSpeed = Math.min(horizontalSpeed, this.maxSpeed);
+        this.isRocketJumping = horizontalSpeed > this.moveSpeed; // Flag if above normal speed
+        this.rocketJumpSpeed = this.currentSpeed;
+      }
     }
     
     // 3. Only apply total speed cap if NOT TF2-style (for horizontal freedom)
@@ -211,11 +197,8 @@ export class FirstPersonController {
         const ratio = this.maxSpeed / totalSpeed;
         this.velocity.y *= ratio;
         this.currentSpeed *= ratio;
-        console.log(`🎯 CONTROLLER: Clamped total velocity from ${totalSpeed.toFixed(1)} to ${this.maxSpeed} m/s`);
       }
     }
-    
-    console.log(`🎯 CONTROLLER: Final velocity - Y: ${this.velocity.y.toFixed(1)}, Horizontal Speed: ${this.currentSpeed.toFixed(1)}`);
     
     // Force player to be considered not grounded to allow the launch
     this.isGrounded = false;
@@ -265,7 +248,6 @@ export class FirstPersonController {
     if (this.isGrounded && this.isRocketJumping) {
       this.isRocketJumping = false;
       this.rocketJumpSpeed = 0;
-      console.log(`🎯 VELOCITY: Rocket jump ended - back to normal speeds (grounded)`);
     }
     
     // Determine effective max speed based on current state
@@ -276,11 +258,9 @@ export class FirstPersonController {
     if (this.isRocketJumping && !this.isGrounded) {
       // Airborne rocket jumping - preserve high speed
       targetSpeed = Math.min(this.rocketJumpSpeed, effectiveMaxSpeed);
-      console.log(`🎯 VELOCITY: Airborne rocket jump - target speed: ${targetSpeed.toFixed(1)} m/s`);
     } else if (this.isSwinging) {
       // Swinging - allow higher speeds
       targetSpeed = effectiveMaxSpeed;
-      console.log(`🎯 VELOCITY: Swinging - target speed: ${targetSpeed.toFixed(1)} m/s`);
     } else {
       // Normal ground movement
       targetSpeed = normalTargetSpeed;
@@ -320,10 +300,7 @@ export class FirstPersonController {
         }
       }
     
-    // Debug velocity state
-    if (this.currentSpeed > 15.0 || this.isRocketJumping) {
-      console.log(`🎯 VELOCITY DEBUG: speed=${this.currentSpeed.toFixed(1)}, target=${targetSpeed.toFixed(1)}, grounded=${this.isGrounded}, rocketJump=${this.isRocketJumping}, input=${hasInput}`);
-    }
+
     
     // Apply camera rotation to movement direction
     this.euler.set(0, this.yaw, 0);
@@ -407,10 +384,7 @@ export class FirstPersonController {
     
     const movement = this.controller.computedMovement();
     
-    // Debug: log every few frames (only when debug mode is enabled)
-    if (import.meta.env.DEV && Math.random() < 0.001) { // Very reduced frequency for sensor debug
-      console.log('Movement computed - Grounded:', this.isGrounded, 'Y-Vel:', this.velocity.y.toFixed(2), 'Y-Move:', movement.y.toFixed(4), 'Sensors excluded from collision');
-    }
+
     
     const newPos = {
       x: translation.x + movement.x,
@@ -542,6 +516,20 @@ export class FirstPersonController {
       ? this.checkpointSystem.getLastCheckpointPosition()
       : SPAWN_POS;
 
+
+
+    // Clean up any active grapple state that might interfere with respawn
+    if (this.isSwinging) {
+      window.dispatchEvent(new CustomEvent('forceReleaseGrapple', {
+        detail: { reason: 'respawn' }
+      }));
+    }
+
+    // Dispatch respawn event for screen flash effect
+    window.dispatchEvent(new CustomEvent('playerRespawn', {
+      detail: { reason: 'out-of-bounds', position: respawnPosition }
+    }));
+
     this.playerBody.setTranslation({ x: respawnPosition.x, y: respawnPosition.y, z: respawnPosition.z }, true);
 
     // Reset all velocities
@@ -563,7 +551,5 @@ export class FirstPersonController {
 
     // Reset killzone tracking
     this.timeInVoid = 0;
-    
-    console.log(`🎯 VELOCITY: Player reset - all speeds cleared`);
   }
 } 

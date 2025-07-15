@@ -84,7 +84,7 @@ let accumulator = 0;
  */
 function addSwingTestCeiling(scene: THREE.Scene, world?: RAPIER.World): void {
   const ceilingY = 35;
-  const ceilingSize = 200; // 200x200 units
+  const ceilingSize = 400; // 400x400 units (doubled for more swing space)
   
   // Create ceiling geometry
   const ceilingGeometry = new THREE.PlaneGeometry(ceilingSize, ceilingSize);
@@ -139,14 +139,18 @@ function addSwingTestCeiling(scene: THREE.Scene, world?: RAPIER.World): void {
 }
 
 /**
- * Movement trail system for visual feedback
+ * Movement trail system for visual feedback with smooth fading
  */
 class MovementTrail {
-  private trail: THREE.Vector3[] = [];
-  private trailMeshes: THREE.Mesh[] = [];
+  private trailPoints: Array<{
+    mesh: THREE.Mesh;
+    spawnTime: number;
+    position: THREE.Vector3;
+  }> = [];
   private scene: THREE.Scene;
-  private maxTrailLength = 20;
-  private trailSpacing = 0.5; // Minimum distance between trail points
+  private maxTrailLength = 30;
+  private trailSpacing = 0.3; // Minimum distance between trail points
+  private fadeTime = 2000; // Trail fades over 2 seconds
   private lastPosition: THREE.Vector3 | null = null;
   
   constructor(scene: THREE.Scene) {
@@ -154,22 +158,58 @@ class MovementTrail {
   }
   
   update(playerPosition: THREE.Vector3, activeKit: string): void {
+    const now = Date.now();
+    
     // Only add trail point if player has moved enough
     if (!this.lastPosition || playerPosition.distanceTo(this.lastPosition) > this.trailSpacing) {
-      this.trail.push(playerPosition.clone());
+      this.addTrailPoint(playerPosition, activeKit, now);
       this.lastPosition = playerPosition.clone();
+    }
+    
+    // Update existing trail points with smooth fading
+    const pointsToRemove: number[] = [];
+    
+    for (let i = 0; i < this.trailPoints.length; i++) {
+      const point = this.trailPoints[i];
+      const age = now - point.spawnTime;
       
-      // Limit trail length
-      if (this.trail.length > this.maxTrailLength) {
-        this.trail.shift();
+      if (age > this.fadeTime) {
+        // Remove expired points
+        this.scene.remove(point.mesh);
+        point.mesh.geometry.dispose();
+        (point.mesh.material as THREE.Material).dispose();
+        pointsToRemove.push(i);
+      } else {
+        // Update opacity based on age
+        const fadeProgress = age / this.fadeTime;
+        const opacity = Math.max(0, (1 - fadeProgress) * 0.8);
+        const size = 0.08 + (1 - fadeProgress) * 0.12; // Start small, grow slightly, then fade
+        
+        // Update material opacity
+        const material = point.mesh.material as THREE.MeshBasicMaterial;
+        material.opacity = opacity;
+        
+        // Subtle size animation
+        const scale = size / 0.1; // Base size was 0.1
+        point.mesh.scale.setScalar(scale);
       }
     }
     
-    // Clear old trail meshes
-    this.trailMeshes.forEach(mesh => this.scene.remove(mesh));
-    this.trailMeshes = [];
+    // Remove expired points (reverse order to maintain indices)
+    for (let i = pointsToRemove.length - 1; i >= 0; i--) {
+      this.trailPoints.splice(pointsToRemove[i], 1);
+    }
     
-    // Create new trail meshes
+    // Limit trail length
+    while (this.trailPoints.length > this.maxTrailLength) {
+      const point = this.trailPoints.shift()!;
+      this.scene.remove(point.mesh);
+      point.mesh.geometry.dispose();
+      (point.mesh.material as THREE.Material).dispose();
+    }
+  }
+  
+  private addTrailPoint(position: THREE.Vector3, activeKit: string, spawnTime: number): void {
     const colors = {
       blast: 0xff0000,   // Red
       grapple: 0x00ff00, // Green
@@ -178,30 +218,66 @@ class MovementTrail {
     
     const trailColor = colors[activeKit as keyof typeof colors] || 0xffffff;
     
-    for (let i = 0; i < this.trail.length; i++) {
-      const opacity = (i / this.trail.length) * 0.8; // Fade out older points
-      const size = 0.1 + (i / this.trail.length) * 0.1; // Smaller for older points
-      
-      const geometry = new THREE.SphereGeometry(size, 4, 4);
-      const material = new THREE.MeshBasicMaterial({
-        color: trailColor,
-        transparent: true,
-        opacity: opacity
-      });
-      
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.copy(this.trail[i]);
-      
-      this.scene.add(mesh);
-      this.trailMeshes.push(mesh);
-    }
+    const geometry = new THREE.SphereGeometry(0.1, 6, 6);
+    const material = new THREE.MeshBasicMaterial({
+      color: trailColor,
+      transparent: true,
+      opacity: 0.8
+    });
+    
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.copy(position);
+    
+    this.scene.add(mesh);
+    this.trailPoints.push({
+      mesh,
+      spawnTime,
+      position: position.clone()
+    });
   }
   
   clear(): void {
-    this.trail = [];
-    this.trailMeshes.forEach(mesh => this.scene.remove(mesh));
-    this.trailMeshes = [];
+    this.trailPoints.forEach(point => {
+      this.scene.remove(point.mesh);
+      point.mesh.geometry.dispose();
+      (point.mesh.material as THREE.Material).dispose();
+    });
+    this.trailPoints = [];
     this.lastPosition = null;
+  }
+}
+
+/**
+ * Screen flash system for visual feedback
+ */
+class ScreenFlash {
+  private overlay: HTMLDivElement;
+  
+  constructor() {
+    this.overlay = document.createElement('div');
+    this.overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 1000;
+      background-color: red;
+      opacity: 0;
+      transition: opacity 0.1s ease-out;
+    `;
+    document.body.appendChild(this.overlay);
+  }
+  
+  flash(color: string = 'red', duration: number = 300): void {
+    this.overlay.style.backgroundColor = color;
+    this.overlay.style.opacity = '0.4';
+    
+    setTimeout(() => {
+      this.overlay.style.transition = `opacity ${duration}ms ease-out`;
+      this.overlay.style.opacity = '0';
+    }, 50);
   }
 }
 
@@ -216,6 +292,9 @@ let abilityHUD: AbilityHUD | null = null;
 // Initialize movement trail
 let movementTrail: MovementTrail | null = null;
 
+// Initialize screen flash system
+const screenFlash = new ScreenFlash();
+
 // gameMenu is used via event handlers
 
 // Handle reset event from menu
@@ -223,6 +302,11 @@ window.addEventListener('game-reset', () => {
   if (physicsWorld) {
     physicsWorld.fpsController.reset();
   }
+});
+
+// Listen for respawn events to trigger red flash
+window.addEventListener('playerRespawn', () => {
+  screenFlash.flash('red', 400);
 });
 
 // Initialize physics and checkpoint system

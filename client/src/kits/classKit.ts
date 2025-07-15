@@ -26,7 +26,7 @@ export const ABILITY_CONFIGS: Record<PlayerClass, AbilityConfig> = {
     description: 'Radial impulse that launches you and nearby players'
   },
   grapple: {
-    cooldownDuration: 4000, // 4 seconds
+    cooldownDuration: 1200, // 1.2 seconds
     name: 'Grapple Swing',
     description: 'Shoot a grappling hook to swing from anchor points'
   },

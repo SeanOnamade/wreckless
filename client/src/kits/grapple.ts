@@ -36,6 +36,31 @@ let swingState: GrappleState = {
 // Pressed keys tracking for air control
 const pressedKeys = new Set<string>();
 
+// Listen for forced grapple release (during respawn, etc.)
+window.addEventListener('forceReleaseGrapple', (event: Event) => {
+  const customEvent = event as CustomEvent;
+  const reason = customEvent.detail?.reason || 'forced';
+  
+  if (swingState.isSwinging) {
+    // Create a dummy context for cleanup - we only need scene for visual cleanup
+    const dummyContext = {
+      scene: swingState.hookMesh?.parent || swingState.ropeLine?.parent
+    } as any;
+    
+    if (dummyContext.scene) {
+      releaseSwing(reason, dummyContext);
+    } else {
+      // Manual cleanup if no scene reference
+      swingState.isSwinging = false;
+      swingState.anchorPoint = null;
+      swingState.ropeLength = 0;
+      swingState.attachTime = 0;
+      swingState.lastInputTime = 0;
+      notifySwingState(false);
+    }
+  }
+});
+
 /**
  * TRUE PENDULUM SWING - Sphere constraint with momentum preservation
  */
@@ -164,10 +189,7 @@ function applyPendulumConstraint(context: GrappleAbilityContext): void {
     playerBody.setTranslation(constrainedPosition, true);
     playerBody.setLinvel(newVelocity, true);
     
-    // Debug logging
-    if (Math.random() < SWING.debugLogFrequency) {
-      console.log(`🪝 Sphere constraint: dist=${currentDistance.toFixed(1)}m->effective=${effectiveRopeLength.toFixed(1)}m (rope=${swingState.ropeLength.toFixed(1)}m+${SWING.ropeSlack.toFixed(1)}m), radial=${radialVelocity.toFixed(1)}->${newRadialVelocity.toFixed(1)}, tangential=${tangentialVelocity.length().toFixed(1)}`);
-    }
+
   }
 }
 
@@ -312,7 +334,6 @@ function releaseSwing(reason: string, context: GrappleAbilityContext): void {
     if (heightDiff > swingState.ropeLength * 0.7 && horizontalSpeed > 5.0) {
       const arcBoost = Math.min(horizontalSpeed * 0.4, 15.0); // Convert some horizontal speed to upward
       releaseVelocity.y += arcBoost;
-      console.log(`🪝 Swing arc boost: +${arcBoost.toFixed(1)} m/s upward (horizontal: ${horizontalSpeed.toFixed(1)} m/s)`);
     }
   }
   
