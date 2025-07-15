@@ -1,5 +1,6 @@
 import './style.css';
 import * as THREE from 'three';
+import RAPIER from '@dimforge/rapier3d-compat';
 import initPhysics from './physics';
 import type { PhysicsWorld } from './physics';
 import { DebugUI } from './ui';
@@ -9,13 +10,16 @@ import { CheckpointSystem } from './systems/CheckpointSystem';
 import { LapHUD } from './hud/Hud';
 import { GameHUD } from './hud/GameHUD';
 import { AbilityManager } from './kits/useAbility';
-import { setPlayerClass } from './kits/classKit';
+import { setPlayerClass, getCurrentPlayerKit } from './kits/classKit';
 import { AbilityHUD } from './kits/AbilityHUD';
+
+// Archive confirmation
+console.info("🗄️ Legacy swing archived:", ["grappleLegacy_v2.ts"]);
 
 // Scene setup
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x99D8F5); // Light sky blue (lighter than #87CEEB)
-scene.fog = new THREE.Fog(0x99D8F5, 50, 180); // Reduced fog intensity (increased distances)
+// scene.fog = new THREE.Fog(0x99D8F5, 50, 180); // Fog removed for better visibility
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(
@@ -38,6 +42,11 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
 document.body.appendChild(renderer.domElement);
+
+// Add crosshair to center of screen
+const crosshair = document.createElement('div');
+crosshair.className = 'crosshair';
+document.body.appendChild(crosshair);
 
 // Lighting setup
 const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
@@ -70,6 +79,132 @@ const clock = new THREE.Clock();
 const fixedTimeStep = 1 / 60; // 60 Hz physics
 let accumulator = 0;
 
+/**
+ * Add ceiling at Y=35 with grey-white checkerboard pattern for swing testing
+ */
+function addSwingTestCeiling(scene: THREE.Scene, world?: RAPIER.World): void {
+  const ceilingY = 35;
+  const ceilingSize = 200; // 200x200 units
+  
+  // Create ceiling geometry
+  const ceilingGeometry = new THREE.PlaneGeometry(ceilingSize, ceilingSize);
+  
+  // Create checkerboard pattern texture
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+  
+  const tileSize = 32; // 16x16 tiles
+  for (let x = 0; x < 16; x++) {
+    for (let y = 0; y < 16; y++) {
+      const isEven = (x + y) % 2 === 0;
+      ctx.fillStyle = isEven ? '#E0E0E0' : '#F8F8F8'; // Light grey and white
+      ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+    }
+  }
+  
+  // Create texture from canvas
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(8, 8); // Repeat pattern 8x8 times
+  
+  // Create ceiling material
+  const ceilingMaterial = new THREE.MeshLambertMaterial({ 
+    map: texture,
+    side: THREE.DoubleSide
+  });
+  
+  // Create ceiling mesh
+  const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
+  ceiling.rotation.x = Math.PI / 2; // Rotate to face downward
+  ceiling.position.set(0, ceilingY, 0);
+  ceiling.receiveShadow = true;
+  
+  scene.add(ceiling);
+  
+  // Create physics collider for the ceiling (CRITICAL for grapple!)
+  if (world) {
+    const ceilingBody = world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(0, ceilingY, 0)
+    );
+    const ceilingCollider = RAPIER.ColliderDesc.cuboid(ceilingSize / 2, 0.1, ceilingSize / 2);
+    world.createCollider(ceilingCollider, ceilingBody);
+    
+    console.log(`🏗️ Added ceiling at Y=${ceilingY} with ${ceilingSize}x${ceilingSize} checkerboard pattern + collision`);
+  } else {
+    console.log(`🏗️ Added ceiling at Y=${ceilingY} with ${ceilingSize}x${ceilingSize} checkerboard pattern (no collision)`);
+  }
+}
+
+/**
+ * Movement trail system for visual feedback
+ */
+class MovementTrail {
+  private trail: THREE.Vector3[] = [];
+  private trailMeshes: THREE.Mesh[] = [];
+  private scene: THREE.Scene;
+  private maxTrailLength = 20;
+  private trailSpacing = 0.5; // Minimum distance between trail points
+  private lastPosition: THREE.Vector3 | null = null;
+  
+  constructor(scene: THREE.Scene) {
+    this.scene = scene;
+  }
+  
+  update(playerPosition: THREE.Vector3, activeKit: string): void {
+    // Only add trail point if player has moved enough
+    if (!this.lastPosition || playerPosition.distanceTo(this.lastPosition) > this.trailSpacing) {
+      this.trail.push(playerPosition.clone());
+      this.lastPosition = playerPosition.clone();
+      
+      // Limit trail length
+      if (this.trail.length > this.maxTrailLength) {
+        this.trail.shift();
+      }
+    }
+    
+    // Clear old trail meshes
+    this.trailMeshes.forEach(mesh => this.scene.remove(mesh));
+    this.trailMeshes = [];
+    
+    // Create new trail meshes
+    const colors = {
+      blast: 0xff0000,   // Red
+      grapple: 0x00ff00, // Green
+      blink: 0x0088ff    // Blue
+    };
+    
+    const trailColor = colors[activeKit as keyof typeof colors] || 0xffffff;
+    
+    for (let i = 0; i < this.trail.length; i++) {
+      const opacity = (i / this.trail.length) * 0.8; // Fade out older points
+      const size = 0.1 + (i / this.trail.length) * 0.1; // Smaller for older points
+      
+      const geometry = new THREE.SphereGeometry(size, 4, 4);
+      const material = new THREE.MeshBasicMaterial({
+        color: trailColor,
+        transparent: true,
+        opacity: opacity
+      });
+      
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(this.trail[i]);
+      
+      this.scene.add(mesh);
+      this.trailMeshes.push(mesh);
+    }
+  }
+  
+  clear(): void {
+    this.trail = [];
+    this.trailMeshes.forEach(mesh => this.scene.remove(mesh));
+    this.trailMeshes = [];
+    this.lastPosition = null;
+  }
+}
+
 // Initialize UI
 const debugUI = new DebugUI();
 const gameMenu = new GameMenu();
@@ -77,6 +212,9 @@ const gameMenu = new GameMenu();
 // Initialize ability system
 const abilityManager = new AbilityManager();
 let abilityHUD: AbilityHUD | null = null;
+
+// Initialize movement trail
+let movementTrail: MovementTrail | null = null;
 
 // gameMenu is used via event handlers
 
@@ -161,6 +299,12 @@ initPhysics(scene, camera).then((world) => {
     });
   }
   
+  // Add ceiling for grapple testing
+  addSwingTestCeiling(scene, physicsWorld?.world);
+  
+  // Initialize movement trail
+  movementTrail = new MovementTrail(scene);
+  
   animate();
 });
 
@@ -177,6 +321,13 @@ function animate() {
       physicsWorld.step(fixedTimeStep);
     }
     accumulator -= fixedTimeStep;
+  }
+  
+  // Update movement trail
+  if (physicsWorld && movementTrail) {
+    const position = physicsWorld.devTools.getCurrentPosition();
+    const currentKit = getCurrentPlayerKit(); // Get current player class
+    movementTrail.update(position, currentKit.className);
   }
   
   // Update UI and checkpoint system

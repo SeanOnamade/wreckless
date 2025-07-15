@@ -15,15 +15,17 @@ export class FirstPersonController {
   
   // Movement state
   private keys: { [key: string]: boolean } = {};
-  private moveSpeed = 12.0; // 12 m/s base speed (increased from 8 m/s)
-  private slideSpeed = 16.0; // 16 m/s slide speed (increased from 12 m/s)
-  private jumpVelocity = 10.0; // Adjusted for corrected gravity system
-  private maxSpeed = 100.0; // Maximum speed for rocket jumping (was limiting to 12-16 m/s)
+  private moveSpeed = 18.0; // 18 m/s base speed (increased for movement shooter feel)
+  private slideSpeed = 24.0; // 24 m/s slide speed (increased for faster gameplay)
+  private jumpVelocity = 12.0; // Increased for better jump height with reduced gravity
+  private maxSpeed = 150.0; // Maximum speed for rocket jumping (increased for fast gameplay)
   private isGrounded = false;
   private canJump = true;
   private isSliding = false;
   private isRocketJumping = false; // Track if we're in rocket jump state
   private rocketJumpSpeed = 0; // Store the rocket jump speed
+  private isSwinging = false; // Track if we're in swing state
+  private swingMaxSpeed = 120.0; // Higher speed limit while swinging (increased)
   
   // Mouse look
   private euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -37,8 +39,8 @@ export class FirstPersonController {
   private direction = new THREE.Vector3();
   private moveVector = new THREE.Vector3();
   private currentSpeed = 0;
-  private acceleration = 20.0; // How fast we accelerate
-  private deceleration = 15.0; // How fast we stop
+  private acceleration = 25.0; // How fast we accelerate (increased for snappier feel)
+  private deceleration = 8.0; // How fast we stop (reduced for less sluggishness)
   
   constructor(
     camera: THREE.Camera,
@@ -52,6 +54,7 @@ export class FirstPersonController {
     this.world = world; // May be used for future physics queries
     
     this.setupEventListeners();
+    this.setupSwingStateListener();
   }
   
   private setupEventListeners() {
@@ -98,6 +101,57 @@ export class FirstPersonController {
     });
   }
   
+  private setupSwingStateListener() {
+    // Listen for swing state changes from grapple ability
+    window.addEventListener('swingStateChanged', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      this.isSwinging = customEvent.detail.isSwinging;
+      console.log(`🎯 CONTROLLER: Swing state changed - isSwinging: ${this.isSwinging}`);
+    });
+    
+    // Listen for swing release momentum preservation
+    window.addEventListener('swingReleaseImpulse', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      this.handleSwingReleaseMomentum(customEvent.detail);
+    });
+  }
+  
+  /**
+   * Handle swing release momentum preservation - similar to blast momentum
+   */
+  private handleSwingReleaseMomentum(data: any): void {
+    const velocity = data.velocity; // THREE.Vector3 of current swing velocity
+    const reason = data.reason;
+    
+    console.log(`🪝 CONTROLLER: Preserving swing momentum on release (${reason})`);
+    console.log(`🪝 CONTROLLER: Swing velocity: (${velocity.x.toFixed(1)}, ${velocity.y.toFixed(1)}, ${velocity.z.toFixed(1)})`);
+    console.log(`🪝 CONTROLLER: Player velocity BEFORE: (${this.velocity.x.toFixed(1)}, ${this.velocity.y.toFixed(1)}, ${this.velocity.z.toFixed(1)})`);
+    
+    // Apply swing momentum to controller velocity system (like blast impulse)
+    
+    // 1. Apply Y-component to vertical velocity (preserve upward momentum)
+    this.velocity.y = velocity.y;
+    
+    // 2. Apply horizontal components to movement system
+    const horizontalVelocity = new THREE.Vector3(velocity.x, 0, velocity.z);
+    const horizontalSpeed = horizontalVelocity.length();
+    
+    if (horizontalSpeed > 0.1) {
+      // Set movement direction to swing direction
+      horizontalVelocity.normalize();
+      this.direction.copy(horizontalVelocity);
+      
+      // Preserve swing speed without clamping (like TF2-style rocket jump)
+      this.currentSpeed = horizontalSpeed;
+      this.isRocketJumping = true; // Use rocket jump flag to preserve momentum
+      this.rocketJumpSpeed = horizontalSpeed;
+      
+      console.log(`🪝 CONTROLLER: Applied swing momentum: speed=${this.currentSpeed.toFixed(1)}, direction=(${this.direction.x.toFixed(2)}, ${this.direction.z.toFixed(2)})`);
+    }
+    
+    console.log(`🪝 CONTROLLER: Player velocity AFTER: (${this.velocity.x.toFixed(1)}, ${this.velocity.y.toFixed(1)}, ${this.velocity.z.toFixed(1)})`);
+  }
+
   /**
    * Handle blast impulse from blast ability - 3D Directional Rocket Jumping
    */
@@ -211,12 +265,19 @@ export class FirstPersonController {
       console.log(`🎯 VELOCITY: Rocket jump ended - back to normal speeds (grounded)`);
     }
     
+    // Determine effective max speed based on current state
+    const effectiveMaxSpeed = this.isSwinging ? this.swingMaxSpeed : this.maxSpeed;
+    
     // Determine target speed: preserve rocket jump speed while airborne
     let targetSpeed;
     if (this.isRocketJumping && !this.isGrounded) {
       // Airborne rocket jumping - preserve high speed
-      targetSpeed = Math.min(this.rocketJumpSpeed, this.maxSpeed);
+      targetSpeed = Math.min(this.rocketJumpSpeed, effectiveMaxSpeed);
       console.log(`🎯 VELOCITY: Airborne rocket jump - target speed: ${targetSpeed.toFixed(1)} m/s`);
+    } else if (this.isSwinging) {
+      // Swinging - allow higher speeds
+      targetSpeed = effectiveMaxSpeed;
+      console.log(`🎯 VELOCITY: Swinging - target speed: ${targetSpeed.toFixed(1)} m/s`);
     } else {
       // Normal ground movement
       targetSpeed = normalTargetSpeed;
@@ -229,26 +290,32 @@ export class FirstPersonController {
       const accel = this.isSliding ? this.acceleration * 1.5 : this.acceleration;
       
       if (this.isRocketJumping && !this.isGrounded) {
-        // Rocket jumping: allow slight speed changes but don't clamp to normal speeds
-        const speedChange = accel * deltaTime;
-        this.currentSpeed = Math.min(this.currentSpeed + speedChange, this.maxSpeed);
+        // Rocket jumping: REDUCED air control to prevent unrealistic horizontal "walking"
+        // Only allow slight direction changes, heavily reduced acceleration
+        const airControlFactor = 0.2; // Only 20% normal control in air during rocket jumping
+        const speedChange = accel * deltaTime * airControlFactor;
+        this.currentSpeed = Math.min(this.currentSpeed + speedChange, effectiveMaxSpeed);
+        
+        // Blend new direction with current direction for limited air steering
+        const steerAmount = 0.3 * deltaTime; // How much we can steer per second
+        this.direction.lerp(inputDirection.normalize(), steerAmount);
       } else {
         // Normal movement: accelerate to target speed
         this.currentSpeed = Math.min(this.currentSpeed + accel * deltaTime, targetSpeed);
       }
-    } else {
-      // No input - decelerate appropriately
-      const baseDecel = this.isSliding ? this.deceleration * 0.5 : this.deceleration;
-      
-      if (this.isRocketJumping && !this.isGrounded) {
-        // Rocket jumping with no input: very slow deceleration in air
-        const airDecel = baseDecel * 0.1; // 10% deceleration rate in air
-        this.currentSpeed = Math.max(this.currentSpeed - airDecel * deltaTime, 0);
-      } else {
-        // Normal deceleration
-        this.currentSpeed = Math.max(this.currentSpeed - baseDecel * deltaTime, 0);
+          } else {
+        // No input - decelerate appropriately
+        const baseDecel = this.isSliding ? this.deceleration * 0.5 : this.deceleration;
+        
+        if (this.isRocketJumping && !this.isGrounded) {
+          // Rocket jumping with no input: reduced deceleration in air for momentum preservation
+          const airDecel = baseDecel * 0.3; // 30% deceleration rate in air (increased from 10% for more realism)
+          this.currentSpeed = Math.max(this.currentSpeed - airDecel * deltaTime, 0);
+        } else {
+          // Normal deceleration
+          this.currentSpeed = Math.max(this.currentSpeed - baseDecel * deltaTime, 0);
+        }
       }
-    }
     
     // Debug velocity state
     if (this.currentSpeed > 15.0 || this.isRocketJumping) {
@@ -296,13 +363,23 @@ export class FirstPersonController {
     // Update killzone tracking
     this.updateKillzoneTracking(deltaTime);
     
-    // Apply gravity only when not grounded
+    // Apply context-sensitive gravity when not grounded
     if (!this.isGrounded) {
-      this.velocity.y -= 30 * deltaTime; // Gravity force (matching physics world)
+      let gravityForce = 20; // Base gravity for swinging
+      
+      if (this.isRocketJumping) {
+        // Stronger gravity for blast jumps to prevent excessive flying
+        gravityForce = 28; 
+      } else if (this.isSwinging) {
+        // Lighter gravity for swinging to maintain momentum
+        gravityForce = 18;
+      }
+      
+      this.velocity.y -= gravityForce * deltaTime;
     }
     
-    // Clamp velocity
-    this.velocity.y = Math.max(this.velocity.y, -30); // Terminal velocity
+    // Clamp velocity (increased terminal velocity for momentum preservation)
+    this.velocity.y = Math.max(this.velocity.y, -50); // Higher terminal velocity
     
     // Handle jumping - only when grounded and not sliding
     if (this.keys['Space'] && this.isGrounded && this.canJump && !this.isSliding) {

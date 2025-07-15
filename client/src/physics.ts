@@ -19,7 +19,7 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   
   // Create physics world
   // Note: Gravity mainly affects dynamic bodies, not kinematic character controller
-  const gravity = { x: 0.0, y: -30.0, z: 0.0 }; // For dynamic objects only
+  const gravity = { x: 0.0, y: -25.0, z: 0.0 }; // Balanced gravity (controller uses context-sensitive gravity)
   const world = new RAPIER.World(gravity);
   
   // Create ground

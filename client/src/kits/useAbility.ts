@@ -10,7 +10,7 @@ import {
 } from './classKit';
 import { executeBlast, updateBlast, type BlastAbilityContext } from './blast';
 import { legacyBlast, updateLegacyBlast, type BlastAbilityContext as LegacyBlastContext } from './blastLegacy';
-import { executeGrapple, updateGrapple, type GrappleAbilityContext } from './grapple';
+import { executeGrapple, updateGrapple, onKeyDown as grappleKeyDown, onKeyUp as grappleKeyUp, isSwinging, type GrappleAbilityContext } from './grapple';
 import { executeBlink, updateBlink, type BlinkAbilityContext } from './blink';
 
 export interface AbilityContext {
@@ -132,10 +132,27 @@ export class AbilityManager {
 
     const kit = getCurrentPlayerKit();
     
-    // Check if ability is ready
-    if (!useAbilityFromKit(kit)) {
-      console.log(`⏳ Ability on cooldown (${kit.className})`);
-      return false;
+    // SPECIAL HANDLING FOR GRAPPLE: No cooldown until swing is released
+    if (kit.className === 'grapple') {
+      // Check if already swinging (for release)
+      if (isSwinging()) {
+        console.log(`🪝 Allowing grapple release`);
+        // Don't set any cooldown here - will be set on release
+      } else {
+        // Firing new grapple - check if ready but don't set cooldown yet
+        if (!kit.ability.isReady) {
+          console.log(`⏳ Grapple on cooldown`);
+          return false;
+        }
+        // Don't call useAbilityFromKit - we'll set cooldown only on successful swing release
+        console.log(`🪝 Firing grapple (no cooldown until hit)`);
+      }
+    } else {
+      // For other abilities: normal cooldown behavior
+      if (!useAbilityFromKit(kit)) {
+        console.log(`⏳ Ability on cooldown (${kit.className})`);
+        return false;
+      }
     }
 
     // Get and execute the ability handler
@@ -168,6 +185,11 @@ export class AbilityManager {
     // Track pressed keys
     this.pressedKeys.add(event.code);
     
+    // Forward air control keys to grapple system
+    if (['KeyA', 'KeyD', 'KeyW', 'KeyS', 'Space'].includes(event.code)) {
+      grappleKeyDown(event);
+    }
+    
     // Only listen for 'E' key
     if (event.code === 'KeyE' && !event.repeat) {
       event.preventDefault();
@@ -188,6 +210,11 @@ export class AbilityManager {
   private handleKeyUp(event: KeyboardEvent): void {
     // Remove released keys
     this.pressedKeys.delete(event.code);
+    
+    // Forward air control keys to grapple system
+    if (['KeyA', 'KeyD', 'KeyW', 'KeyS', 'Space'].includes(event.code)) {
+      grappleKeyUp(event);
+    }
   }
 
   /**
