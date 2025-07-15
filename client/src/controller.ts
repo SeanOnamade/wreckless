@@ -129,8 +129,11 @@ export class FirstPersonController {
     
     // Apply swing momentum to controller velocity system (like blast impulse)
     
-    // 1. Apply Y-component to vertical velocity (preserve upward momentum)
-    this.velocity.y = velocity.y;
+    // 1. Apply Y-component to vertical velocity with upward boost on release
+    const SWING_RELEASE_BOOST = 18.0; // Upward boost when releasing swing
+    this.velocity.y = velocity.y + SWING_RELEASE_BOOST;
+    
+    console.log(`🪝 CONTROLLER: Added upward boost: ${SWING_RELEASE_BOOST} m/s (total Y: ${this.velocity.y.toFixed(1)})`);
     
     // 2. Apply horizontal components to movement system
     const horizontalVelocity = new THREE.Vector3(velocity.x, 0, velocity.z);
