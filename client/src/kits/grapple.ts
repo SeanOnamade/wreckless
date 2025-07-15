@@ -36,6 +36,11 @@ let swingState: GrappleState = {
 // Pressed keys tracking for air control
 const pressedKeys = new Set<string>();
 
+// PERFORMANCE OPTIMIZATION: Reusable vectors to reduce GC pressure
+const tempVector1 = new THREE.Vector3();
+const tempVector2 = new THREE.Vector3();
+const tempVector3 = new THREE.Vector3();
+
 // Listen for forced grapple release (during respawn, etc.)
 window.addEventListener('forceReleaseGrapple', (event: Event) => {
   const customEvent = event as CustomEvent;
@@ -50,12 +55,23 @@ window.addEventListener('forceReleaseGrapple', (event: Event) => {
     if (dummyContext.scene) {
       releaseSwing(reason, dummyContext);
     } else {
-      // Manual cleanup if no scene reference
+      // Manual cleanup if no scene reference - add prediction sphere cleanup
       swingState.isSwinging = false;
       swingState.anchorPoint = null;
       swingState.ropeLength = 0;
       swingState.attachTime = 0;
       swingState.lastInputTime = 0;
+      
+      // MEMORY FIX: Clean up prediction sphere if it exists
+      if (swingState.predictionMesh && swingState.predictionMesh.parent) {
+        swingState.predictionMesh.parent.remove(swingState.predictionMesh);
+        swingState.predictionMesh.geometry.dispose();
+        if (swingState.predictionMesh.material instanceof THREE.Material) {
+          swingState.predictionMesh.material.dispose();
+        }
+        swingState.predictionMesh = null;
+      }
+      
       notifySwingState(false);
     }
   }
@@ -65,6 +81,12 @@ window.addEventListener('forceReleaseGrapple', (event: Event) => {
  * TRUE PENDULUM SWING - Sphere constraint with momentum preservation
  */
 export function executeGrapple(context: GrappleAbilityContext): void {
+  // SAFETY CHECK: Validate context parameters using type guard
+  if (!context || !context.playerBody || !context.world || !context.camera || !context.scene) {
+    console.error('⚠️ Grapple execution failed: Invalid context provided');
+    return;
+  }
+  
   const { playerBody, world, camera, scene } = context;
   
   // If already swinging, release
@@ -149,28 +171,30 @@ function applyPendulumConstraint(context: GrappleAbilityContext): void {
   
   const { playerBody } = context;
   const playerPos = playerBody.translation();
-  const playerPosition = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
+  
+  // PERFORMANCE FIX: Reuse temp vectors instead of creating new ones
+  tempVector1.set(playerPos.x, playerPos.y, playerPos.z); // playerPosition
   
   // Step 1: Compute ropeVec = playerPos - anchor
-  const ropeVec = playerPosition.clone().sub(swingState.anchorPoint);
-  const currentDistance = ropeVec.length();
+  tempVector2.copy(tempVector1).sub(swingState.anchorPoint); // ropeVec
+  const currentDistance = tempVector2.length();
   
   // Step 2: If distance > ropeLength + slack, apply sphere constraint
   const effectiveRopeLength = swingState.ropeLength + SWING.ropeSlack;
   if (currentDistance > effectiveRopeLength) {
     
     // Project player onto sphere surface (using effective rope length)
-    const constrainedPosition = swingState.anchorPoint.clone()
-      .add(ropeVec.normalize().multiplyScalar(effectiveRopeLength));
+    tempVector3.copy(swingState.anchorPoint)
+      .add(tempVector2.normalize().multiplyScalar(effectiveRopeLength)); // constrainedPosition
     
-    // Get current velocity
+    // Get current velocity - reuse tempVector1
     const currentVel = playerBody.linvel();
-    const velocity = new THREE.Vector3(currentVel.x, currentVel.y, currentVel.z);
+    tempVector1.set(currentVel.x, currentVel.y, currentVel.z); // velocity
     
     // Step 3: Decompose velocity into radial and tangential components
-    const ropeDirection = ropeVec.normalize();
-    const radialVelocity = velocity.dot(ropeDirection); // v_r (outward)
-    const tangentialVelocity = velocity.clone().sub(ropeDirection.multiplyScalar(radialVelocity)); // v_t
+    const ropeDirection = tempVector2.normalize(); // tempVector2 is already normalized from above
+    const radialVelocity = tempVector1.dot(ropeDirection); // v_r (outward) - tempVector1 is velocity
+    const tangentialVelocity = tempVector1.clone().sub(ropeDirection.clone().multiplyScalar(radialVelocity)); // v_t
     
     // Step 4: Handle radial velocity based on constraint
     let newRadialVelocity = 0;
@@ -186,7 +210,7 @@ function applyPendulumConstraint(context: GrappleAbilityContext): void {
     const newVelocity = tangentialVelocity.add(ropeDirection.multiplyScalar(newRadialVelocity));
     
     // Apply constraint: position and velocity
-    playerBody.setTranslation(constrainedPosition, true);
+    playerBody.setTranslation(tempVector3, true); // tempVector3 is constrainedPosition
     playerBody.setLinvel(newVelocity, true);
     
 
@@ -242,7 +266,8 @@ function handleAirControl(context: GrappleAbilityContext, deltaTime: number): vo
     }
     
     hasInput = true;
-    if (Math.random() < 0.1) {
+    // PERFORMANCE FIX: Reduced logging frequency from 10% to 1%
+    if (Math.random() < 0.01) {
       console.log(`🪝 Reel in: ${oldLength.toFixed(1)}m -> ${swingState.ropeLength.toFixed(1)}m`);
     }
   }
@@ -253,7 +278,8 @@ function handleAirControl(context: GrappleAbilityContext, deltaTime: number): vo
     swingState.ropeLength = Math.min(swingState.ropeLength + SWING.extendRate * deltaTime, SWING.maxRope);
     hasInput = true;
     
-    if (Math.random() < 0.1) {
+    // PERFORMANCE FIX: Reduced logging frequency from 10% to 1%
+    if (Math.random() < 0.01) {
       console.log(`🪝 Reel out: ${oldLength.toFixed(1)}m -> ${swingState.ropeLength.toFixed(1)}m`);
     }
   }
@@ -299,14 +325,24 @@ function releaseSwing(reason: string, context: GrappleAbilityContext): void {
   
   const { scene } = context;
   
-  // Remove visuals
+  // Remove visuals with proper disposal to prevent memory leaks
   if (swingState.hookMesh) {
     scene.remove(swingState.hookMesh);
+    // MEMORY FIX: Dispose of geometry and material
+    swingState.hookMesh.geometry.dispose();
+    if (swingState.hookMesh.material instanceof THREE.Material) {
+      swingState.hookMesh.material.dispose();
+    }
     swingState.hookMesh = null;
   }
   
   if (swingState.ropeLine) {
     scene.remove(swingState.ropeLine);
+    // MEMORY FIX: Dispose of geometry and material
+    swingState.ropeLine.geometry.dispose();
+    if (swingState.ropeLine.material instanceof THREE.Material) {
+      swingState.ropeLine.material.dispose();
+    }
     swingState.ropeLine = null;
   }
   
@@ -443,7 +479,7 @@ function createSwingVisuals(scene: THREE.Scene, anchorPoint: THREE.Vector3, play
 }
 
 /**
- * Update rope visual line
+ * Update rope visual line - OPTIMIZED: Reuse geometry to prevent memory leaks
  */
 function updateRopeVisual(context: GrappleAbilityContext): void {
   if (!swingState.isSwinging || !swingState.anchorPoint || !swingState.ropeLine) return;
@@ -452,12 +488,14 @@ function updateRopeVisual(context: GrappleAbilityContext): void {
   const playerPos = playerBody.translation();
   const playerPosition = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
   
-  const newGeometry = new THREE.BufferGeometry().setFromPoints([
-    playerPosition, swingState.anchorPoint
+  // MEMORY OPTIMIZATION: Update existing geometry instead of creating new one
+  const positions = new Float32Array([
+    playerPosition.x, playerPosition.y, playerPosition.z,
+    swingState.anchorPoint.x, swingState.anchorPoint.y, swingState.anchorPoint.z
   ]);
   
-  swingState.ropeLine.geometry.dispose();
-  swingState.ropeLine.geometry = newGeometry;
+  swingState.ropeLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  swingState.ropeLine.geometry.attributes.position.needsUpdate = true;
 }
 
 // Helper functions
@@ -503,6 +541,51 @@ export function onKeyUp(event: KeyboardEvent): void {
 // State accessors
 export function getGrappleState(): GrappleState {
   return swingState;
+}
+
+/**
+ * Comprehensive cleanup for grapple system - disposes all resources
+ * Call this during scene cleanup or when switching levels
+ */
+export function cleanupGrappleSystem(scene: THREE.Scene): void {
+  // Dispose of hook mesh
+  if (swingState.hookMesh) {
+    scene.remove(swingState.hookMesh);
+    swingState.hookMesh.geometry.dispose();
+    if (swingState.hookMesh.material instanceof THREE.Material) {
+      swingState.hookMesh.material.dispose();
+    }
+    swingState.hookMesh = null;
+  }
+
+  // Dispose of rope line
+  if (swingState.ropeLine) {
+    scene.remove(swingState.ropeLine);
+    swingState.ropeLine.geometry.dispose();
+    if (swingState.ropeLine.material instanceof THREE.Material) {
+      swingState.ropeLine.material.dispose();
+    }
+    swingState.ropeLine = null;
+  }
+
+  // Dispose of prediction sphere
+  if (swingState.predictionMesh) {
+    scene.remove(swingState.predictionMesh);
+    swingState.predictionMesh.geometry.dispose();
+    if (swingState.predictionMesh.material instanceof THREE.Material) {
+      swingState.predictionMesh.material.dispose();
+    }
+    swingState.predictionMesh = null;
+  }
+
+  // Reset all state
+  swingState.isSwinging = false;
+  swingState.anchorPoint = null;
+  swingState.ropeLength = 0;
+  swingState.attachTime = 0;
+  swingState.lastInputTime = 0;
+
+  console.log('🧹 Grapple system cleaned up - all resources disposed');
 }
 
 export function isSwinging(): boolean {

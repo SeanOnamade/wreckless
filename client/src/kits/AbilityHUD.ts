@@ -123,6 +123,7 @@ export class AbilityHUD {
   }
 
   private startUpdateLoop(): void {
+    // PERFORMANCE FIX: Update UI at 15fps instead of 60fps for better efficiency
     const update = () => {
       const cooldownState = this.abilityManager.getCooldownState();
       const config = ABILITY_CONFIGS[cooldownState.className];
@@ -160,11 +161,10 @@ export class AbilityHUD {
         const remainingSeconds = (cooldownState.remainingTime / 1000).toFixed(1);
         this.cooldownText.textContent = `${remainingSeconds}s`;
       }
-
-      requestAnimationFrame(update);
     };
 
-    update();
+    // Update every ~67ms (15fps) instead of every frame for better performance
+    setInterval(update, 67);
   }
 
   /**

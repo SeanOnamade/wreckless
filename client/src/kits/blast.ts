@@ -40,6 +40,11 @@ export function blastJump(
   camera: THREE.Camera,
   scene: THREE.Scene
 ): void {
+  // SAFETY CHECK: Validate parameters
+  if (!world || !camera || !scene) {
+    console.error('⚠️ Blast jump execution failed: Invalid parameters provided');
+    return;
+  }
   // Spawn projectile from head/camera position (0.8m forward offset)
   const cameraDirection = new THREE.Vector3();
   camera.getWorldDirection(cameraDirection);
@@ -97,6 +102,11 @@ export function blastJump(
  * Update all active projectiles - check for collisions and fuse timeouts
  */
 export function updateBlast(): void {
+  // PERFORMANCE FIX: Early return if no projectiles to process
+  if (activeProjectiles.size === 0) {
+    return;
+  }
+  
   const now = Date.now();
   const projectilesToRemove: ActiveProjectile[] = [];
   

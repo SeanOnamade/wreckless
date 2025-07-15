@@ -20,6 +20,18 @@ export interface AbilityContext {
   scene: THREE.Scene;
 }
 
+/**
+ * Type guard to validate AbilityContext
+ */
+export function isValidAbilityContext(context: any): context is AbilityContext {
+  return context &&
+    typeof context === 'object' &&
+    context.playerBody &&
+    context.world &&
+    context.camera &&
+    context.scene;
+}
+
 export interface AbilityCooldownState {
   isReady: boolean;
   remainingTime: number;
@@ -61,21 +73,27 @@ export class AbilityManager {
   }
 
   /**
-   * Clean up event listeners and intervals
+   * Clean up event listeners and intervals - with error handling
    */
   destroy(): void {
-    window.removeEventListener('keydown', this.keyDownHandler);
-    window.removeEventListener('keyup', this.handleKeyUp.bind(this));
-    window.removeEventListener('playerClassChanged', this.handleClassChange as EventListener);
-    
-    if (this.updateInterval) {
-      clearInterval(this.updateInterval);
-      this.updateInterval = null;
-    }
-    
-    if (this.animationFrame) {
-      cancelAnimationFrame(this.animationFrame);
-      this.animationFrame = null;
+    try {
+      window.removeEventListener('keydown', this.keyDownHandler);
+      window.removeEventListener('keyup', this.handleKeyUp.bind(this));
+      window.removeEventListener('playerClassChanged', this.handleClassChange as EventListener);
+      
+      if (this.updateInterval) {
+        clearInterval(this.updateInterval);
+        this.updateInterval = null;
+      }
+      
+      if (this.animationFrame) {
+        cancelAnimationFrame(this.animationFrame);
+        this.animationFrame = null;
+      }
+      
+      console.log('✅ AbilityManager destroyed successfully');
+    } catch (error) {
+      console.error('⚠️ Error during AbilityManager cleanup:', error);
     }
   }
 
@@ -245,11 +263,13 @@ export class AbilityManager {
     // Update ability-specific states in animation frame
     const updateAbilityStates = () => {
       if (this.context) {
-        // Update blast state (both rocket jump and legacy)
+        // Update blast state - PERFORMANCE FIX: Only run active system, not both
         updateBlast();
-        if (import.meta.env.DEV) {
-          updateLegacyBlast();
-        }
+        // DISABLED: Legacy blast updates to prevent duplicate computation
+        // Legacy blast still available for rollback but doesn't consume CPU
+        // if (import.meta.env.DEV) {
+        //   updateLegacyBlast();
+        // }
         
         // Update grapple physics and visuals
         updateGrapple({

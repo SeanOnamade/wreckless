@@ -121,6 +121,11 @@ export function blastJump(
  * Update all active projectiles - check for collisions and fuse timeouts
  */
 export function updateBlast(): void {
+  // PERFORMANCE FIX: Early return if no projectiles to process
+  if (activeProjectiles.size === 0) {
+    return;
+  }
+  
   const now = Date.now();
   const projectilesToRemove: ActiveProjectile[] = [];
   
