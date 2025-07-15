@@ -13,6 +13,7 @@ export class FirstPersonController {
   private jumpVelocity = 7.5; // Adjusted for new gravity system
   private isGrounded = false;
   private canJump = true;
+  private lastGroundY = 0; // Track last ground position
   
   // Mouse look
   private euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -117,34 +118,49 @@ export class FirstPersonController {
     // Calculate desired movement with smooth speed
     this.moveVector.copy(this.direction).multiplyScalar(this.currentSpeed * deltaTime);
     
-    // Check if grounded - cast ray from center of capsule
-    const rayOrigin = { x: translation.x, y: translation.y - 0.5, z: translation.z };
+    // Reset grounded state each frame
+    this.isGrounded = false;
+    
+    // Check if grounded - cast ray from bottom of capsule
+    // Capsule total height is 2 * halfHeight + 2 * radius = 2 * 1.0 + 2 * 0.5 = 3.0
+    // So bottom is at translation.y - 1.5
+    const rayOrigin = { x: translation.x, y: translation.y - 1.0, z: translation.z };
     const rayDir = { x: 0, y: -1, z: 0 };
     const ray = new RAPIER.Ray(rayOrigin, rayDir);
-    const maxDistance = 1.05; // Slightly more than capsule bottom
+    const maxDistance = 0.6; // Small distance to check for ground
     const hit = this.world.castRay(ray, maxDistance, true);
-    this.isGrounded = hit !== null;
     
-    // Handle jumping
+    if (hit !== null) {
+      this.isGrounded = true;
+      // Store ground position
+      this.lastGroundY = translation.y;
+    }
+    
+    // Apply gravity - ALWAYS apply it unless we're on ground and not jumping up
+    if (!this.isGrounded || this.velocity.y > 0) {
+      this.velocity.y -= 35 * deltaTime; // Gravity force
+    }
+    
+    // Clamp velocity
+    this.velocity.y = Math.max(this.velocity.y, -20); // Terminal velocity
+    
+    // Handle jumping - only when grounded
     if (this.keys['Space'] && this.isGrounded && this.canJump) {
       this.velocity.y = this.jumpVelocity;
       this.canJump = false;
     }
     
+    // Reset jump ability when space is released
     if (!this.keys['Space']) {
       this.canJump = true;
     }
     
-    // Apply gravity - always apply it, let the collision detection handle ground contact
-    this.velocity.y -= 35 * deltaTime; // Gravity force
-    this.velocity.y = Math.max(this.velocity.y, -20); // Terminal velocity
-    
-    // If we're on the ground and not jumping, cancel downward velocity
+    // If we're on the ground and moving down, stop vertical movement
     if (this.isGrounded && this.velocity.y < 0) {
       this.velocity.y = 0;
     }
     
-    // Add vertical velocity to movement
+    // IMPORTANT: Add vertical velocity to movement - this was missing!
     this.moveVector.y = this.velocity.y * deltaTime;
     
     // Compute collider movement with gravity
@@ -156,20 +172,16 @@ export class FirstPersonController {
     
     const movement = this.controller.computedMovement();
     
-    // Check if we hit something below (grounded check from collision)
-    const grounded = this.controller.computedGrounded();
-    if (grounded) {
-      this.isGrounded = true;
-      if (this.velocity.y < 0) {
-        this.velocity.y = 0;
-      }
-    }
-    
     const newPos = {
       x: translation.x + movement.x,
       y: translation.y + movement.y,
       z: translation.z + movement.z
     };
+    
+    // Debug: Log significant position changes
+    if (Math.abs(movement.y) > 0.001) {
+      console.log('Y Movement:', movement.y, 'Velocity:', this.velocity.y, 'Grounded:', this.isGrounded);
+    }
     
     // Update rigid body position
     this.playerBody.setTranslation(newPos, true);
@@ -197,9 +209,20 @@ export class FirstPersonController {
     return this.isGrounded;
   }
   
+  // Debug method
+  getDebugInfo() {
+    const translation = this.playerBody.translation();
+    return {
+      position: { x: translation.x, y: translation.y, z: translation.z },
+      velocity: this.velocity.clone(),
+      isGrounded: this.isGrounded,
+      canJump: this.canJump
+    };
+  }
+  
   reset() {
-    // Reset position
-    this.playerBody.setTranslation({ x: 0, y: 2, z: 0 }, true);
+    // Reset position to spawn point
+    this.playerBody.setTranslation({ x: 0, y: 1.6, z: 0 }, true);
     
     // Reset velocity
     this.velocity.set(0, 0, 0);
@@ -208,5 +231,9 @@ export class FirstPersonController {
     // Reset rotation
     this.pitch = 0;
     this.yaw = 0;
+    
+    // Reset grounded state
+    this.isGrounded = false;
+    this.canJump = true;
   }
 } 

@@ -40,8 +40,10 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   const capsuleHeight = 1.0; // Half height
   
   // Create kinematic rigid body for player
+  // Start at ground level + capsule size
+  const startY = 0.1 + capsuleHeight + capsuleRadius; // Just above ground
   const playerBodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased()
-    .setTranslation(0, capsuleHeight + capsuleRadius + 0.5, 0);
+    .setTranslation(0, startY, 0);
   const playerBody = world.createRigidBody(playerBodyDesc);
   
   // Create capsule collider
