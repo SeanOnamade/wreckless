@@ -149,9 +149,9 @@ export class AbilityManager {
       }
     } else {
       // For other abilities: normal cooldown behavior
-      if (!useAbilityFromKit(kit)) {
-        console.log(`⏳ Ability on cooldown (${kit.className})`);
-        return false;
+    if (!useAbilityFromKit(kit)) {
+      console.log(`⏳ Ability on cooldown (${kit.className})`);
+      return false;
       }
     }
 

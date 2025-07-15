@@ -42,6 +42,9 @@ export class FirstPersonController {
   private acceleration = 25.0; // How fast we accelerate (increased for snappier feel)
   private deceleration = 8.0; // How fast we stop (reduced for less sluggishness)
   
+  // Momentum preservation for airborne movement
+  private preservedMomentum = new THREE.Vector3(); // World-space momentum vector
+  
   constructor(
     camera: THREE.Camera,
     playerBody: RAPIER.RigidBody,
@@ -72,14 +75,21 @@ export class FirstPersonController {
       this.keys[e.code] = false;
     });
     
-    // Simple, responsive mouse events
+    // Simple, responsive mouse events with safety bounds
     document.addEventListener('mousemove', (e) => {
       if (this.isPointerLocked) {
-        this.yaw -= e.movementX * this.mouseSensitivity;
-        this.pitch -= e.movementY * this.mouseSensitivity;
+        // Add bounds checking to prevent extreme values that could cause glitches
+        const deltaX = Math.max(-0.5, Math.min(0.5, e.movementX * this.mouseSensitivity));
+        const deltaY = Math.max(-0.5, Math.min(0.5, e.movementY * this.mouseSensitivity));
+        
+        this.yaw -= deltaX;
+        this.pitch -= deltaY;
         
         // Clamp pitch to prevent camera flipping
         this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.pitch));
+        
+        // Normalize yaw to prevent accumulation issues
+        this.yaw = this.yaw % (2 * Math.PI);
       }
     });
     
@@ -122,6 +132,13 @@ export class FirstPersonController {
    * Handle swing release momentum preservation - similar to blast momentum
    */
   private handleSwingReleaseMomentum(data: any): void {
+    // Safety check: ignore swing momentum if we're not actually swinging
+    // This prevents race conditions after respawn
+    if (!this.isSwinging) {
+      console.log('🚫 Swing momentum ignored - player not in swing state (likely after respawn)');
+      return;
+    }
+    
     const velocity = data.velocity; // THREE.Vector3 of current swing velocity
     const _reason = data.reason;
     
@@ -146,7 +163,7 @@ export class FirstPersonController {
       this.rocketJumpSpeed = horizontalSpeed;
     }
   }
-
+  
   /**
    * Handle blast impulse from blast ability - 3D Directional Rocket Jumping
    */
@@ -177,17 +194,17 @@ export class FirstPersonController {
       horizontalImpulse.normalize();
       this.direction.copy(horizontalImpulse);
       
-      // TF2-style: NO horizontal speed clamping for true rocket jumping freedom
-      if (isTF2Style) {
-        this.currentSpeed = horizontalSpeed; // Pure horizontal freedom
-        this.isRocketJumping = true; // Flag that we're rocket jumping
-        this.rocketJumpSpeed = horizontalSpeed; // Store the rocket jump speed
-      } else {
-        // Legacy: Apply speed limit for backwards compatibility
-        this.currentSpeed = Math.min(horizontalSpeed, this.maxSpeed);
-        this.isRocketJumping = horizontalSpeed > this.moveSpeed; // Flag if above normal speed
-        this.rocketJumpSpeed = this.currentSpeed;
-      }
+          // TF2-style: NO horizontal speed clamping for true rocket jumping freedom
+    if (isTF2Style) {
+      this.currentSpeed = horizontalSpeed; // Pure horizontal freedom
+      this.isRocketJumping = true; // Flag that we're rocket jumping
+      this.rocketJumpSpeed = horizontalSpeed; // Store the rocket jump speed
+    } else {
+      // Legacy: Apply speed limit for backwards compatibility
+      this.currentSpeed = Math.min(horizontalSpeed, this.maxSpeed);
+      this.isRocketJumping = horizontalSpeed > this.moveSpeed; // Flag if above normal speed
+      this.rocketJumpSpeed = this.currentSpeed;
+    }
     }
     
     // 3. Only apply total speed cap if NOT TF2-style (for horizontal freedom)
@@ -232,12 +249,12 @@ export class FirstPersonController {
     if (this.keys['KeyA']) inputDirection.x -= 1;
     if (this.keys['KeyD']) inputDirection.x += 1;
     
-    // Always update direction based on input (no momentum preservation)
+        // Handle direction and input
     const hasInput = inputDirection.length() > 0;
     if (hasInput) {
-      this.direction.copy(inputDirection);
+      this.direction.copy(inputDirection).normalize();
     } else {
-      // No input - stop moving (normal behavior)
+      // No input - will handle momentum preservation after camera rotation
       this.direction.set(0, 0, 0);
     }
     
@@ -248,6 +265,7 @@ export class FirstPersonController {
     if (this.isGrounded && this.isRocketJumping) {
       this.isRocketJumping = false;
       this.rocketJumpSpeed = 0;
+      this.preservedMomentum.set(0, 0, 0); // Clear preserved momentum when landing
     }
     
     // Determine effective max speed based on current state
@@ -266,48 +284,48 @@ export class FirstPersonController {
       targetSpeed = normalTargetSpeed;
     }
     
-    // Handle speed and direction changes
+    // Handle speed changes
     if (hasInput) {
-      // Player is giving input - normalize direction and handle acceleration
-      this.direction.normalize();
       const accel = this.isSliding ? this.acceleration * 1.5 : this.acceleration;
       
       if (this.isRocketJumping && !this.isGrounded) {
-        // Rocket jumping: REDUCED air control to prevent unrealistic horizontal "walking"
-        // Only allow slight direction changes, heavily reduced acceleration
-        const airControlFactor = 0.2; // Only 20% normal control in air during rocket jumping
+        // Rocket jumping: LIMITED air control
+        const airControlFactor = 0.2;
         const speedChange = accel * deltaTime * airControlFactor;
         this.currentSpeed = Math.min(this.currentSpeed + speedChange, effectiveMaxSpeed);
         
-        // Blend new direction with current direction for limited air steering
-        const steerAmount = 0.3 * deltaTime; // How much we can steer per second
+        // Blend direction for air steering
+        const steerAmount = 0.3 * deltaTime;
         this.direction.lerp(inputDirection.normalize(), steerAmount);
       } else {
         // Normal movement: accelerate to target speed
         this.currentSpeed = Math.min(this.currentSpeed + accel * deltaTime, targetSpeed);
       }
-          } else {
-        // No input - decelerate appropriately
-        const baseDecel = this.isSliding ? this.deceleration * 0.5 : this.deceleration;
-        
-        if (this.isRocketJumping && !this.isGrounded) {
-          // Rocket jumping with no input: reduced deceleration in air for momentum preservation
-          const airDecel = baseDecel * 0.3; // 30% deceleration rate in air (increased from 10% for more realism)
-          this.currentSpeed = Math.max(this.currentSpeed - airDecel * deltaTime, 0);
-        } else {
-          // Normal deceleration
-          this.currentSpeed = Math.max(this.currentSpeed - baseDecel * deltaTime, 0);
-        }
+    } else {
+      // No input - handle deceleration (except for airborne rocket jumping)
+      if (!(this.isRocketJumping && !this.isGrounded)) {
+      const baseDecel = this.isSliding ? this.deceleration * 0.5 : this.deceleration;
+        this.currentSpeed = Math.max(this.currentSpeed - baseDecel * deltaTime, 0);
       }
-    
-
+    }
     
     // Apply camera rotation to movement direction
     this.euler.set(0, this.yaw, 0);
     this.direction.applyEuler(this.euler);
     
-    // Calculate desired movement with smooth speed
+    // Handle momentum preservation for airborne rocket jumping
+    if (this.isRocketJumping && !this.isGrounded && !hasInput) {
+      // Use preserved world-space momentum instead of current direction
+      this.moveVector.copy(this.preservedMomentum);
+    } else {
+      // Normal movement or with input - calculate movement from current direction/speed
     this.moveVector.copy(this.direction).multiplyScalar(this.currentSpeed * deltaTime);
+      
+      // Update preserved momentum when we have input or are grounded
+      if (hasInput || this.isGrounded) {
+        this.preservedMomentum.copy(this.moveVector);
+      }
+    }
     
     // Debug: Log movement state for rocket jumping (disabled to reduce console spam)
     // if (this.currentSpeed > 20.0) { // Only log when moving fast (likely rocket jump)
@@ -397,11 +415,27 @@ export class FirstPersonController {
     // Update rigid body position
     this.playerBody.setTranslation(newPos, true);
     
-    // Update camera position and rotation
+    // Update camera position and rotation with safety checks
     const cameraHeight = this.isSliding ? 0.4 : 0.8; // Lower camera when sliding
-    this.camera.position.set(newPos.x, newPos.y + cameraHeight, newPos.z);
-    this.euler.set(this.pitch, this.yaw, 0, 'YXZ');
-    this.camera.quaternion.setFromEuler(this.euler);
+    
+    // Safety check: ensure position values are finite to prevent camera glitches
+    if (isFinite(newPos.x) && isFinite(newPos.y) && isFinite(newPos.z)) {
+      this.camera.position.set(newPos.x, newPos.y + cameraHeight, newPos.z);
+    } else {
+      console.warn('⚠️ Invalid camera position detected, skipping update');
+    }
+    
+    // Safety check: ensure rotation values are finite
+    if (isFinite(this.pitch) && isFinite(this.yaw)) {
+      this.euler.set(this.pitch, this.yaw, 0, 'YXZ');
+      this.camera.quaternion.setFromEuler(this.euler);
+    } else {
+      console.warn('⚠️ Invalid camera rotation detected, resetting');
+      this.pitch = 0;
+      this.yaw = 0;
+      this.euler.set(0, 0, 0, 'YXZ');
+      this.camera.quaternion.setFromEuler(this.euler);
+    }
   }
   
   /**
@@ -548,8 +582,12 @@ export class FirstPersonController {
     this.isSliding = false;
     this.isRocketJumping = false;
     this.rocketJumpSpeed = 0;
+    this.isSwinging = false; // CRITICAL: Reset swing state to prevent high-speed walking bug
 
     // Reset killzone tracking
     this.timeInVoid = 0;
+    
+    // Reset preserved momentum
+    this.preservedMomentum.set(0, 0, 0);
   }
 } 
