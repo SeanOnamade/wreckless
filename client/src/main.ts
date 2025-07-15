@@ -1,6 +1,7 @@
 import './style.css';
 import * as THREE from 'three';
 import initPhysics from './physics';
+import type { PhysicsWorld } from './physics';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -19,7 +20,7 @@ camera.position.set(0, 2, 5);
 // Renderer setup
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap pixel ratio for performance
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
@@ -31,6 +32,8 @@ scene.add(ambientLight);
 const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
 directionalLight.position.set(10, 20, 10);
 directionalLight.castShadow = true;
+directionalLight.shadow.mapSize.width = 1024; // Reduced from default 2048 for performance
+directionalLight.shadow.mapSize.height = 1024;
 directionalLight.shadow.camera.near = 0.1;
 directionalLight.shadow.camera.far = 50;
 directionalLight.shadow.camera.left = -20;
@@ -46,8 +49,15 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// Clock for delta time
+const clock = new THREE.Clock();
+
+// Fixed timestep for physics
+const fixedTimeStep = 1 / 60; // 60 Hz physics
+let accumulator = 0;
+
 // Initialize physics
-let physicsWorld: any;
+let physicsWorld: PhysicsWorld | null = null;
 initPhysics(scene, camera).then((world) => {
   physicsWorld = world;
   animate();
@@ -57,8 +67,15 @@ initPhysics(scene, camera).then((world) => {
 function animate() {
   requestAnimationFrame(animate);
   
-  if (physicsWorld) {
-    physicsWorld.step();
+  const deltaTime = Math.min(clock.getDelta(), 0.1); // Cap delta time to prevent spiral of death
+  accumulator += deltaTime;
+  
+  // Fixed timestep physics
+  while (accumulator >= fixedTimeStep) {
+    if (physicsWorld) {
+      physicsWorld.step(fixedTimeStep);
+    }
+    accumulator -= fixedTimeStep;
   }
   
   renderer.render(scene, camera);

@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { FirstPersonController } from './controller';
 
 export interface PhysicsWorld {
   world: RAPIER.World;
   playerBody: RAPIER.RigidBody;
   playerController: RAPIER.KinematicCharacterController;
-  step: () => void;
+  fpsController: FirstPersonController;
+  step: (deltaTime: number) => void;
 }
 
 export default async function initPhysics(scene: THREE.Scene, camera: THREE.Camera): Promise<PhysicsWorld> {
@@ -13,7 +15,7 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   await RAPIER.init();
   
   // Create physics world
-  const gravity = { x: 0.0, y: -9.81, z: 0.0 };
+  const gravity = { x: 0.0, y: -30.0, z: 0.0 }; // Increased gravity to match controller
   const world = new RAPIER.World(gravity);
   
   // Create ground
@@ -29,6 +31,7 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   });
   const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
   groundMesh.receiveShadow = true;
+  groundMesh.castShadow = false; // Ground doesn't need to cast shadows
   groundMesh.position.y = -0.1;
   scene.add(groundMesh);
   
@@ -51,37 +54,25 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   playerController.enableAutostep(0.5, 0.2, true);
   playerController.enableSnapToGround(0.5);
   
-  // Visual representation (optional, for debugging)
-  const capsuleGeometry = new THREE.CapsuleGeometry(capsuleRadius, capsuleHeight * 2, 4, 8);
-  const capsuleMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x00ff00,
-    transparent: true,
-    opacity: 0.5
-  });
-  const capsuleMesh = new THREE.Mesh(capsuleGeometry, capsuleMaterial);
-  capsuleMesh.castShadow = true;
-  scene.add(capsuleMesh);
+  // Create first-person controller
+  const fpsController = new FirstPersonController(
+    camera,
+    playerBody,
+    playerController,
+    world
+  );
   
   // Update function
-  const step = () => {
+  const step = (deltaTime: number) => {
     world.step();
-    
-    // Update visual capsule position
-    const translation = playerBody.translation();
-    capsuleMesh.position.set(translation.x, translation.y, translation.z);
-    
-    // Update camera position to follow player
-    camera.position.set(
-      translation.x,
-      translation.y + capsuleHeight,
-      translation.z
-    );
+    fpsController.update(deltaTime);
   };
   
   return {
     world,
     playerBody,
     playerController,
+    fpsController,
     step
   };
 } 
