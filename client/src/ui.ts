@@ -4,6 +4,7 @@ export class DebugUI {
   private velocityElement: HTMLSpanElement;
   private vVelocityElement: HTMLSpanElement;
   private groundedElement: HTMLSpanElement;
+  private slidingElement: HTMLSpanElement;
   private frameCount = 0;
   private lastFpsUpdate = performance.now();
   private currentFps = 0;
@@ -45,17 +46,19 @@ export class DebugUI {
     groundedDiv.innerHTML = 'Grounded: <span id="grounded">No</span>';
     this.groundedElement = groundedDiv.querySelector('#grounded')!;
     
+    // Create sliding state display
+    const slidingDiv = document.createElement('div');
+    slidingDiv.innerHTML = 'Sliding: <span id="sliding">No</span>';
+    this.slidingElement = slidingDiv.querySelector('#sliding')!;
+    
     // Create controls info
     const controlsDiv = document.createElement('div');
     controlsDiv.style.marginTop = '10px';
     controlsDiv.style.fontSize = '12px';
     controlsDiv.style.opacity = '0.8';
     controlsDiv.innerHTML = `
-      <div>WASD - Move</div>
-      <div>Space - Jump</div>
-      <div>Mouse - Look</div>
+      <div>ESC - Menu</div>
       <div>R - Reset</div>
-      <div>ESC - Exit lock</div>
     `;
     
     // Append elements
@@ -63,11 +66,12 @@ export class DebugUI {
     this.container.appendChild(velocityDiv);
     this.container.appendChild(vVelocityDiv);
     this.container.appendChild(groundedDiv);
+    this.container.appendChild(slidingDiv);
     this.container.appendChild(controlsDiv);
     document.body.appendChild(this.container);
   }
   
-  update(velocity: { x: number; y: number; z: number }, grounded: boolean) {
+  update(velocity: { x: number; y: number; z: number }, grounded: boolean, sliding: boolean = false) {
     // Update FPS
     this.frameCount++;
     const now = performance.now();
@@ -100,6 +104,10 @@ export class DebugUI {
     // Update grounded state
     this.groundedElement.textContent = grounded ? 'Yes' : 'No';
     this.groundedElement.style.color = grounded ? '#0f0' : '#f00';
+    
+    // Update sliding state
+    this.slidingElement.textContent = sliding ? 'Yes' : 'No';
+    this.slidingElement.style.color = sliding ? '#0ff' : '#888'; // Cyan for sliding, gray for not
   }
   
   destroy() {

@@ -15,20 +15,66 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   await RAPIER.init();
   
   // Create physics world
-  const gravity = { x: 0.0, y: -30.0, z: 0.0 }; // Increased gravity to match controller
+  // Note: Gravity mainly affects dynamic bodies, not kinematic character controller
+  const gravity = { x: 0.0, y: -30.0, z: 0.0 }; // For dynamic objects only
   const world = new RAPIER.World(gravity);
   
   // Create ground
   const groundColliderDesc = RAPIER.ColliderDesc.cuboid(50.0, 0.1, 50.0);
   world.createCollider(groundColliderDesc);
   
-  // Add visual ground
+  // Add visual ground with texture
   const groundGeometry = new THREE.BoxGeometry(100, 0.2, 100);
+  
+  // Create a grid texture for better distance perception
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+  
+  // Fill with base color
+  ctx.fillStyle = '#4A4A4A';
+  ctx.fillRect(0, 0, 512, 512);
+  
+  // Draw grid lines
+  ctx.strokeStyle = '#666666';
+  ctx.lineWidth = 2;
+  
+  const gridSize = 32; // Grid cell size
+  for (let i = 0; i <= 512; i += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i, 512);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.moveTo(0, i);
+    ctx.lineTo(512, i);
+    ctx.stroke();
+  }
+  
+  // Add some diagonal lines for better depth perception
+  ctx.strokeStyle = '#444444';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 512; i += gridSize * 2) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i + gridSize, gridSize);
+    ctx.stroke();
+  }
+  
+  const groundTexture = new THREE.CanvasTexture(canvas);
+  groundTexture.wrapS = THREE.RepeatWrapping;
+  groundTexture.wrapT = THREE.RepeatWrapping;
+  groundTexture.repeat.set(8, 8); // Repeat texture 8 times in each direction
+  
   const groundMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x444444,
+    map: groundTexture,
+    color: 0x888888,
     roughness: 0.8,
-    metalness: 0.2
+    metalness: 0.1
   });
+  
   const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
   groundMesh.receiveShadow = true;
   groundMesh.castShadow = false; // Ground doesn't need to cast shadows
@@ -53,8 +99,10 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   // Create character controller
   const playerController = world.createCharacterController(0.01);
   playerController.setApplyImpulsesToDynamicBodies(true);
-  playerController.enableAutostep(0.5, 0.2, true);
-  playerController.enableSnapToGround(0.5);
+  playerController.enableAutostep(0.3, 0.1, true);
+  playerController.enableSnapToGround(0.05); // Reduced for better ground detection
+  playerController.setMaxSlopeClimbAngle(45 * Math.PI / 180);
+  playerController.setMinSlopeSlideAngle(30 * Math.PI / 180);
   
   // Create first-person controller
   const fpsController = new FirstPersonController(

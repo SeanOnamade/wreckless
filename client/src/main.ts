@@ -3,11 +3,12 @@ import * as THREE from 'three';
 import initPhysics from './physics';
 import type { PhysicsWorld } from './physics';
 import { DebugUI } from './ui';
+import { GameMenu } from './menu';
 
 // Scene setup
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x001122);
-scene.fog = new THREE.Fog(0x001122, 10, 100);
+scene.background = new THREE.Color(0x99D8F5); // Light sky blue (lighter than #87CEEB)
+scene.fog = new THREE.Fog(0x99D8F5, 30, 120); // Adjusted fog distance and color
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(
@@ -27,10 +28,10 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
 // Lighting
-const ambientLight = new THREE.AmbientLight(0x404040, 0.8);
+const ambientLight = new THREE.AmbientLight(0x87CEEB, 0.6); // Sky blue ambient light
 scene.add(ambientLight);
 
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2); // Brighter directional light
 directionalLight.position.set(10, 20, 10);
 directionalLight.castShadow = true;
 directionalLight.shadow.mapSize.width = 1024; // Reduced from default 2048 for performance
@@ -59,6 +60,17 @@ let accumulator = 0;
 
 // Initialize UI
 const debugUI = new DebugUI();
+const gameMenu = new GameMenu();
+
+// Suppress unused variable warning (gameMenu is used via event handlers)
+void gameMenu;
+
+// Handle reset event from menu
+window.addEventListener('game-reset', () => {
+  if (physicsWorld) {
+    physicsWorld.fpsController.reset();
+  }
+});
 
 // Initialize physics
 let physicsWorld: PhysicsWorld | null = null;
@@ -86,7 +98,8 @@ function animate() {
   if (physicsWorld) {
     const velocity = physicsWorld.fpsController.getVelocity();
     const grounded = physicsWorld.fpsController.getIsGrounded();
-    debugUI.update(velocity, grounded);
+    const sliding = physicsWorld.fpsController.getIsSliding();
+    debugUI.update(velocity, grounded, sliding);
   }
   
   renderer.render(scene, camera);

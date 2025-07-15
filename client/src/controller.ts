@@ -5,15 +5,17 @@ export class FirstPersonController {
   private camera: THREE.Camera;
   private playerBody: RAPIER.RigidBody;
   private controller: RAPIER.KinematicCharacterController;
-  private world: RAPIER.World;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private world: RAPIER.World; // Used for physics queries
   
   // Movement state
   private keys: { [key: string]: boolean } = {};
   private moveSpeed = 8.0; // 8 m/s base speed as per PRD
-  private jumpVelocity = 7.5; // Adjusted for new gravity system
+  private slideSpeed = 12.0; // 12 m/s slide speed (momentum preservation)
+  private jumpVelocity = 10.0; // Adjusted for corrected gravity system
   private isGrounded = false;
   private canJump = true;
-  private lastGroundY = 0; // Track last ground position
+  private isSliding = false;
   
   // Mouse look
   private euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -39,7 +41,10 @@ export class FirstPersonController {
     this.camera = camera;
     this.playerBody = playerBody;
     this.controller = controller;
-    this.world = world;
+    this.world = world; // May be used for future physics queries
+    
+    // Suppress unused variable warning
+    void this.world;
     
     this.setupEventListeners();
   }
@@ -48,6 +53,11 @@ export class FirstPersonController {
     // Keyboard events
     document.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
+      
+      // Special keys
+      if (e.code === 'KeyR') {
+        this.reset();
+      }
     });
     
     document.addEventListener('keyup', (e) => {
@@ -75,22 +85,14 @@ export class FirstPersonController {
     document.addEventListener('pointerlockchange', () => {
       this.isPointerLocked = document.pointerLockElement === document.body;
     });
-    
-    // Escape to exit pointer lock
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.isPointerLocked) {
-        document.exitPointerLock();
-      }
-      // R to reset position
-      if (e.code === 'KeyR') {
-        this.reset();
-      }
-    });
   }
   
   update(deltaTime: number) {
     // Get current position
     const translation = this.playerBody.translation();
+    
+    // Check slide state
+    this.isSliding = this.keys['ShiftLeft'] || this.keys['ShiftRight'];
     
     // Calculate movement direction based on camera rotation
     this.direction.set(0, 0, 0);
@@ -100,15 +102,20 @@ export class FirstPersonController {
     if (this.keys['KeyA']) this.direction.x -= 1;
     if (this.keys['KeyD']) this.direction.x += 1;
     
+    // Determine target speed based on slide state
+    const targetSpeed = this.isSliding ? this.slideSpeed : this.moveSpeed;
+    
     // Normalize diagonal movement
     const inputLength = this.direction.length();
     if (inputLength > 0) {
       this.direction.normalize();
-      // Accelerate
-      this.currentSpeed = Math.min(this.currentSpeed + this.acceleration * deltaTime, this.moveSpeed);
+      // Accelerate - faster acceleration when sliding
+      const accel = this.isSliding ? this.acceleration * 1.5 : this.acceleration;
+      this.currentSpeed = Math.min(this.currentSpeed + accel * deltaTime, targetSpeed);
     } else {
-      // Decelerate
-      this.currentSpeed = Math.max(this.currentSpeed - this.deceleration * deltaTime, 0);
+      // Decelerate - slower deceleration when sliding (momentum preservation)
+      const decel = this.isSliding ? this.deceleration * 0.5 : this.deceleration;
+      this.currentSpeed = Math.max(this.currentSpeed - decel * deltaTime, 0);
     }
     
     // Apply camera rotation to movement direction
@@ -118,34 +125,42 @@ export class FirstPersonController {
     // Calculate desired movement with smooth speed
     this.moveVector.copy(this.direction).multiplyScalar(this.currentSpeed * deltaTime);
     
-    // Reset grounded state each frame
-    this.isGrounded = false;
+    // Check grounded state BEFORE applying gravity/movement
+    // First, do a small downward test to see if we're grounded
+    const testMovement = new THREE.Vector3(0, -0.01, 0);
+    this.controller.computeColliderMovement(
+      this.playerBody.collider(0)!,
+      testMovement,
+      RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC
+    );
+    this.isGrounded = this.controller.computedGrounded();
     
-    // Check if grounded - cast ray from bottom of capsule
-    // Capsule total height is 2 * halfHeight + 2 * radius = 2 * 1.0 + 2 * 0.5 = 3.0
-    // So bottom is at translation.y - 1.5
-    const rayOrigin = { x: translation.x, y: translation.y - 1.0, z: translation.z };
-    const rayDir = { x: 0, y: -1, z: 0 };
-    const ray = new RAPIER.Ray(rayOrigin, rayDir);
-    const maxDistance = 0.6; // Small distance to check for ground
-    const hit = this.world.castRay(ray, maxDistance, true);
-    
-    if (hit !== null) {
-      this.isGrounded = true;
-      // Store ground position
-      this.lastGroundY = translation.y;
+    // Additional safety check: if we're very close to ground, consider grounded
+    if (!this.isGrounded && this.velocity.y <= 0.1) {
+      const groundTestMovement = new THREE.Vector3(0, -0.05, 0);
+      this.controller.computeColliderMovement(
+        this.playerBody.collider(0)!,
+        groundTestMovement,
+        RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC
+      );
+      this.isGrounded = this.controller.computedGrounded();
     }
     
-    // Apply gravity - ALWAYS apply it unless we're on ground and not jumping up
-    if (!this.isGrounded || this.velocity.y > 0) {
-      this.velocity.y -= 35 * deltaTime; // Gravity force
+    // If we're grounded and falling, stop downward velocity
+    if (this.isGrounded && this.velocity.y < 0) {
+      this.velocity.y = 0;
+    }
+    
+    // Apply gravity only when not grounded
+    if (!this.isGrounded) {
+      this.velocity.y -= 30 * deltaTime; // Gravity force (matching physics world)
     }
     
     // Clamp velocity
-    this.velocity.y = Math.max(this.velocity.y, -20); // Terminal velocity
+    this.velocity.y = Math.max(this.velocity.y, -30); // Terminal velocity
     
-    // Handle jumping - only when grounded
-    if (this.keys['Space'] && this.isGrounded && this.canJump) {
+    // Handle jumping - only when grounded and not sliding
+    if (this.keys['Space'] && this.isGrounded && this.canJump && !this.isSliding) {
       this.velocity.y = this.jumpVelocity;
       this.canJump = false;
     }
@@ -155,12 +170,7 @@ export class FirstPersonController {
       this.canJump = true;
     }
     
-    // If we're on the ground and moving down, stop vertical movement
-    if (this.isGrounded && this.velocity.y < 0) {
-      this.velocity.y = 0;
-    }
-    
-    // IMPORTANT: Add vertical velocity to movement - this was missing!
+    // IMPORTANT: Add vertical velocity to movement
     this.moveVector.y = this.velocity.y * deltaTime;
     
     // Compute collider movement with gravity
@@ -172,22 +182,25 @@ export class FirstPersonController {
     
     const movement = this.controller.computedMovement();
     
+    // Debug: log every few frames (only when debug mode is enabled)
+    if (Math.random() < 0.01) { // Reduced frequency
+      console.log('Grounded:', this.isGrounded, 'Y-Vel:', this.velocity.y.toFixed(2), 'Y-Move:', movement.y.toFixed(4));
+    }
+    
     const newPos = {
       x: translation.x + movement.x,
       y: translation.y + movement.y,
       z: translation.z + movement.z
     };
     
-    // Debug: Log significant position changes
-    if (Math.abs(movement.y) > 0.001) {
-      console.log('Y Movement:', movement.y, 'Velocity:', this.velocity.y, 'Grounded:', this.isGrounded);
-    }
+
     
     // Update rigid body position
     this.playerBody.setTranslation(newPos, true);
     
     // Update camera position and rotation
-    this.camera.position.set(newPos.x, newPos.y + 0.8, newPos.z);
+    const cameraHeight = this.isSliding ? 0.4 : 0.8; // Lower camera when sliding
+    this.camera.position.set(newPos.x, newPos.y + cameraHeight, newPos.z);
     this.euler.set(this.pitch, this.yaw, 0, 'YXZ');
     this.camera.quaternion.setFromEuler(this.euler);
   }
@@ -202,11 +215,17 @@ export class FirstPersonController {
   }
   
   getVelocity(): THREE.Vector3 {
-    return this.velocity.clone();
+    // Calculate true velocity: horizontal movement + vertical velocity
+    const horizontalVelocity = this.direction.clone().multiplyScalar(this.currentSpeed);
+    return new THREE.Vector3(horizontalVelocity.x, this.velocity.y, horizontalVelocity.z);
   }
   
   getIsGrounded(): boolean {
     return this.isGrounded;
+  }
+  
+  getIsSliding(): boolean {
+    return this.isSliding;
   }
   
   // Debug method
@@ -216,7 +235,9 @@ export class FirstPersonController {
       position: { x: translation.x, y: translation.y, z: translation.z },
       velocity: this.velocity.clone(),
       isGrounded: this.isGrounded,
-      canJump: this.canJump
+      canJump: this.canJump,
+      isSliding: this.isSliding,
+      currentSpeed: this.currentSpeed
     };
   }
   
@@ -232,8 +253,9 @@ export class FirstPersonController {
     this.pitch = 0;
     this.yaw = 0;
     
-    // Reset grounded state
+    // Reset movement state
     this.isGrounded = false;
     this.canJump = true;
+    this.isSliding = false;
   }
 } 
