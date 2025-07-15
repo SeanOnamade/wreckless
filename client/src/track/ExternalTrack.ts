@@ -9,7 +9,9 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
     const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
     const BufferGeometryUtils = await import('three/examples/jsm/utils/BufferGeometryUtils.js');
     
+    if (import.meta.env.DEV) {
     console.log('Loading lowpoly_racetrack.glb...');
+  }
     
     const loader = new GLTFLoader();
     const gltf = await loader.loadAsync('/lowpoly_racetrack.glb');
@@ -23,7 +25,9 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
     const allMeshes: THREE.Mesh[] = [];
     const collisionGeometries: THREE.BufferGeometry[] = [];
     
-    console.log('🏁 Loading track collision from all meshes...');
+    if (import.meta.env.DEV) {
+      console.log('🏁 Loading track collision from all meshes...');
+    }
     
     // Collect all meshes and process them for collision
     track.traverse((child) => {
@@ -42,7 +46,9 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
       }
     });
     
-    console.log(`📊 Processing ${allMeshes.length} meshes for collision...`);
+    if (import.meta.env.DEV) {
+      console.log(`📊 Processing ${allMeshes.length} meshes for collision...`);
+    }
     
     // Add the visual track to the scene
     scene.add(track);
@@ -53,7 +59,9 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
       const collider = RAPIER.ColliderDesc.cuboid(50, 0.1, 50);
       world.createCollider(collider, body);
     } else {
+      if (import.meta.env.DEV) {
       console.log(`🔗 Merging ${collisionGeometries.length} geometries for collision...`);
+    }
       
       // Merge all geometries into a single collision mesh
       const mergedGeometry = BufferGeometryUtils.mergeGeometries(collisionGeometries);
@@ -72,7 +80,9 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
            const collider = RAPIER.ColliderDesc.trimesh(vertices, indices);
            world.createCollider(collider, body);
            
-           console.log(`✅ Trimesh collider created with ${vertices.length / 3} vertices and ${indices.length / 3} triangles`);
+           if (import.meta.env.DEV) {
+      console.log(`✅ Trimesh collider created with ${vertices.length / 3} vertices and ${indices.length / 3} triangles`);
+    }
            
            // Add invisible safety rail around track perimeter
            const bb = new THREE.Box3().setFromBufferAttribute(positionAttribute as THREE.BufferAttribute);
@@ -97,7 +107,9 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
              curbBody
            );
            
-           console.log(`🛡️  Safety rail added around track perimeter`);
+           if (import.meta.env.DEV) {
+      console.log(`🛡️  Safety rail added around track perimeter`);
+    }
            
          } else {
            console.error('❌ Failed to extract position/index data from merged geometry');
@@ -111,13 +123,17 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
       }
     }
     
-    console.log(`✅ Lowpoly racetrack loaded successfully!`);
+    if (import.meta.env.DEV) {
+      console.log(`✅ Lowpoly racetrack loaded successfully!`);
+    }
     
   } catch (error) {
     console.error('❌ Error loading lowpoly racetrack:', error);
     
     // Fallback to simple placeholder track
-    console.log('🔄 Loading fallback placeholder track...');
+    if (import.meta.env.DEV) {
+      console.log('🔄 Loading fallback placeholder track...');
+    }
     const trackGeometry = new THREE.BoxGeometry(50, 0.4, 10);
     const trackMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
     const track = new THREE.Mesh(trackGeometry, trackMaterial);
@@ -128,6 +144,8 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
     const collider = RAPIER.ColliderDesc.cuboid(25, 0.2, 5);
     world.createCollider(collider, body);
     
-    console.log('📦 Fallback placeholder track loaded.');
+    if (import.meta.env.DEV) {
+      console.log('📦 Fallback placeholder track loaded.');
+    }
   }
 } 

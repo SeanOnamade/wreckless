@@ -34,7 +34,9 @@ export class LapController {
     const expected = this.expectedOrder[this.state.index];
     
     if (checkpointId !== expected) {
-      console.log(`✗ Checkpoint ${checkpointId} visited out of sequence (expected: ${expected})`);
+      if (import.meta.env.DEV) {
+        console.log(`✗ Checkpoint ${checkpointId} visited out of sequence (expected: ${expected})`);
+      }
       this.onCheckpointVisit?.(checkpointId, false);
       return false; // wrong order
     }
@@ -46,7 +48,9 @@ export class LapController {
       this.completeLap();
       this.state.index = 0; // reset for next lap
     } else {
+      if (import.meta.env.DEV) {
       console.log(`✓ Checkpoint ${checkpointId} visited (${this.state.index - 1}/${this.expectedOrder.length - 1})`);
+    }
     }
     
     this.onCheckpointVisit?.(checkpointId, true);
@@ -61,7 +65,9 @@ export class LapController {
       this.bestLapTime = lapTime;
     }
     
-    console.log(`🏁 Lap ${this.totalLaps} completed! Time: ${(lapTime / 1000).toFixed(2)}s`);
+          if (import.meta.env.DEV) {
+        console.log(`🏁 Lap ${this.totalLaps} completed! Time: ${(lapTime / 1000).toFixed(2)}s`);
+      }
     
     this.onLapComplete?.(lapTime, this.totalLaps);
     this.resetLap();

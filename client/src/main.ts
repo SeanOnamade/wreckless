@@ -1,4 +1,3 @@
-// TODO: switch between ProceduralTrack and ExternalTrack via URL param `?debugTrack=proc`
 import './style.css';
 import * as THREE from 'three';
 import initPhysics from './physics';
@@ -9,6 +8,9 @@ import { LapController } from './systems/LapController';
 import { CheckpointSystem } from './systems/CheckpointSystem';
 import { LapHUD } from './hud/Hud';
 import { GameHUD } from './hud/GameHUD';
+import { AbilityManager } from './kits/useAbility';
+import { setPlayerClass } from './kits/classKit';
+import { AbilityHUD } from './kits/AbilityHUD';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -25,28 +27,33 @@ const camera = new THREE.PerspectiveCamera(
 camera.position.set(0, 2, 5);
 
 // Renderer setup
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  powerPreference: "high-performance"
+});
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap pixel ratio for performance
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
 document.body.appendChild(renderer.domElement);
 
-// Lighting
-const ambientLight = new THREE.AmbientLight(0x87CEEB, 0.6); // Sky blue ambient light
+// Lighting setup
+const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
 scene.add(ambientLight);
 
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2); // Brighter directional light
-directionalLight.position.set(10, 20, 10);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+directionalLight.position.set(50, 100, 50);
 directionalLight.castShadow = true;
-directionalLight.shadow.mapSize.width = 1024; // Reduced from default 2048 for performance
-directionalLight.shadow.mapSize.height = 1024;
-directionalLight.shadow.camera.near = 0.1;
-directionalLight.shadow.camera.far = 50;
-directionalLight.shadow.camera.left = -20;
-directionalLight.shadow.camera.right = 20;
-directionalLight.shadow.camera.top = 20;
-directionalLight.shadow.camera.bottom = -20;
+directionalLight.shadow.mapSize.width = 2048;
+directionalLight.shadow.mapSize.height = 2048;
+directionalLight.shadow.camera.near = 0.5;
+directionalLight.shadow.camera.far = 500;
+directionalLight.shadow.camera.left = -100;
+directionalLight.shadow.camera.right = 100;
+directionalLight.shadow.camera.top = 100;
+directionalLight.shadow.camera.bottom = -100;
 scene.add(directionalLight);
 
 // Handle window resize
@@ -67,8 +74,11 @@ let accumulator = 0;
 const debugUI = new DebugUI();
 const gameMenu = new GameMenu();
 
-// Suppress unused variable warning (gameMenu is used via event handlers)
-void gameMenu;
+// Initialize ability system
+const abilityManager = new AbilityManager();
+let abilityHUD: AbilityHUD | null = null;
+
+// gameMenu is used via event handlers
 
 // Handle reset event from menu
 window.addEventListener('game-reset', () => {
@@ -87,15 +97,30 @@ let gameHUD: GameHUD | null = null;
 initPhysics(scene, camera).then((world) => {
   physicsWorld = world;
   
+  // Initialize ability system with game context
+  abilityManager.initialize({
+    playerBody: world.playerBody,
+    world: world.world,
+    camera: camera,
+    scene: scene
+  });
+  
+  // Initialize ability HUD
+  abilityHUD = new AbilityHUD(abilityManager);
+  
   // Initialize lap controller with callbacks
   lapController = new LapController(
     (lapTime, totalLaps) => {
-      console.log(`🏁 Lap ${totalLaps} completed in ${(lapTime / 1000).toFixed(2)}s`);
+      if (import.meta.env.DEV) {
+        console.log(`🏁 Lap ${totalLaps} completed in ${(lapTime / 1000).toFixed(2)}s`);
+      }
       lapHUD?.flashLapComplete(lapTime);
       gameHUD?.onLapComplete(lapTime, totalLaps);
     },
     (checkpoint, isValid) => {
-      console.log(`${isValid ? '✓' : '✗'} Checkpoint ${checkpoint} ${isValid ? 'valid' : 'invalid'}`);
+      if (import.meta.env.DEV) {
+        console.log(`${isValid ? '✓' : '✗'} Checkpoint ${checkpoint} ${isValid ? 'valid' : 'invalid'}`);
+      }
       lapHUD?.flashCheckpoint(checkpoint, isValid);
       gameHUD?.onCheckpointVisited(checkpoint, isValid);
     }
@@ -112,6 +137,29 @@ initPhysics(scene, camera).then((world) => {
   
   // Initialize game HUD (main UI)
   gameHUD = new GameHUD(lapController);
+  
+  // Add developer class switching (keys 1, 2, 3)
+  if (import.meta.env.DEV) {
+    console.log('🎮 Ability System initialized:');
+    console.log('  ⚡ Press E to use ability');
+    console.log('  🔥 Press 1 for Blast class');
+    console.log('  🪝 Press 2 for Grapple class');
+    console.log('  ✨ Press 3 for Blink class');
+    console.log('  🚀 Press L to toggle Rocket Jump / Legacy Blast');
+    
+    window.addEventListener('keydown', (event) => {
+      if (event.code === 'Digit1') {
+        setPlayerClass('blast');
+        console.log('🔥 Switched to Blast class');
+      } else if (event.code === 'Digit2') {
+        setPlayerClass('grapple');
+        console.log('🪝 Switched to Grapple class');
+      } else if (event.code === 'Digit3') {
+        setPlayerClass('blink');
+        console.log('✨ Switched to Blink class');
+      }
+    });
+  }
   
   animate();
 });
@@ -136,8 +184,11 @@ function animate() {
     const velocity = physicsWorld.fpsController.getVelocity();
     const grounded = physicsWorld.fpsController.getIsGrounded();
     const sliding = physicsWorld.fpsController.getIsSliding();
+    const currentSpeed = physicsWorld.fpsController.getCurrentSpeed();
+    const isRocketJumping = physicsWorld.fpsController.getIsRocketJumping();
+    const rocketJumpSpeed = physicsWorld.fpsController.getRocketJumpSpeed();
     const position = physicsWorld.devTools.getCurrentPosition();
-    debugUI.update(velocity, grounded, sliding, position);
+    debugUI.update(velocity, grounded, sliding, position, currentSpeed, isRocketJumping, rocketJumpSpeed);
     
     // Update checkpoint system
     if (checkpointSystem) {

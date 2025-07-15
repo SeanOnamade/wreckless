@@ -6,6 +6,8 @@ export class DebugUI {
   private groundedElement: HTMLSpanElement;
   private slidingElement: HTMLSpanElement;
   private positionElement: HTMLSpanElement | null = null;
+  private currentSpeedElement: HTMLSpanElement;
+  private rocketJumpElement: HTMLSpanElement;
   private frameCount = 0;
   private lastFpsUpdate = performance.now();
   private currentFps = 0;
@@ -61,6 +63,16 @@ export class DebugUI {
     const slidingDiv = document.createElement('div');
     slidingDiv.innerHTML = 'Sliding: <span id="sliding">No</span>';
     this.slidingElement = slidingDiv.querySelector('#sliding')!;
+
+    // Create current speed display
+    const currentSpeedDiv = document.createElement('div');
+    currentSpeedDiv.innerHTML = 'Speed: <span id="current-speed">0.0</span> m/s';
+    this.currentSpeedElement = currentSpeedDiv.querySelector('#current-speed')!;
+
+    // Create rocket jump state display
+    const rocketJumpDiv = document.createElement('div');
+    rocketJumpDiv.innerHTML = 'Rocket Jump: <span id="rocket-jump">No</span>';
+    this.rocketJumpElement = rocketJumpDiv.querySelector('#rocket-jump')!;
     
     // Create position display for development
     let positionDiv: HTMLDivElement | null = null;
@@ -94,6 +106,8 @@ export class DebugUI {
     this.container.appendChild(vVelocityDiv);
     this.container.appendChild(groundedDiv);
     this.container.appendChild(slidingDiv);
+    this.container.appendChild(currentSpeedDiv);
+    this.container.appendChild(rocketJumpDiv);
     if (positionDiv) {
       this.container.appendChild(positionDiv);
     }
@@ -101,7 +115,15 @@ export class DebugUI {
     document.body.appendChild(this.container);
   }
   
-  update(velocity: { x: number; y: number; z: number }, grounded: boolean, sliding: boolean = false, position?: { x: number; y: number; z: number }) {
+  update(
+    velocity: { x: number; y: number; z: number }, 
+    grounded: boolean, 
+    sliding: boolean = false, 
+    position?: { x: number; y: number; z: number },
+    currentSpeed?: number,
+    isRocketJumping?: boolean,
+    rocketJumpSpeed?: number
+  ) {
     // Update FPS
     this.frameCount++;
     const now = performance.now();
@@ -138,6 +160,30 @@ export class DebugUI {
     // Update sliding state
     this.slidingElement.textContent = sliding ? 'Yes' : 'No';
     this.slidingElement.style.color = sliding ? '#0ff' : '#888'; // Cyan for sliding, gray for not
+
+    // Update current speed (controller's internal speed)
+    if (currentSpeed !== undefined) {
+      this.currentSpeedElement.textContent = currentSpeed.toFixed(1);
+      // Color code speed: normal (white), fast (yellow), very fast (orange)
+      if (currentSpeed > 25) {
+        this.currentSpeedElement.style.color = '#ff8800'; // Orange for very fast
+      } else if (currentSpeed > 15) {
+        this.currentSpeedElement.style.color = '#ffff00'; // Yellow for fast
+      } else {
+        this.currentSpeedElement.style.color = '#ffffff'; // White for normal
+      }
+    }
+
+    // Update rocket jump state
+    if (isRocketJumping !== undefined && rocketJumpSpeed !== undefined) {
+      if (isRocketJumping) {
+        this.rocketJumpElement.textContent = `Yes (${rocketJumpSpeed.toFixed(1)} m/s)`;
+        this.rocketJumpElement.style.color = '#ff4400'; // Orange-red for rocket jumping
+      } else {
+        this.rocketJumpElement.textContent = 'No';
+        this.rocketJumpElement.style.color = '#888'; // Gray when not rocket jumping
+      }
+    }
     
     // Update position if provided (development mode)
     if (position && this.positionElement) {

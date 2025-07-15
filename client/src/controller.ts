@@ -7,7 +7,6 @@ export class FirstPersonController {
   private camera: THREE.Camera;
   private playerBody: RAPIER.RigidBody;
   private controller: RAPIER.KinematicCharacterController;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private world: RAPIER.World; // Used for physics queries
   private checkpointSystem: CheckpointSystem | null = null;
   
@@ -19,9 +18,12 @@ export class FirstPersonController {
   private moveSpeed = 12.0; // 12 m/s base speed (increased from 8 m/s)
   private slideSpeed = 16.0; // 16 m/s slide speed (increased from 12 m/s)
   private jumpVelocity = 10.0; // Adjusted for corrected gravity system
+  private maxSpeed = 100.0; // Maximum speed for rocket jumping (was limiting to 12-16 m/s)
   private isGrounded = false;
   private canJump = true;
   private isSliding = false;
+  private isRocketJumping = false; // Track if we're in rocket jump state
+  private rocketJumpSpeed = 0; // Store the rocket jump speed
   
   // Mouse look
   private euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -48,9 +50,6 @@ export class FirstPersonController {
     this.playerBody = playerBody;
     this.controller = controller;
     this.world = world; // May be used for future physics queries
-    
-    // Suppress unused variable warning
-    void this.world;
     
     this.setupEventListeners();
   }
@@ -91,6 +90,81 @@ export class FirstPersonController {
     document.addEventListener('pointerlockchange', () => {
       this.isPointerLocked = document.pointerLockElement === document.body;
     });
+    
+    // Ability events
+    window.addEventListener('blastSelfImpulse', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      this.handleBlastImpulse(customEvent.detail);
+    });
+  }
+  
+  /**
+   * Handle blast impulse from blast ability - 3D Directional Rocket Jumping
+   */
+  private handleBlastImpulse(data: any): void {
+    const impulse = data.impulse;
+    const _explosionPos = data.explosionPosition;
+    const _distance = data.distance;
+    const isDirectional3D = data.isDirectional3D;
+    const isTF2Style = data.isTF2Style;
+    
+    if (!isDirectional3D) {
+      console.log(`🎯 CONTROLLER: Legacy blast impulse (non-3D) - ignoring`);
+      return;
+    }
+    
+    console.log(`🎯 CONTROLLER: Received ${isTF2Style ? 'TF2-style' : '3D'} rocket impulse: (${impulse.x.toFixed(1)}, ${impulse.y.toFixed(1)}, ${impulse.z.toFixed(1)})`);
+    console.log(`🎯 CONTROLLER: Player velocity BEFORE: (${this.velocity.x.toFixed(1)}, ${this.velocity.y.toFixed(1)}, ${this.velocity.z.toFixed(1)})`);
+    console.log(`🎯 CONTROLLER: Player grounded state: ${this.isGrounded}`);
+    
+    // Apply the 3D blast impulse to the player's velocity system
+    // The controller uses separate systems for Y (this.velocity.y) and horizontal (currentSpeed + direction)
+    
+    // 1. Apply Y-component to vertical velocity
+    this.velocity.y += impulse.y;
+    
+    // 2. Apply horizontal components to the movement system
+    const horizontalImpulse = new THREE.Vector3(impulse.x, 0, impulse.z);
+    const horizontalSpeed = horizontalImpulse.length();
+    
+    if (horizontalSpeed > 0.1) {
+      // Set the movement direction to the rocket jump direction
+      horizontalImpulse.normalize();
+      this.direction.copy(horizontalImpulse);
+      
+          // TF2-style: NO horizontal speed clamping for true rocket jumping freedom
+    if (isTF2Style) {
+      this.currentSpeed = horizontalSpeed; // Pure horizontal freedom
+      this.isRocketJumping = true; // Flag that we're rocket jumping
+      this.rocketJumpSpeed = horizontalSpeed; // Store the rocket jump speed
+      console.log(`🎯 CONTROLLER: Applied TF2 horizontal rocket velocity: speed=${this.currentSpeed.toFixed(1)} (unclamped), direction=(${this.direction.x.toFixed(2)}, ${this.direction.z.toFixed(2)})`);
+    } else {
+      // Legacy: Apply speed limit for backwards compatibility
+      this.currentSpeed = Math.min(horizontalSpeed, this.maxSpeed);
+      this.isRocketJumping = horizontalSpeed > this.moveSpeed; // Flag if above normal speed
+      this.rocketJumpSpeed = this.currentSpeed;
+      console.log(`🎯 CONTROLLER: Applied horizontal rocket velocity: speed=${this.currentSpeed.toFixed(1)}, direction=(${this.direction.x.toFixed(2)}, ${this.direction.z.toFixed(2)})`);
+    }
+    }
+    
+    // 3. Only apply total speed cap if NOT TF2-style (for horizontal freedom)
+    if (!isTF2Style) {
+      const totalSpeed = Math.sqrt(impulse.x * impulse.x + impulse.y * impulse.y + impulse.z * impulse.z);
+      if (totalSpeed > this.maxSpeed) {
+        const ratio = this.maxSpeed / totalSpeed;
+        this.velocity.y *= ratio;
+        this.currentSpeed *= ratio;
+        console.log(`🎯 CONTROLLER: Clamped total velocity from ${totalSpeed.toFixed(1)} to ${this.maxSpeed} m/s`);
+      }
+    }
+    
+    console.log(`🎯 CONTROLLER: Final velocity - Y: ${this.velocity.y.toFixed(1)}, Horizontal Speed: ${this.currentSpeed.toFixed(1)}`);
+    
+    // Force player to be considered not grounded to allow the launch
+    this.isGrounded = false;
+    
+    // Reset jump ability after rocket jump
+    this.canJump = true;
   }
   
   update(deltaTime: number) {
@@ -100,7 +174,9 @@ export class FirstPersonController {
     // Check for killzone conditions (multiple fallbacks for robustness)
     const shouldRespawn = this.checkKillzoneConditions(translation);
     if (shouldRespawn) {
-      console.log(`⚠️ Killzone triggered - Y: ${translation.y.toFixed(2)}, Time in void: ${this.timeInVoid.toFixed(1)}s`);
+      if (import.meta.env.DEV) {
+        console.log(`⚠️ Killzone triggered - Y: ${translation.y.toFixed(2)}, Time in void: ${this.timeInVoid.toFixed(1)}s`);
+      }
       this.reset();
       return; // Skip rest of update to avoid processing movement
     }
@@ -109,27 +185,74 @@ export class FirstPersonController {
     this.isSliding = this.keys['ShiftLeft'] || this.keys['ShiftRight'];
     
     // Calculate movement direction based on camera rotation
-    this.direction.set(0, 0, 0);
+    const inputDirection = new THREE.Vector3(0, 0, 0);
     
-    if (this.keys['KeyW']) this.direction.z -= 1;
-    if (this.keys['KeyS']) this.direction.z += 1;
-    if (this.keys['KeyA']) this.direction.x -= 1;
-    if (this.keys['KeyD']) this.direction.x += 1;
+    if (this.keys['KeyW']) inputDirection.z -= 1;
+    if (this.keys['KeyS']) inputDirection.z += 1;
+    if (this.keys['KeyA']) inputDirection.x -= 1;
+    if (this.keys['KeyD']) inputDirection.x += 1;
     
-    // Determine target speed based on slide state
-    const targetSpeed = this.isSliding ? this.slideSpeed : this.moveSpeed;
-    
-    // Normalize diagonal movement
-    const inputLength = this.direction.length();
-    if (inputLength > 0) {
-      this.direction.normalize();
-      // Accelerate - faster acceleration when sliding
-      const accel = this.isSliding ? this.acceleration * 1.5 : this.acceleration;
-      this.currentSpeed = Math.min(this.currentSpeed + accel * deltaTime, targetSpeed);
+    // Always update direction based on input (no momentum preservation)
+    const hasInput = inputDirection.length() > 0;
+    if (hasInput) {
+      this.direction.copy(inputDirection);
     } else {
-      // Decelerate - slower deceleration when sliding (momentum preservation)
-      const decel = this.isSliding ? this.deceleration * 0.5 : this.deceleration;
-      this.currentSpeed = Math.max(this.currentSpeed - decel * deltaTime, 0);
+      // No input - stop moving (normal behavior)
+      this.direction.set(0, 0, 0);
+    }
+    
+    // Determine target speed based on current state
+    const normalTargetSpeed = this.isSliding ? this.slideSpeed : this.moveSpeed;
+    
+    // Reset rocket jump state when grounded (return to normal speeds)
+    if (this.isGrounded && this.isRocketJumping) {
+      this.isRocketJumping = false;
+      this.rocketJumpSpeed = 0;
+      console.log(`🎯 VELOCITY: Rocket jump ended - back to normal speeds (grounded)`);
+    }
+    
+    // Determine target speed: preserve rocket jump speed while airborne
+    let targetSpeed;
+    if (this.isRocketJumping && !this.isGrounded) {
+      // Airborne rocket jumping - preserve high speed
+      targetSpeed = Math.min(this.rocketJumpSpeed, this.maxSpeed);
+      console.log(`🎯 VELOCITY: Airborne rocket jump - target speed: ${targetSpeed.toFixed(1)} m/s`);
+    } else {
+      // Normal ground movement
+      targetSpeed = normalTargetSpeed;
+    }
+    
+    // Handle speed and direction changes
+    if (hasInput) {
+      // Player is giving input - normalize direction and handle acceleration
+      this.direction.normalize();
+      const accel = this.isSliding ? this.acceleration * 1.5 : this.acceleration;
+      
+      if (this.isRocketJumping && !this.isGrounded) {
+        // Rocket jumping: allow slight speed changes but don't clamp to normal speeds
+        const speedChange = accel * deltaTime;
+        this.currentSpeed = Math.min(this.currentSpeed + speedChange, this.maxSpeed);
+      } else {
+        // Normal movement: accelerate to target speed
+        this.currentSpeed = Math.min(this.currentSpeed + accel * deltaTime, targetSpeed);
+      }
+    } else {
+      // No input - decelerate appropriately
+      const baseDecel = this.isSliding ? this.deceleration * 0.5 : this.deceleration;
+      
+      if (this.isRocketJumping && !this.isGrounded) {
+        // Rocket jumping with no input: very slow deceleration in air
+        const airDecel = baseDecel * 0.1; // 10% deceleration rate in air
+        this.currentSpeed = Math.max(this.currentSpeed - airDecel * deltaTime, 0);
+      } else {
+        // Normal deceleration
+        this.currentSpeed = Math.max(this.currentSpeed - baseDecel * deltaTime, 0);
+      }
+    }
+    
+    // Debug velocity state
+    if (this.currentSpeed > 15.0 || this.isRocketJumping) {
+      console.log(`🎯 VELOCITY DEBUG: speed=${this.currentSpeed.toFixed(1)}, target=${targetSpeed.toFixed(1)}, grounded=${this.isGrounded}, rocketJump=${this.isRocketJumping}, input=${hasInput}`);
     }
     
     // Apply camera rotation to movement direction
@@ -138,6 +261,11 @@ export class FirstPersonController {
     
     // Calculate desired movement with smooth speed
     this.moveVector.copy(this.direction).multiplyScalar(this.currentSpeed * deltaTime);
+    
+    // Debug: Log movement state for rocket jumping (disabled to reduce console spam)
+    // if (this.currentSpeed > 20.0) { // Only log when moving fast (likely rocket jump)
+    //   console.log(`🎯 MOVEMENT: speed=${this.currentSpeed.toFixed(1)}, direction=(${this.direction.x.toFixed(2)}, 0, ${this.direction.z.toFixed(2)}), hasInput=${hasInput}`);
+    // }
     
     // Check grounded state BEFORE applying gravity/movement
     // First, do a small downward test to see if we're grounded
@@ -200,7 +328,7 @@ export class FirstPersonController {
     const movement = this.controller.computedMovement();
     
     // Debug: log every few frames (only when debug mode is enabled)
-    if (Math.random() < 0.001) { // Very reduced frequency for sensor debug
+    if (import.meta.env.DEV && Math.random() < 0.001) { // Very reduced frequency for sensor debug
       console.log('Movement computed - Grounded:', this.isGrounded, 'Y-Vel:', this.velocity.y.toFixed(2), 'Y-Move:', movement.y.toFixed(4), 'Sensors excluded from collision');
     }
     
@@ -266,7 +394,7 @@ export class FirstPersonController {
     }
     
     // Debug logging (very occasional)
-    if (this.timeInVoid > 0.5 && Math.random() < 0.02) {
+    if (import.meta.env.DEV && this.timeInVoid > 0.5 && Math.random() < 0.02) {
       console.log(`🕳️ Void tracking - Y: ${translation.y.toFixed(2)}, Time: ${this.timeInVoid.toFixed(1)}s, Grounded: ${this.isGrounded}`);
     }
   }
@@ -293,6 +421,18 @@ export class FirstPersonController {
   getIsSliding(): boolean {
     return this.isSliding;
   }
+
+  getCurrentSpeed(): number {
+    return this.currentSpeed;
+  }
+
+  getIsRocketJumping(): boolean {
+    return this.isRocketJumping;
+  }
+
+  getRocketJumpSpeed(): number {
+    return this.rocketJumpSpeed;
+  }
   
   // Debug method
   getDebugInfo() {
@@ -303,7 +443,9 @@ export class FirstPersonController {
       isGrounded: this.isGrounded,
       canJump: this.canJump,
       isSliding: this.isSliding,
-      currentSpeed: this.currentSpeed
+      currentSpeed: this.currentSpeed,
+      isRocketJumping: this.isRocketJumping,
+      rocketJumpSpeed: this.rocketJumpSpeed
     };
   }
   
@@ -314,30 +456,34 @@ export class FirstPersonController {
     this.checkpointSystem = checkpointSystem;
   }
   
-  reset() {
+    reset() {
     // Reset position to last checkpoint or spawn point
     const respawnPosition = this.checkpointSystem 
       ? this.checkpointSystem.getLastCheckpointPosition()
       : SPAWN_POS;
-    
+
     this.playerBody.setTranslation({ x: respawnPosition.x, y: respawnPosition.y, z: respawnPosition.z }, true);
-    
+
     // Reset all velocities
     this.playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.playerBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.velocity.set(0, 0, 0);
     this.currentSpeed = 0;
-    
+
     // Reset rotation
     this.pitch = 0;
     this.yaw = 0;
-    
+
     // Reset movement state
     this.isGrounded = false;
     this.canJump = true;
     this.isSliding = false;
-    
+    this.isRocketJumping = false;
+    this.rocketJumpSpeed = 0;
+
     // Reset killzone tracking
     this.timeInVoid = 0;
+    
+    console.log(`🎯 VELOCITY: Player reset - all speeds cleared`);
   }
 } 

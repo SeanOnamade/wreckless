@@ -93,7 +93,9 @@ export class CheckpointSystem {
     this.checkpoints.set(id, checkpointData);
     this.checkpointByHandle.set(collider.handle, checkpointData);
     
-    console.log(`✓ Checkpoint ${id} created at position:`, position, `(sensor: ${collider.isSensor()})`);
+    if (import.meta.env.DEV) {
+      console.log(`✓ Checkpoint ${id} created at position:`, position, `(sensor: ${collider.isSensor()})`);
+    }
     
     // Debug: Verify sensor configuration
     if (!collider.isSensor()) {

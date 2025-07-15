@@ -214,7 +214,7 @@ export function createColliderFromMesh(mesh: THREE.Mesh, world: RAPIER.World): R
   mesh.getWorldQuaternion(worldQuaternion);
   
   // Debug logging for position verification (uncomment if needed)
-  // console.log(`Creating collider for ${mesh.name}: pos(${worldPosition.x.toFixed(2)}, ${worldPosition.y.toFixed(2)}, ${worldPosition.z.toFixed(2)}), size(${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)})`);
+  
   
   // Create rigid body descriptor (static/fixed)
   const rigidBodyDesc = RAPIER.RigidBodyDesc.fixed()
