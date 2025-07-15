@@ -2,6 +2,8 @@ export class DebugUI {
   private container: HTMLDivElement;
   private fpsElement: HTMLSpanElement;
   private velocityElement: HTMLSpanElement;
+  private vVelocityElement: HTMLSpanElement;
+  private groundedElement: HTMLSpanElement;
   private frameCount = 0;
   private lastFpsUpdate = performance.now();
   private currentFps = 0;
@@ -33,6 +35,16 @@ export class DebugUI {
     velocityDiv.innerHTML = 'Velocity: <span id="velocity">0.0</span> m/s';
     this.velocityElement = velocityDiv.querySelector('#velocity')!;
     
+    // Create vertical velocity display
+    const vVelocityDiv = document.createElement('div');
+    vVelocityDiv.innerHTML = 'V-Speed: <span id="vvelocity">0.0</span> m/s';
+    this.vVelocityElement = vVelocityDiv.querySelector('#vvelocity')!;
+    
+    // Create grounded state display
+    const groundedDiv = document.createElement('div');
+    groundedDiv.innerHTML = 'Grounded: <span id="grounded">No</span>';
+    this.groundedElement = groundedDiv.querySelector('#grounded')!;
+    
     // Create controls info
     const controlsDiv = document.createElement('div');
     controlsDiv.style.marginTop = '10px';
@@ -49,11 +61,13 @@ export class DebugUI {
     // Append elements
     this.container.appendChild(fpsDiv);
     this.container.appendChild(velocityDiv);
+    this.container.appendChild(vVelocityDiv);
+    this.container.appendChild(groundedDiv);
     this.container.appendChild(controlsDiv);
     document.body.appendChild(this.container);
   }
   
-  update(velocity: { x: number; y: number; z: number }) {
+  update(velocity: { x: number; y: number; z: number }, grounded: boolean) {
     // Update FPS
     this.frameCount++;
     const now = performance.now();
@@ -66,9 +80,26 @@ export class DebugUI {
       this.lastFpsUpdate = now;
     }
     
-    // Update velocity (horizontal speed only for display)
+    // Update velocity
     const horizontalSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
     this.velocityElement.textContent = horizontalSpeed.toFixed(1);
+    
+    // Update vertical velocity (show + for up, - for down)
+    const verticalSpeed = velocity.y;
+    this.vVelocityElement.textContent = verticalSpeed.toFixed(1);
+    
+    // Color code vertical velocity
+    if (verticalSpeed > 0.1) {
+      this.vVelocityElement.style.color = '#0f0'; // Green for up
+    } else if (verticalSpeed < -0.1) {
+      this.vVelocityElement.style.color = '#f00'; // Red for down
+    } else {
+      this.vVelocityElement.style.color = '#fff'; // White for neutral
+    }
+    
+    // Update grounded state
+    this.groundedElement.textContent = grounded ? 'Yes' : 'No';
+    this.groundedElement.style.color = grounded ? '#0f0' : '#f00';
   }
   
   destroy() {

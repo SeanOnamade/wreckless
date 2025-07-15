@@ -10,7 +10,7 @@ export class FirstPersonController {
   // Movement state
   private keys: { [key: string]: boolean } = {};
   private moveSpeed = 8.0; // 8 m/s base speed as per PRD
-  private jumpVelocity = 5.0; // Reduced from 8.0 for more controlled jumps
+  private jumpVelocity = 7.5; // Adjusted for new gravity system
   private isGrounded = false;
   private canJump = true;
   
@@ -135,27 +135,36 @@ export class FirstPersonController {
       this.canJump = true;
     }
     
-    // Apply gravity
-    if (!this.isGrounded) {
-      this.velocity.y -= 50 * deltaTime; // Strong gravity to ensure falling
-      this.velocity.y = Math.max(this.velocity.y, -50); // Terminal velocity
-    } else {
-      // Only reset velocity if we're moving down and grounded
-      if (this.velocity.y < 0) {
-        this.velocity.y = 0;
-      }
+    // Apply gravity - always apply it, let the collision detection handle ground contact
+    this.velocity.y -= 35 * deltaTime; // Gravity force
+    this.velocity.y = Math.max(this.velocity.y, -20); // Terminal velocity
+    
+    // If we're on the ground and not jumping, cancel downward velocity
+    if (this.isGrounded && this.velocity.y < 0) {
+      this.velocity.y = 0;
     }
     
     // Add vertical velocity to movement
     this.moveVector.y = this.velocity.y * deltaTime;
     
-    // Compute collider movement
+    // Compute collider movement with gravity
     this.controller.computeColliderMovement(
       this.playerBody.collider(0)!,
-      this.moveVector
+      this.moveVector,
+      RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC
     );
     
     const movement = this.controller.computedMovement();
+    
+    // Check if we hit something below (grounded check from collision)
+    const grounded = this.controller.computedGrounded();
+    if (grounded) {
+      this.isGrounded = true;
+      if (this.velocity.y < 0) {
+        this.velocity.y = 0;
+      }
+    }
+    
     const newPos = {
       x: translation.x + movement.x,
       y: translation.y + movement.y,
@@ -182,6 +191,10 @@ export class FirstPersonController {
   
   getVelocity(): THREE.Vector3 {
     return this.velocity.clone();
+  }
+  
+  getIsGrounded(): boolean {
+    return this.isGrounded;
   }
   
   reset() {

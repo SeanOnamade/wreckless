@@ -85,7 +85,8 @@ function animate() {
   // Update UI
   if (physicsWorld) {
     const velocity = physicsWorld.fpsController.getVelocity();
-    debugUI.update(velocity);
+    const grounded = physicsWorld.fpsController.getIsGrounded();
+    debugUI.update(velocity, grounded);
   }
   
   renderer.render(scene, camera);
