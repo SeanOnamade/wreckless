@@ -1,14 +1,19 @@
+// TODO: switch between ProceduralTrack and ExternalTrack via URL param `?debugTrack=proc`
 import './style.css';
 import * as THREE from 'three';
 import initPhysics from './physics';
 import type { PhysicsWorld } from './physics';
 import { DebugUI } from './ui';
 import { GameMenu } from './menu';
+import { LapController } from './systems/LapController';
+import { CheckpointSystem } from './systems/CheckpointSystem';
+import { LapHUD } from './hud/Hud';
+import { GameHUD } from './hud/GameHUD';
 
 // Scene setup
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x99D8F5); // Light sky blue (lighter than #87CEEB)
-scene.fog = new THREE.Fog(0x99D8F5, 30, 120); // Adjusted fog distance and color
+scene.fog = new THREE.Fog(0x99D8F5, 50, 180); // Reduced fog intensity (increased distances)
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(
@@ -72,10 +77,42 @@ window.addEventListener('game-reset', () => {
   }
 });
 
-// Initialize physics
+// Initialize physics and checkpoint system
 let physicsWorld: PhysicsWorld | null = null;
+let lapController: LapController | null = null;
+let checkpointSystem: CheckpointSystem | null = null;
+let lapHUD: LapHUD | null = null;
+let gameHUD: GameHUD | null = null;
+
 initPhysics(scene, camera).then((world) => {
   physicsWorld = world;
+  
+  // Initialize lap controller with callbacks
+  lapController = new LapController(
+    (lapTime, totalLaps) => {
+      console.log(`🏁 Lap ${totalLaps} completed in ${(lapTime / 1000).toFixed(2)}s`);
+      lapHUD?.flashLapComplete(lapTime);
+      gameHUD?.onLapComplete(lapTime, totalLaps);
+    },
+    (checkpoint, isValid) => {
+      console.log(`${isValid ? '✓' : '✗'} Checkpoint ${checkpoint} ${isValid ? 'valid' : 'invalid'}`);
+      lapHUD?.flashCheckpoint(checkpoint, isValid);
+      gameHUD?.onCheckpointVisited(checkpoint, isValid);
+    }
+  );
+  
+  // Initialize checkpoint system
+  checkpointSystem = new CheckpointSystem(scene, world.world, lapController);
+  
+  // Set checkpoint system on the FPS controller for respawning
+  world.fpsController.setCheckpointSystem(checkpointSystem);
+  
+  // Initialize lap HUD (debug)
+  lapHUD = new LapHUD(lapController, debugUI.getContainer());
+  
+  // Initialize game HUD (main UI)
+  gameHUD = new GameHUD(lapController);
+  
   animate();
 });
 
@@ -94,12 +131,29 @@ function animate() {
     accumulator -= fixedTimeStep;
   }
   
-  // Update UI
+  // Update UI and checkpoint system
   if (physicsWorld) {
     const velocity = physicsWorld.fpsController.getVelocity();
     const grounded = physicsWorld.fpsController.getIsGrounded();
     const sliding = physicsWorld.fpsController.getIsSliding();
-    debugUI.update(velocity, grounded, sliding);
+    const position = physicsWorld.devTools.getCurrentPosition();
+    debugUI.update(velocity, grounded, sliding, position);
+    
+    // Update checkpoint system
+    if (checkpointSystem) {
+      const playerPosition = new THREE.Vector3(position.x, position.y, position.z);
+      checkpointSystem.update(playerPosition);
+    }
+    
+    // Update lap HUD (debug)
+    if (lapHUD) {
+      lapHUD.update();
+    }
+    
+    // Update game HUD (main UI)
+    if (gameHUD) {
+      gameHUD.update();
+    }
   }
   
   renderer.render(scene, camera);

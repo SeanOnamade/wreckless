@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { FirstPersonController } from './controller';
+import { loadExternalTrack, SPAWN_POS } from './track/ExternalTrack';
+import { DeveloperTools } from './dev/DeveloperTools';
 
 export interface PhysicsWorld {
   world: RAPIER.World;
   playerBody: RAPIER.RigidBody;
   playerController: RAPIER.KinematicCharacterController;
   fpsController: FirstPersonController;
+  devTools: DeveloperTools;
   step: (deltaTime: number) => void;
 }
 
@@ -81,15 +84,17 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   groundMesh.position.y = -0.1;
   scene.add(groundMesh);
   
+  // Create external track
+  await loadExternalTrack(scene, world);
+  
   // Create player capsule
   const capsuleRadius = 0.5;
   const capsuleHeight = 1.0; // Half height
   
   // Create kinematic rigid body for player
-  // Start at ground level + capsule size
-  const startY = 0.1 + capsuleHeight + capsuleRadius; // Just above ground
+  // Start at proper spawn position on track
   const playerBodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased()
-    .setTranslation(0, startY, 0);
+    .setTranslation(SPAWN_POS.x, SPAWN_POS.y, SPAWN_POS.z);
   const playerBody = world.createRigidBody(playerBodyDesc);
   
   // Create capsule collider
@@ -112,6 +117,9 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
     world
   );
   
+  // Create developer tools
+  const devTools = new DeveloperTools(playerBody);
+  
   // Update function
   const step = (deltaTime: number) => {
     world.step();
@@ -123,6 +131,7 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
     playerBody,
     playerController,
     fpsController,
+    devTools,
     step
   };
 } 

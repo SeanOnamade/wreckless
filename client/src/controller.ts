@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { SPAWN_POS } from './track/ExternalTrack';
+import { CheckpointSystem } from './systems/CheckpointSystem';
 
 export class FirstPersonController {
   private camera: THREE.Camera;
@@ -7,11 +9,15 @@ export class FirstPersonController {
   private controller: RAPIER.KinematicCharacterController;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private world: RAPIER.World; // Used for physics queries
+  private checkpointSystem: CheckpointSystem | null = null;
+  
+  // Killzone detection
+  private timeInVoid = 0;
   
   // Movement state
   private keys: { [key: string]: boolean } = {};
-  private moveSpeed = 8.0; // 8 m/s base speed as per PRD
-  private slideSpeed = 12.0; // 12 m/s slide speed (momentum preservation)
+  private moveSpeed = 12.0; // 12 m/s base speed (increased from 8 m/s)
+  private slideSpeed = 16.0; // 16 m/s slide speed (increased from 12 m/s)
   private jumpVelocity = 10.0; // Adjusted for corrected gravity system
   private isGrounded = false;
   private canJump = true;
@@ -91,6 +97,14 @@ export class FirstPersonController {
     // Get current position
     const translation = this.playerBody.translation();
     
+    // Check for killzone conditions (multiple fallbacks for robustness)
+    const shouldRespawn = this.checkKillzoneConditions(translation);
+    if (shouldRespawn) {
+      console.log(`⚠️ Killzone triggered - Y: ${translation.y.toFixed(2)}, Time in void: ${this.timeInVoid.toFixed(1)}s`);
+      this.reset();
+      return; // Skip rest of update to avoid processing movement
+    }
+    
     // Check slide state
     this.isSliding = this.keys['ShiftLeft'] || this.keys['ShiftRight'];
     
@@ -131,7 +145,7 @@ export class FirstPersonController {
     this.controller.computeColliderMovement(
       this.playerBody.collider(0)!,
       testMovement,
-      RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC
+      RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC | RAPIER.QueryFilterFlags.EXCLUDE_SENSORS
     );
     this.isGrounded = this.controller.computedGrounded();
     
@@ -141,7 +155,7 @@ export class FirstPersonController {
       this.controller.computeColliderMovement(
         this.playerBody.collider(0)!,
         groundTestMovement,
-        RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC
+        RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC | RAPIER.QueryFilterFlags.EXCLUDE_SENSORS
       );
       this.isGrounded = this.controller.computedGrounded();
     }
@@ -150,6 +164,9 @@ export class FirstPersonController {
     if (this.isGrounded && this.velocity.y < 0) {
       this.velocity.y = 0;
     }
+    
+    // Update killzone tracking
+    this.updateKillzoneTracking(deltaTime);
     
     // Apply gravity only when not grounded
     if (!this.isGrounded) {
@@ -173,18 +190,18 @@ export class FirstPersonController {
     // IMPORTANT: Add vertical velocity to movement
     this.moveVector.y = this.velocity.y * deltaTime;
     
-    // Compute collider movement with gravity
+    // Compute collider movement with gravity (excluding sensors for checkpoint pass-through)
     this.controller.computeColliderMovement(
       this.playerBody.collider(0)!,
       this.moveVector,
-      RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC
+      RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC | RAPIER.QueryFilterFlags.EXCLUDE_SENSORS
     );
     
     const movement = this.controller.computedMovement();
     
     // Debug: log every few frames (only when debug mode is enabled)
-    if (Math.random() < 0.01) { // Reduced frequency
-      console.log('Grounded:', this.isGrounded, 'Y-Vel:', this.velocity.y.toFixed(2), 'Y-Move:', movement.y.toFixed(4));
+    if (Math.random() < 0.001) { // Very reduced frequency for sensor debug
+      console.log('Movement computed - Grounded:', this.isGrounded, 'Y-Vel:', this.velocity.y.toFixed(2), 'Y-Move:', movement.y.toFixed(4), 'Sensors excluded from collision');
     }
     
     const newPos = {
@@ -203,6 +220,55 @@ export class FirstPersonController {
     this.camera.position.set(newPos.x, newPos.y + cameraHeight, newPos.z);
     this.euler.set(this.pitch, this.yaw, 0, 'YXZ');
     this.camera.quaternion.setFromEuler(this.euler);
+  }
+  
+  /**
+   * Check multiple killzone conditions for robust detection
+   */
+  private checkKillzoneConditions(translation: RAPIER.Vector3): boolean {
+    // Condition 1: Immediate respawn if fallen very far
+    if (translation.y < -5) {
+      return true;
+    }
+    
+    // Condition 2: FIXED - Direct void detection (below reasonable track level)
+    // If Y is below 1.5 and we've been there for more than 1 second, respawn
+    if (translation.y < 1.5 && this.timeInVoid > 1.0) {
+      return true;
+    }
+    
+    // Condition 3: Emergency respawn if very low regardless of time
+    if (translation.y < 0.8) {
+      return true;
+    }
+    
+    // Condition 4: Distance-based check (far from track center)
+    const distanceFromCenter = Math.sqrt(translation.x * translation.x + translation.z * translation.z);
+    if (distanceFromCenter > 200 && translation.y < 2.0) {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Update killzone tracking timers
+   */
+  private updateKillzoneTracking(deltaTime: number): void {
+    const translation = this.playerBody.translation();
+    
+    // FIXED: Accumulate void time if Y is suspiciously low, regardless of grounded state
+    // This handles cases where physics detects "grounded" in the void
+    if (translation.y < 1.8 || !this.isGrounded) {
+      this.timeInVoid += deltaTime;
+    } else {
+      this.timeInVoid = 0;
+    }
+    
+    // Debug logging (very occasional)
+    if (this.timeInVoid > 0.5 && Math.random() < 0.02) {
+      console.log(`🕳️ Void tracking - Y: ${translation.y.toFixed(2)}, Time: ${this.timeInVoid.toFixed(1)}s, Grounded: ${this.isGrounded}`);
+    }
   }
   
   getPosition(): THREE.Vector3 {
@@ -241,11 +307,24 @@ export class FirstPersonController {
     };
   }
   
+  /**
+   * Set the checkpoint system for respawning
+   */
+  setCheckpointSystem(checkpointSystem: CheckpointSystem): void {
+    this.checkpointSystem = checkpointSystem;
+  }
+  
   reset() {
-    // Reset position to spawn point
-    this.playerBody.setTranslation({ x: 0, y: 1.6, z: 0 }, true);
+    // Reset position to last checkpoint or spawn point
+    const respawnPosition = this.checkpointSystem 
+      ? this.checkpointSystem.getLastCheckpointPosition()
+      : SPAWN_POS;
     
-    // Reset velocity
+    this.playerBody.setTranslation({ x: respawnPosition.x, y: respawnPosition.y, z: respawnPosition.z }, true);
+    
+    // Reset all velocities
+    this.playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    this.playerBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.velocity.set(0, 0, 0);
     this.currentSpeed = 0;
     
@@ -257,5 +336,8 @@ export class FirstPersonController {
     this.isGrounded = false;
     this.canJump = true;
     this.isSliding = false;
+    
+    // Reset killzone tracking
+    this.timeInVoid = 0;
   }
 } 

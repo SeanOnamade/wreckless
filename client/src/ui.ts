@@ -5,11 +5,22 @@ export class DebugUI {
   private vVelocityElement: HTMLSpanElement;
   private groundedElement: HTMLSpanElement;
   private slidingElement: HTMLSpanElement;
+  private positionElement: HTMLSpanElement | null = null;
   private frameCount = 0;
   private lastFpsUpdate = performance.now();
   private currentFps = 0;
+  private isDevelopment: boolean;
+  
+  /**
+   * Get the container element for adding additional UI components
+   */
+  getContainer(): HTMLDivElement {
+    return this.container;
+  }
   
   constructor() {
+    this.isDevelopment = import.meta.env.DEV || window.location.hostname === 'localhost';
+    
     // Create container
     this.container = document.createElement('div');
     this.container.style.cssText = `
@@ -51,12 +62,28 @@ export class DebugUI {
     slidingDiv.innerHTML = 'Sliding: <span id="sliding">No</span>';
     this.slidingElement = slidingDiv.querySelector('#sliding')!;
     
+    // Create position display for development
+    let positionDiv: HTMLDivElement | null = null;
+    if (this.isDevelopment) {
+      positionDiv = document.createElement('div');
+      positionDiv.innerHTML = 'Position: <span id="position">(0.00, 0.00, 0.00)</span>';
+      positionDiv.style.marginTop = '5px';
+      positionDiv.style.fontSize = '12px';
+      positionDiv.style.fontFamily = 'Courier New, monospace';
+      this.positionElement = positionDiv.querySelector('#position')!;
+    }
+    
     // Create controls info
     const controlsDiv = document.createElement('div');
     controlsDiv.style.marginTop = '10px';
     controlsDiv.style.fontSize = '12px';
     controlsDiv.style.opacity = '0.8';
-    controlsDiv.innerHTML = `
+    controlsDiv.innerHTML = this.isDevelopment ? `
+      <div>ESC - Menu</div>
+      <div>R - Reset</div>
+      <div style="margin-top: 5px; color: #ff0;">P - Log Position</div>
+      <div style="color: #ff0;">C - Copy to Clipboard</div>
+    ` : `
       <div>ESC - Menu</div>
       <div>R - Reset</div>
     `;
@@ -67,11 +94,14 @@ export class DebugUI {
     this.container.appendChild(vVelocityDiv);
     this.container.appendChild(groundedDiv);
     this.container.appendChild(slidingDiv);
+    if (positionDiv) {
+      this.container.appendChild(positionDiv);
+    }
     this.container.appendChild(controlsDiv);
     document.body.appendChild(this.container);
   }
   
-  update(velocity: { x: number; y: number; z: number }, grounded: boolean, sliding: boolean = false) {
+  update(velocity: { x: number; y: number; z: number }, grounded: boolean, sliding: boolean = false, position?: { x: number; y: number; z: number }) {
     // Update FPS
     this.frameCount++;
     const now = performance.now();
@@ -108,6 +138,11 @@ export class DebugUI {
     // Update sliding state
     this.slidingElement.textContent = sliding ? 'Yes' : 'No';
     this.slidingElement.style.color = sliding ? '#0ff' : '#888'; // Cyan for sliding, gray for not
+    
+    // Update position if provided (development mode)
+    if (position && this.positionElement) {
+      this.positionElement.textContent = `(${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`;
+    }
   }
   
   destroy() {
