@@ -77,6 +77,28 @@ export class FirstPersonController {
       this.keys[e.code] = false;
     });
     
+    // Mouse button events for melee combat
+    document.addEventListener('mousedown', (e) => {
+      if (!this.isPointerLocked) return;
+      
+      if (e.button === 0) { // Left mouse button (LMB)
+        // Dispatch melee attack event
+        window.dispatchEvent(new CustomEvent('meleeAttack', {
+          detail: { timestamp: Date.now() }
+        }));
+      } else if (e.button === 2) { // Right mouse button (RMB)
+        // Future: blocking functionality
+        console.log('🛡️ RMB pressed (blocking not yet implemented)');
+      }
+    });
+    
+    // Prevent context menu on right click
+    document.addEventListener('contextmenu', (e) => {
+      if (this.isPointerLocked) {
+        e.preventDefault();
+      }
+    });
+    
     // Simple, responsive mouse events with safety bounds
     document.addEventListener('mousemove', (e) => {
       if (this.isPointerLocked) {

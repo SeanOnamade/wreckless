@@ -9,10 +9,23 @@ export class DebugUI {
   private currentSpeedElement: HTMLSpanElement;
   private rocketJumpElement: HTMLSpanElement;
   private blinkMomentumElement: HTMLSpanElement;
+  
+  // Combat UI elements
+  private combatContainer: HTMLDivElement | null = null;
+  private classElement: HTMLSpanElement | null = null;
+  private meleeCooldownElement: HTMLSpanElement | null = null;
+  private lastHitElement: HTMLSpanElement | null = null;
+  private targetHealthElement: HTMLSpanElement | null = null;
+  private combatLogElement: HTMLDivElement | null = null;
+  
   private frameCount = 0;
   private lastFpsUpdate = performance.now();
   private currentFps = 0;
   private isDevelopment: boolean;
+  
+  // Combat state tracking
+  private combatLog: string[] = [];
+  private maxLogEntries = 5;
   
   /**
    * Get the container element for adding additional UI components
@@ -91,6 +104,75 @@ export class DebugUI {
       this.positionElement = positionDiv.querySelector('#position')!;
     }
     
+    // Create combat info section (development mode)
+    if (this.isDevelopment) {
+      this.combatContainer = document.createElement('div');
+      this.combatContainer.style.cssText = `
+        margin-top: 15px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.3);
+        font-size: 13px;
+      `;
+      
+      // Combat header
+      const combatHeader = document.createElement('div');
+      combatHeader.style.cssText = `
+        color: #ff6666;
+        font-weight: bold;
+        margin-bottom: 5px;
+      `;
+      combatHeader.textContent = '⚔️ COMBAT';
+      
+      // Current class and damage
+      const classDiv = document.createElement('div');
+      classDiv.innerHTML = 'Class: <span id="combat-class">blast</span>';
+      this.classElement = classDiv.querySelector('#combat-class')!;
+      
+      // Melee cooldown
+      const cooldownDiv = document.createElement('div');
+      cooldownDiv.innerHTML = 'Melee: <span id="melee-cooldown">Ready</span>';
+      this.meleeCooldownElement = cooldownDiv.querySelector('#melee-cooldown')!;
+      
+      // Last hit info
+      const lastHitDiv = document.createElement('div');
+      lastHitDiv.innerHTML = 'Last Hit: <span id="last-hit">None</span>';
+      this.lastHitElement = lastHitDiv.querySelector('#last-hit')!;
+      
+      // Target health (will show closest dummy)
+      const targetHealthDiv = document.createElement('div');
+      targetHealthDiv.innerHTML = 'Target: <span id="target-health">No target</span>';
+      this.targetHealthElement = targetHealthDiv.querySelector('#target-health')!;
+      
+      // Combat log
+      const logHeader = document.createElement('div');
+      logHeader.style.cssText = `
+        margin-top: 8px;
+        margin-bottom: 3px;
+        color: #ffaa66;
+        font-size: 12px;
+      `;
+      logHeader.textContent = '📜 Combat Log:';
+      
+      this.combatLogElement = document.createElement('div');
+      this.combatLogElement.style.cssText = `
+        font-size: 11px;
+        max-height: 60px;
+        overflow-y: auto;
+        background: rgba(0, 0, 0, 0.3);
+        padding: 3px;
+        border-radius: 3px;
+      `;
+      
+      // Assemble combat section
+      this.combatContainer.appendChild(combatHeader);
+      this.combatContainer.appendChild(classDiv);
+      this.combatContainer.appendChild(cooldownDiv);
+      this.combatContainer.appendChild(lastHitDiv);
+      this.combatContainer.appendChild(targetHealthDiv);
+      this.combatContainer.appendChild(logHeader);
+      this.combatContainer.appendChild(this.combatLogElement);
+    }
+    
     // Create controls info
     const controlsDiv = document.createElement('div');
     controlsDiv.style.marginTop = '10px';
@@ -99,11 +181,13 @@ export class DebugUI {
     controlsDiv.innerHTML = this.isDevelopment ? `
       <div>ESC - Menu</div>
       <div>R - Reset</div>
+      <div>LMB - Melee Attack</div>
       <div style="margin-top: 5px; color: #ff0;">P - Log Position</div>
       <div style="color: #ff0;">C - Copy to Clipboard</div>
     ` : `
       <div>ESC - Menu</div>
       <div>R - Reset</div>
+      <div>LMB - Melee Attack</div>
     `;
     
     // Append elements
@@ -118,8 +202,14 @@ export class DebugUI {
     if (positionDiv) {
       this.container.appendChild(positionDiv);
     }
+    if (this.combatContainer) {
+      this.container.appendChild(this.combatContainer);
+    }
     this.container.appendChild(controlsDiv);
     document.body.appendChild(this.container);
+    
+    // Set up combat event listeners
+    this.setupCombatEventListeners();
   }
   
   update(
@@ -209,6 +299,168 @@ export class DebugUI {
     if (position && this.positionElement) {
       this.positionElement.textContent = `(${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`;
     }
+  }
+  
+  /**
+   * Set up event listeners for combat events
+   */
+  private setupCombatEventListeners(): void {
+    if (!this.isDevelopment) return;
+    
+    // Listen for class changes
+    window.addEventListener('playerClassChanged', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      this.updateClass(customEvent.detail.className);
+    });
+    
+    // Listen for melee hits
+    window.addEventListener('meleeHit', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { targetId, damage, className, isCrit, isBonus } = customEvent.detail;
+      this.updateLastHit(targetId, damage, className);
+      
+      // Generate special combat log messages
+      let logMessage = `Hit ${targetId} for ${damage} HP (${className})`;
+      if (isCrit) {
+        logMessage = `🪝 GRAPPLE CRIT! ${targetId} for ${damage} HP`;
+      } else if (isBonus) {
+        logMessage = `⚡ BONUS HIT! ${targetId} for ${damage} HP`;
+      }
+      
+      this.addCombatLog(logMessage);
+    });
+    
+    // Listen for ability activations to track blink timing
+    window.addEventListener('abilityActivated', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail.className === 'blink') {
+        this.addCombatLog('⚡ Blink activated (bonus damage ready)');
+      }
+    });
+    
+    // Listen for combat log messages (like grapple velocity logs)
+    window.addEventListener('combatLogMessage', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      this.addCombatLog(customEvent.detail.message);
+    });
+  }
+  
+  /**
+   * Update combat information in the UI
+   */
+  updateCombat(combatData: {
+    currentClass?: string;
+    meleeCooldown?: number;
+    canMelee?: boolean;
+    nearestTargetHealth?: { id: string; health: number; maxHealth: number };
+  }): void {
+    if (!this.isDevelopment) return;
+    
+    // Update class
+    if (combatData.currentClass && this.classElement) {
+      this.updateClass(combatData.currentClass);
+    }
+    
+    // Update melee cooldown
+    if (this.meleeCooldownElement) {
+      if (combatData.canMelee === false && combatData.meleeCooldown !== undefined) {
+        const remaining = Math.ceil(combatData.meleeCooldown / 100) / 10; // Convert to seconds
+        this.meleeCooldownElement.textContent = `${remaining.toFixed(1)}s`;
+        this.meleeCooldownElement.style.color = '#ff6666';
+      } else {
+        this.meleeCooldownElement.textContent = 'Ready';
+        this.meleeCooldownElement.style.color = '#66ff66';
+      }
+    }
+    
+    // Update nearest target health
+    if (this.targetHealthElement) {
+      if (combatData.nearestTargetHealth) {
+        const { id, health, maxHealth } = combatData.nearestTargetHealth;
+        const percentage = (health / maxHealth) * 100;
+        this.targetHealthElement.textContent = `${id} (${health}/${maxHealth} HP)`;
+        
+        // Color code based on health percentage
+        if (percentage > 75) {
+          this.targetHealthElement.style.color = '#66ff66'; // Green
+        } else if (percentage > 25) {
+          this.targetHealthElement.style.color = '#ffff66'; // Yellow
+        } else if (percentage > 0) {
+          this.targetHealthElement.style.color = '#ff6666'; // Red
+        } else {
+          this.targetHealthElement.style.color = '#888888'; // Gray (KO'd)
+        }
+      } else {
+        this.targetHealthElement.textContent = 'No target in range';
+        this.targetHealthElement.style.color = '#888888';
+      }
+    }
+  }
+  
+  /**
+   * Update the current class display
+   */
+  private updateClass(className: string): void {
+    if (!this.classElement) return;
+    
+    this.classElement.textContent = className;
+    
+    // Color code by class
+    switch (className) {
+      case 'blast':
+        this.classElement.style.color = '#ff6666'; // Red
+        break;
+      case 'grapple':
+        this.classElement.style.color = '#66ff66'; // Green
+        break;
+      case 'blink':
+        this.classElement.style.color = '#6666ff'; // Blue
+        break;
+      default:
+        this.classElement.style.color = '#ffffff'; // White
+    }
+  }
+  
+  /**
+   * Update the last hit information
+   */
+  private updateLastHit(targetId: string, damage: number, _className: string): void {
+    if (!this.lastHitElement) return;
+    
+    this.lastHitElement.textContent = `${targetId} (${damage} dmg)`;
+    this.lastHitElement.style.color = '#ffaa66'; // Orange
+    
+    // Flash effect
+    setTimeout(() => {
+      if (this.lastHitElement) {
+        this.lastHitElement.style.color = '#ffffff';
+      }
+    }, 1000);
+  }
+  
+  /**
+   * Add an entry to the combat log
+   */
+  private addCombatLog(message: string): void {
+    if (!this.combatLogElement) return;
+    
+    // Add timestamp
+    const timestamp = new Date().toLocaleTimeString().split(':').slice(1, 3).join(':'); // MM:SS
+    const logEntry = `${timestamp} ${message}`;
+    
+    // Add to log array
+    this.combatLog.unshift(logEntry);
+    if (this.combatLog.length > this.maxLogEntries) {
+      this.combatLog.pop();
+    }
+    
+    // Update UI
+    this.combatLogElement.innerHTML = this.combatLog
+      .map(entry => `<div style="margin-bottom: 1px;">${entry}</div>`)
+      .join('');
+    
+    // Scroll to top (newest entry)
+    this.combatLogElement.scrollTop = 0;
   }
   
   destroy() {

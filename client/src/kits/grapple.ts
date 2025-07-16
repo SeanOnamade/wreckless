@@ -370,6 +370,11 @@ function releaseSwing(reason: string, context: GrappleAbilityContext): void {
     if (heightDiff > swingState.ropeLength * 0.7 && horizontalSpeed > 5.0) {
       const arcBoost = Math.min(horizontalSpeed * 0.4, 15.0); // Convert some horizontal speed to upward
       releaseVelocity.y += arcBoost;
+      
+      // Dispatch swing bottom event for combat system
+      window.dispatchEvent(new CustomEvent('grappleSwingBottom', {
+        detail: { timestamp: Date.now(), horizontalSpeed }
+      }));
     }
   }
   
@@ -398,6 +403,11 @@ function releaseSwing(reason: string, context: GrappleAbilityContext): void {
   }
   
   console.log(`🪝 Swing released (${reason})`);
+  
+  // Dispatch grapple detach event for combat system
+  window.dispatchEvent(new CustomEvent('grappleDetached', {
+    detail: { reason, timestamp: Date.now() }
+  }));
 }
 
 /**

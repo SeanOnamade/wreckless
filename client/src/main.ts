@@ -12,6 +12,7 @@ import { GameHUD } from './hud/GameHUD';
 import { AbilityManager } from './kits/useAbility';
 import { setPlayerClass, getCurrentPlayerKit } from './kits/classKit';
 import { AbilityHUD } from './kits/AbilityHUD';
+import { MeleeCombat, TargetDummy } from './combat';
 
 // Archive confirmation
 console.info("🗄️ Legacy swing archived:", ["grappleLegacy_v2.ts"]);
@@ -315,6 +316,8 @@ let lapController: LapController | null = null;
 let checkpointSystem: CheckpointSystem | null = null;
 let lapHUD: LapHUD | null = null;
 let gameHUD: GameHUD | null = null;
+let meleeCombat: MeleeCombat | null = null;
+let targetDummies: TargetDummy[] = [];
 
 initPhysics(scene, camera).then((world) => {
   physicsWorld = world;
@@ -360,6 +363,41 @@ initPhysics(scene, camera).then((world) => {
   // Initialize game HUD (main UI)
   gameHUD = new GameHUD(lapController);
   
+  // Initialize melee combat system
+  meleeCombat = new MeleeCombat(world.world, camera, world.playerBody);
+  
+  // Initialize visual feedback system
+  setupVisualFeedback(camera, renderer);
+  
+  // Create test target dummies for combat testing
+  if (import.meta.env.DEV) {
+    // Create dummies around the spawn area for testing
+    const dummyPositions = [
+      new THREE.Vector3(5, 2, 5),   // Front-right
+      new THREE.Vector3(-5, 2, 5),  // Front-left
+      new THREE.Vector3(0, 2, 8),   // Front center
+      new THREE.Vector3(8, 2, 0),   // Right side
+      new THREE.Vector3(-8, 2, 0),  // Left side
+    ];
+    
+    dummyPositions.forEach((pos, index) => {
+      const dummy = new TargetDummy(scene, world.world, pos, `dummy_${index}`);
+      targetDummies.push(dummy);
+      meleeCombat!.addTarget(dummy);
+    });
+    
+    console.log(`🎯 Created ${targetDummies.length} target dummies for combat testing`);
+  }
+  
+  // Handle melee attack events from mouse input
+  window.addEventListener('meleeAttack', () => {
+    if (meleeCombat && physicsWorld) {
+      // Get the current velocity from the controller (same source as debug UI)
+      const currentVelocity = physicsWorld.fpsController.getVelocity();
+      meleeCombat.performMelee(currentVelocity);
+    }
+  });
+  
   // Add developer class switching (keys 1, 2, 3)
   if (import.meta.env.DEV) {
     console.log('🎮 Ability System initialized:');
@@ -368,6 +406,9 @@ initPhysics(scene, camera).then((world) => {
     console.log('  🪝 Press 2 for Grapple class');
     console.log('  ✨ Press 3 for Blink class');
     console.log('  🚀 Press L to toggle Rocket Jump / Legacy Blast');
+    console.log('🗡️ Melee Combat initialized:');
+    console.log('  🖱️ Left Click (LMB) to melee attack');
+    console.log('  🎯 Target dummies spawned for testing');
     
     window.addEventListener('keydown', (event) => {
       if (event.code === 'Digit1') {
@@ -392,6 +433,85 @@ initPhysics(scene, camera).then((world) => {
   animate();
 });
 
+// Visual feedback state
+let screenShakeIntensity = 0;
+let screenShakeDecay = 0.95;
+let hitFlashIntensity = 0;
+let hitFlashDecay = 0.9;
+
+/**
+ * Setup visual feedback system for special combat hits
+ */
+function setupVisualFeedback(_camera: THREE.Camera, _renderer: THREE.WebGLRenderer): void {
+  // Listen for special hit effects
+  window.addEventListener('specialHitEffect', (event: Event) => {
+    const customEvent = event as CustomEvent;
+    const { type } = customEvent.detail;
+    
+    if (type === 'crit') {
+      // Grapple crit: Strong shake + red flash
+      screenShakeIntensity = Math.max(screenShakeIntensity, 0.4);
+      hitFlashIntensity = Math.max(hitFlashIntensity, 0.6);
+      console.log('💥 GRAPPLE CRIT visual feedback triggered!');
+    } else if (type === 'bonus') {
+      // Blink bonus: Medium shake + blue flash
+      screenShakeIntensity = Math.max(screenShakeIntensity, 0.25);
+      hitFlashIntensity = Math.max(hitFlashIntensity, 0.4);
+      console.log('⚡ BLINK BONUS visual feedback triggered!');
+    }
+  });
+  
+  // Create hit flash overlay
+  const hitFlashOverlay = document.createElement('div');
+  hitFlashOverlay.id = 'hit-flash-overlay';
+  hitFlashOverlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 999;
+    opacity: 0;
+    background: radial-gradient(circle, rgba(255,100,100,0.3) 0%, rgba(255,255,255,0.1) 100%);
+    transition: opacity 0.1s ease-out;
+  `;
+  document.body.appendChild(hitFlashOverlay);
+}
+
+/**
+ * Apply visual feedback effects each frame
+ */
+function updateVisualFeedback(camera: THREE.Camera): void {
+  // Apply screen shake
+  if (screenShakeIntensity > 0.01) {
+    const shakeX = (Math.random() - 0.5) * screenShakeIntensity * 0.02;
+    const shakeY = (Math.random() - 0.5) * screenShakeIntensity * 0.02;
+    const shakeZ = (Math.random() - 0.5) * screenShakeIntensity * 0.01;
+    
+    // Apply shake to camera rotation
+    camera.rotation.x += shakeX;
+    camera.rotation.y += shakeY;
+    camera.rotation.z += shakeZ;
+    
+    screenShakeIntensity *= screenShakeDecay;
+  }
+  
+  // Apply hit flash
+  if (hitFlashIntensity > 0.01) {
+    const hitFlashOverlay = document.getElementById('hit-flash-overlay');
+    if (hitFlashOverlay) {
+      hitFlashOverlay.style.opacity = hitFlashIntensity.toString();
+    }
+    hitFlashIntensity *= hitFlashDecay;
+  } else {
+    const hitFlashOverlay = document.getElementById('hit-flash-overlay');
+    if (hitFlashOverlay) {
+      hitFlashOverlay.style.opacity = '0';
+    }
+  }
+}
+
 // Animation loop
 function animate() {
   requestAnimationFrame(animate);
@@ -414,6 +534,9 @@ function animate() {
     movementTrail.update(position, currentKit.className);
   }
   
+  // Update visual feedback effects
+  updateVisualFeedback(camera);
+  
   // Update UI and checkpoint system
   if (physicsWorld) {
     const velocity = physicsWorld.fpsController.getVelocity();
@@ -426,6 +549,32 @@ function animate() {
     const blinkMomentumSpeed = physicsWorld.fpsController.getBlinkMomentumSpeed();
     const position = physicsWorld.devTools.getCurrentPosition();
     debugUI.update(velocity, grounded, sliding, position, currentSpeed, isRocketJumping, rocketJumpSpeed, isBlinkMomentum, blinkMomentumSpeed);
+    
+    // Update combat UI and range indicators
+    if (meleeCombat) {
+      const currentKit = getCurrentPlayerKit();
+      const meleeState = meleeCombat.getMeleeState();
+      const playerPosition = new THREE.Vector3(position.x, position.y, position.z);
+      const nearestTarget = meleeCombat.getNearestTargetInfo(playerPosition);
+      
+      // Get current melee range based on class
+      let meleeRange = 3.6; // Base doubled range
+      if (currentKit.className === 'blast') {
+        meleeRange *= 1.25; // +25% for blast
+      }
+      
+      // Update range indicators on all dummies
+      targetDummies.forEach(dummy => {
+        dummy.updateRangeIndicator(playerPosition, meleeRange);
+      });
+      
+      debugUI.updateCombat({
+        currentClass: currentKit.className,
+        meleeCooldown: meleeState.cooldownRemaining,
+        canMelee: meleeState.canMelee,
+        nearestTargetHealth: nearestTarget
+      });
+    }
     
     // Update checkpoint system
     if (checkpointSystem) {
