@@ -84,7 +84,7 @@ let accumulator = 0;
  */
 function addSwingTestCeiling(scene: THREE.Scene, world?: RAPIER.World): void {
   const ceilingY = 35;
-  const ceilingSize = 400; // 400x400 units (doubled for more swing space)
+  const ceilingSize = 600; // 600x600 units (expanded for grapple accommodation)
   
   // Create ceiling geometry
   const ceilingGeometry = new THREE.PlaneGeometry(ceilingSize, ceilingSize);
@@ -422,8 +422,10 @@ function animate() {
     const currentSpeed = physicsWorld.fpsController.getCurrentSpeed();
     const isRocketJumping = physicsWorld.fpsController.getIsRocketJumping();
     const rocketJumpSpeed = physicsWorld.fpsController.getRocketJumpSpeed();
+    const isBlinkMomentum = physicsWorld.fpsController.getIsBlinkMomentum();
+    const blinkMomentumSpeed = physicsWorld.fpsController.getBlinkMomentumSpeed();
     const position = physicsWorld.devTools.getCurrentPosition();
-    debugUI.update(velocity, grounded, sliding, position, currentSpeed, isRocketJumping, rocketJumpSpeed);
+    debugUI.update(velocity, grounded, sliding, position, currentSpeed, isRocketJumping, rocketJumpSpeed, isBlinkMomentum, blinkMomentumSpeed);
     
     // Update checkpoint system
     if (checkpointSystem) {

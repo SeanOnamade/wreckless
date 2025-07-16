@@ -40,12 +40,13 @@ export function executeBlink(context: BlinkAbilityContext): void {
   camera.getWorldDirection(direction);
   
   // Blink parameters
-  const blinkDistance = 8.0; // 8 meters forward
+  const blinkDistance = 10.0; // 10 meters forward (increased from 8m for better traversal)
   const iFramesDuration = 100; // 0.1 seconds of invincibility
   const regenDisableDuration = 1000; // 1 second no regen
   const blinkWindowDuration = 500; // 0.5 second bonus damage window
   const verticalBoost = 3.0; // Upward boost when holding Space
   const safetyBuffer = 0.5; // Distance to stop before collision
+  const forwardImpulseStrength = 3.0; // Forward momentum after blink
   
   // Killzone boundaries (from controller logic)
   const CRITICAL_KILLZONE = 0.8; // Immediate respawn
@@ -104,6 +105,16 @@ export function executeBlink(context: BlinkAbilityContext): void {
     // Execute the blink
     playerBody.setTranslation(finalTargetPosition, true);
     
+    // Apply forward impulse for momentum preservation and feel
+    const forwardImpulse = direction.clone().multiplyScalar(forwardImpulseStrength);
+    window.dispatchEvent(new CustomEvent('blinkMomentumImpulse', {
+      detail: { 
+        impulse: forwardImpulse,
+        blinkDirection: direction,
+        distance: playerPosition.distanceTo(finalTargetPosition)
+      }
+    }));
+    
     // Activate i-frames and other effects
     const now = Date.now();
     blinkState.isInIFrames = true;
@@ -112,7 +123,7 @@ export function executeBlink(context: BlinkAbilityContext): void {
     blinkState.blinkWindowEndTime = now + blinkWindowDuration;
     
     const actualDistance = playerPosition.distanceTo(finalTargetPosition);
-    console.log(`⚡ BLINK executed to position: ${finalTargetPosition.x.toFixed(1)}, ${finalTargetPosition.y.toFixed(1)}, ${finalTargetPosition.z.toFixed(1)} (${actualDistance.toFixed(1)}m)`);
+    console.log(`⚡ BLINK executed to position: ${finalTargetPosition.x.toFixed(1)}, ${finalTargetPosition.y.toFixed(1)}, ${finalTargetPosition.z.toFixed(1)} (${actualDistance.toFixed(1)}m) with forward impulse`);
     
     // Visual feedback effect
     createBlinkEffect(playerPosition, finalTargetPosition);

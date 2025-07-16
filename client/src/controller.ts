@@ -26,6 +26,8 @@ export class FirstPersonController {
   private rocketJumpSpeed = 0; // Store the rocket jump speed
   private isSwinging = false; // Track if we're in swing state
   private swingMaxSpeed = 120.0; // Higher speed limit while swinging (increased)
+  private isBlinkMomentum = false; // Track if current speed boost is from blink
+  private blinkMomentumSpeed = 0; // Store the blink momentum speed
   
   // Mouse look
   private euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -109,6 +111,11 @@ export class FirstPersonController {
       const customEvent = event as CustomEvent;
       this.handleBlastImpulse(customEvent.detail);
     });
+    
+    window.addEventListener('blinkMomentumImpulse', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      this.handleBlinkMomentumImpulse(customEvent.detail);
+    });
   }
   
 
@@ -163,6 +170,47 @@ export class FirstPersonController {
       this.rocketJumpSpeed = horizontalSpeed;
     }
   }
+
+  /**
+   * Handle blink momentum impulse for smooth post-teleport movement
+   */
+  private handleBlinkMomentumImpulse(data: any): void {
+    const impulse = data.impulse; // THREE.Vector3 forward momentum
+    const _blinkDirection = data.blinkDirection;
+    const _distance = data.distance;
+    
+    // Apply forward momentum to make blink feel more fluid
+    // Use rocket jump system to prevent speed capping
+    
+    // Set movement direction to blink direction
+    const horizontalImpulse = new THREE.Vector3(impulse.x, 0, impulse.z);
+    const horizontalSpeed = horizontalImpulse.length();
+    
+    if (horizontalSpeed > 0.1) {
+      horizontalImpulse.normalize();
+      this.direction.copy(horizontalImpulse);
+      
+      // Apply moderate forward momentum (not as aggressive as rocket jump)
+      const blinkMomentumSpeed = Math.max(horizontalSpeed * 8.0, this.moveSpeed * 1.3); // 8x multiplier for forward feel
+      this.currentSpeed = Math.min(blinkMomentumSpeed, 35.0); // Cap at reasonable speed
+      
+      // CRITICAL: Set rocket jump state to prevent speed capping back to 18 m/s
+      this.isRocketJumping = true;
+      this.rocketJumpSpeed = this.currentSpeed;
+      this.isBlinkMomentum = true; // Track that this is blink momentum, not blast
+      this.blinkMomentumSpeed = this.currentSpeed;
+      
+      // Short momentum preservation
+      this.preservedMomentum.copy(this.direction.clone().multiplyScalar(this.currentSpeed * 0.016));
+      
+      console.log(`⚡ BLINK momentum applied: ${this.currentSpeed.toFixed(1)} m/s forward (rocket jump state SET)`);
+    }
+    
+    // Small upward component if any
+    if (impulse.y > 0.1) {
+      this.velocity.y += impulse.y * 2.0; // Moderate upward boost
+    }
+  }
   
   /**
    * Handle blast impulse from blast ability - 3D Directional Rocket Jumping
@@ -189,22 +237,43 @@ export class FirstPersonController {
     const horizontalImpulse = new THREE.Vector3(impulse.x, 0, impulse.z);
     const horizontalSpeed = horizontalImpulse.length();
     
-    if (horizontalSpeed > 0.1) {
-      // Set the movement direction to the rocket jump direction
-      horizontalImpulse.normalize();
-      this.direction.copy(horizontalImpulse);
-      
-          // TF2-style: NO horizontal speed clamping for true rocket jumping freedom
     if (isTF2Style) {
-      this.currentSpeed = horizontalSpeed; // Pure horizontal freedom
-      this.isRocketJumping = true; // Flag that we're rocket jumping
-      this.rocketJumpSpeed = horizontalSpeed; // Store the rocket jump speed
+      // TF2-style blasts: ALWAYS set rocket jump state for consistent powerful movement
+      this.isRocketJumping = true; // Always flag as rocket jumping for blasts
+      
+      const minPowerfulBlast = 25.0; // Threshold for what feels like a "powerful" blast
+      
+      if (horizontalSpeed >= minPowerfulBlast) {
+        // Truly powerful blast - use full blast direction and speed
+        horizontalImpulse.normalize();
+        this.direction.copy(horizontalImpulse);
+        this.currentSpeed = horizontalSpeed; // Pure horizontal freedom
+        this.rocketJumpSpeed = horizontalSpeed;
+        console.log(`🚀 BLAST: Powerful (${horizontalSpeed.toFixed(1)} m/s) - rocket jump state SET`);
+      } else {
+        // Weak/medium blast - boost to minimum powerful speed
+        const minBlastSpeed = Math.max(minPowerfulBlast, this.moveSpeed * 1.4); // Ensure 25+ m/s minimum
+        
+        if (horizontalSpeed > 1.0) {
+          // Has some direction - use blast direction but boost speed
+          horizontalImpulse.normalize();
+          this.direction.copy(horizontalImpulse);
+        }
+        // If horizontalSpeed <= 1.0, maintain current direction
+        
+        this.currentSpeed = minBlastSpeed; // Ensure blast always feels powerful
+        this.rocketJumpSpeed = minBlastSpeed;
+        console.log(`🚀 BLAST: Boosted weak (${horizontalSpeed.toFixed(1)} m/s → ${minBlastSpeed.toFixed(1)} m/s) - rocket jump state SET`);
+      }
     } else {
-      // Legacy: Apply speed limit for backwards compatibility
-      this.currentSpeed = Math.min(horizontalSpeed, this.maxSpeed);
-      this.isRocketJumping = horizontalSpeed > this.moveSpeed; // Flag if above normal speed
-      this.rocketJumpSpeed = this.currentSpeed;
-    }
+      // Legacy behavior for backwards compatibility
+      if (horizontalSpeed > 0.1) {
+        horizontalImpulse.normalize();
+        this.direction.copy(horizontalImpulse);
+        this.currentSpeed = Math.min(horizontalSpeed, this.maxSpeed);
+        this.isRocketJumping = horizontalSpeed > this.moveSpeed;
+        this.rocketJumpSpeed = this.currentSpeed;
+      }
     }
     
     // 3. Only apply total speed cap if NOT TF2-style (for horizontal freedom)
@@ -265,6 +334,8 @@ export class FirstPersonController {
     if (this.isGrounded && this.isRocketJumping) {
       this.isRocketJumping = false;
       this.rocketJumpSpeed = 0;
+      this.isBlinkMomentum = false; // Reset blink momentum state
+      this.blinkMomentumSpeed = 0;
       this.preservedMomentum.set(0, 0, 0); // Clear preserved momentum when landing
     }
     
@@ -521,6 +592,14 @@ export class FirstPersonController {
   getRocketJumpSpeed(): number {
     return this.rocketJumpSpeed;
   }
+
+  getIsBlinkMomentum(): boolean {
+    return this.isBlinkMomentum;
+  }
+
+  getBlinkMomentumSpeed(): number {
+    return this.blinkMomentumSpeed;
+  }
   
   // Debug method
   getDebugInfo() {
@@ -582,6 +661,8 @@ export class FirstPersonController {
     this.isSliding = false;
     this.isRocketJumping = false;
     this.rocketJumpSpeed = 0;
+    this.isBlinkMomentum = false;
+    this.blinkMomentumSpeed = 0;
     this.isSwinging = false; // CRITICAL: Reset swing state to prevent high-speed walking bug
 
     // Reset killzone tracking

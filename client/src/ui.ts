@@ -8,6 +8,7 @@ export class DebugUI {
   private positionElement: HTMLSpanElement | null = null;
   private currentSpeedElement: HTMLSpanElement;
   private rocketJumpElement: HTMLSpanElement;
+  private blinkMomentumElement: HTMLSpanElement;
   private frameCount = 0;
   private lastFpsUpdate = performance.now();
   private currentFps = 0;
@@ -73,6 +74,11 @@ export class DebugUI {
     const rocketJumpDiv = document.createElement('div');
     rocketJumpDiv.innerHTML = 'Rocket Jump: <span id="rocket-jump">No</span>';
     this.rocketJumpElement = rocketJumpDiv.querySelector('#rocket-jump')!;
+
+    // Create blink momentum state display
+    const blinkMomentumDiv = document.createElement('div');
+    blinkMomentumDiv.innerHTML = 'Blink Momentum: <span id="blink-momentum">No</span>';
+    this.blinkMomentumElement = blinkMomentumDiv.querySelector('#blink-momentum')!;
     
     // Create position display for development
     let positionDiv: HTMLDivElement | null = null;
@@ -108,6 +114,7 @@ export class DebugUI {
     this.container.appendChild(slidingDiv);
     this.container.appendChild(currentSpeedDiv);
     this.container.appendChild(rocketJumpDiv);
+    this.container.appendChild(blinkMomentumDiv);
     if (positionDiv) {
       this.container.appendChild(positionDiv);
     }
@@ -122,7 +129,9 @@ export class DebugUI {
     position?: { x: number; y: number; z: number },
     currentSpeed?: number,
     isRocketJumping?: boolean,
-    rocketJumpSpeed?: number
+    rocketJumpSpeed?: number,
+    isBlinkMomentum?: boolean,
+    blinkMomentumSpeed?: number
   ) {
     // Update FPS
     this.frameCount++;
@@ -182,6 +191,17 @@ export class DebugUI {
       } else {
         this.rocketJumpElement.textContent = 'No';
         this.rocketJumpElement.style.color = '#888'; // Gray when not rocket jumping
+      }
+    }
+
+    // Update blink momentum state
+    if (isBlinkMomentum !== undefined && blinkMomentumSpeed !== undefined) {
+      if (isBlinkMomentum) {
+        this.blinkMomentumElement.textContent = `Yes (${blinkMomentumSpeed.toFixed(1)} m/s)`;
+        this.blinkMomentumElement.style.color = '#00ffff'; // Cyan for blink momentum
+      } else {
+        this.blinkMomentumElement.textContent = 'No';
+        this.blinkMomentumElement.style.color = '#888'; // Gray when not in blink momentum
       }
     }
     
