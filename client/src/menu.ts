@@ -37,12 +37,13 @@ export class GameMenu {
     `;
     
     menuContent.innerHTML = `
-      <h2 style="margin: 0 0 20px 0; color: #FF0080;">Battle-Race FPS</h2>
-      <p style="margin: 0 0 20px 0; color: #00E6FF;">Day 0 Prototype</p>
+      <h2 style="margin: 0 0 20px 0; color: #FF0080;">Wreckless</h2>
+      <p style="margin: 0 0 20px 0; color: #00E6FF;">Can you break your own record time?</p>
       <div style="margin: 20px 0; line-height: 1.6;">
         <div><strong>Controls:</strong></div>
         <div>WASD - Move</div>
         <div>Space - Jump</div>
+        <div>E - Use Ability</div>
         <div>Shift - Slide</div>
         <div>Mouse - Look</div>
         <div>R - Reset Position</div>
