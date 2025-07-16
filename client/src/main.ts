@@ -15,6 +15,7 @@ import { AbilityHUD } from './kits/AbilityHUD';
 import { MeleeCombat, TargetDummy, type MeleeTarget } from './combat';
 import { DummyPlacementManager } from './combat/DummyPlacementManager';
 import { DummyLoader } from './data/DummyLoader';
+import { HitVolumeManager } from './systems/HitVolume';
 
 // Archive confirmation
 console.info("🗄️ Legacy swing archived:", ["grappleLegacy_v2.ts"]);
@@ -321,6 +322,7 @@ let gameHUD: GameHUD | null = null;
 let meleeCombat: MeleeCombat | null = null;
 let targetDummies: MeleeTarget[] = [];
 let dummyPlacementManager: DummyPlacementManager | null = null;
+let hitVolumeManager: HitVolumeManager | null = null;
 let dummyLoader: DummyLoader | null = null;
 
 initPhysics(scene, camera).then((world) => {
@@ -370,6 +372,10 @@ initPhysics(scene, camera).then((world) => {
   // Initialize melee combat system
   meleeCombat = new MeleeCombat(world.world, camera, world.playerBody);
   
+  // Initialize hit volume manager for pass-through dummy hits
+  hitVolumeManager = new HitVolumeManager(world.world, world.fpsController);
+  world.fpsController.setHitVolumeManager(hitVolumeManager);
+  
   // Initialize dummy placement manager for level design
   dummyPlacementManager = new DummyPlacementManager(scene, world.world, camera, meleeCombat);
   
@@ -384,6 +390,14 @@ initPhysics(scene, camera).then((world) => {
     dummyLoader.loadDummies().then((loadedDummies) => {
       console.log(`🏎️ Loaded ${loadedDummies.length} racing dummies with speed boost mechanics`);
       targetDummies = loadedDummies;
+      
+      // Register dummies with hit volume manager for pass-through detection
+      if (hitVolumeManager) {
+        loadedDummies.forEach(dummy => {
+          hitVolumeManager!.addTarget(dummy);
+        });
+        console.log(`🎯 Registered ${loadedDummies.length} dummies for pass-through hit detection`);
+      }
       
       // Pass loaded dummies to placement manager for editing
       if (dummyPlacementManager) {
@@ -419,6 +433,58 @@ initPhysics(scene, camera).then((world) => {
       // Get the current velocity from the controller (same source as debug UI)
       const currentVelocity = physicsWorld.fpsController.getVelocity();
       meleeCombat.performMelee(currentVelocity);
+    }
+  });
+  
+  // Handle pass-through hit events for blink teleportation
+  window.addEventListener('blinkTeleportSweep', (event: Event) => {
+    const customEvent = event as CustomEvent;
+    const { fromPosition, toPosition } = customEvent.detail;
+    
+    if (hitVolumeManager) {
+      const hitResults = hitVolumeManager.blinkTeleportSweep(fromPosition, toPosition);
+      if (hitResults.length > 0) {
+        hitVolumeManager.processHitResults(hitResults, 'blink');
+      }
+    }
+  });
+  
+  // Handle pass-through hit events for swing movement
+  window.addEventListener('swingMovementSweep', (event: Event) => {
+    const customEvent = event as CustomEvent;
+    const { currentPosition } = customEvent.detail;
+    
+    if (hitVolumeManager && physicsWorld) {
+      // We need the previous position for the sweep, get it from controller
+      const translation = physicsWorld.playerBody.translation();
+      const prevPos = new THREE.Vector3(translation.x, translation.y, translation.z);
+      
+      const hitResults = hitVolumeManager.swingMovementSweep(prevPos, currentPosition);
+      if (hitResults.length > 0) {
+        hitVolumeManager.processHitResults(hitResults, 'swing');
+      }
+    }
+  });
+  
+  // Handle newly placed dummies - register them with hit volume manager
+  window.addEventListener('dummyPlaced', (event: Event) => {
+    const customEvent = event as CustomEvent;
+    const { dummy } = customEvent.detail;
+    
+    if (hitVolumeManager && dummy) {
+      hitVolumeManager.addTarget(dummy);
+      console.log(`🎯 Registered newly placed dummy "${dummy.id}" for pass-through hit detection`);
+    }
+  });
+  
+  // Handle dummy removal - unregister from hit volume manager
+  window.addEventListener('dummyRemoved', (event: Event) => {
+    const customEvent = event as CustomEvent;
+    const { dummyId } = customEvent.detail;
+    
+    if (hitVolumeManager && dummyId) {
+      hitVolumeManager.removeTarget(dummyId);
+      console.log(`🎯 Unregistered dummy "${dummyId}" from pass-through hit detection`);
     }
   });
   

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { SPAWN_POS } from './track/ExternalTrack';
 import { CheckpointSystem } from './systems/CheckpointSystem';
+import type { HitVolumeManager } from './systems/HitVolume';
 
 export class FirstPersonController {
   private camera: THREE.Camera;
@@ -9,9 +10,14 @@ export class FirstPersonController {
   private controller: RAPIER.KinematicCharacterController;
   private world: RAPIER.World; // Used for physics queries
   private checkpointSystem: CheckpointSystem | null = null;
+  private hitVolumeManager: HitVolumeManager | null = null;
   
   // Killzone detection
   private timeInVoid = 0;
+  
+  // Position tracking for hit volumes
+  private previousPosition = new THREE.Vector3();
+  private currentPosition = new THREE.Vector3();
   
   // Movement state
   private keys: { [key: string]: boolean } = {};
@@ -78,6 +84,14 @@ export class FirstPersonController {
     });
     
     console.log('FirstPersonController initialized with pointer lock');
+  }
+  
+  /**
+   * Set the hit volume manager for pass-through dummy detection
+   */
+  setHitVolumeManager(manager: HitVolumeManager): void {
+    this.hitVolumeManager = manager;
+    console.log('🎯 HitVolume manager connected to controller');
   }
   
   private setupEventListeners() {
@@ -378,8 +392,10 @@ export class FirstPersonController {
   }
   
   update(deltaTime: number) {
-    // Get current position
+    // Store previous position for hit volume detection
     const translation = this.playerBody.translation();
+    this.previousPosition.copy(this.currentPosition);
+    this.currentPosition.set(translation.x, translation.y, translation.z);
     
     // Update speed boost state
     this.updateSpeedBoost();
@@ -572,6 +588,21 @@ export class FirstPersonController {
     
     // Update rigid body position
     this.playerBody.setTranslation(newPos, true);
+    
+    // Update current position for hit volume detection
+    this.currentPosition.set(newPos.x, newPos.y, newPos.z);
+    
+    // Perform hit volume detection for pass-through dummy hits
+    if (this.hitVolumeManager && this.previousPosition.length() > 0) {
+      const hitResults = this.hitVolumeManager.frameMovementSweep(
+        this.previousPosition, 
+        this.currentPosition
+      );
+      
+      if (hitResults.length > 0) {
+        this.hitVolumeManager.processHitResults(hitResults, 'movement');
+      }
+    }
     
     // Update camera position and rotation with safety checks
     const cameraHeight = this.isSliding ? 0.4 : 0.8; // Lower camera when sliding

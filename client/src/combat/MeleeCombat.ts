@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { PlayerClass } from '../kits/classKit';
 import { getCurrentPlayerKit } from '../kits/classKit';
+import { COMBAT_CONFIG as HIT_SYSTEM_CONFIG } from '../config';
 
 // Combat constants from PRD
 export const COMBAT_CONFIG = {
@@ -110,9 +111,23 @@ export class MeleeCombat {
 
   /**
    * Attempt to perform a melee attack
+   * ARCHIVED: This method is only used for PvP combat when pass-through dummies are enabled
    */
   performMelee(playerVelocity?: THREE.Vector3): boolean {
     const now = Date.now();
+    
+    // ARCHIVED LOGIC: Skip dummy targeting if pass-through is enabled
+    if (HIT_SYSTEM_CONFIG.USE_PASSTHROUGH_FOR_DUMMIES) {
+      // Only perform manual melee on player targets (future PvP)
+      const playerTargets = Array.from(this.testTargets.values()).filter(target => 
+        target.id.includes('player') // Future: proper player detection
+      );
+      
+      if (playerTargets.length === 0) {
+        console.log('🗡️ Manual melee skipped - no player targets (dummies use pass-through)');
+        return false;
+      }
+    }
     
     // Check cooldown
     if (!this.canMelee || (now - this.lastMeleeTime) < COMBAT_CONFIG.MELEE_COOLDOWN) {

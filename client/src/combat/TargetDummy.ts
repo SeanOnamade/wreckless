@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { MeleeTarget } from './MeleeCombat';
+import { COMBAT_CONFIG } from '../config';
 
 export class TargetDummy implements MeleeTarget {
   public id: string;
@@ -32,6 +33,7 @@ export class TargetDummy implements MeleeTarget {
     
     this.createVisualMesh();
     this.createPhysicsBody();
+    this.setupPassThroughEffects();
     
     console.log(`🎯 Target dummy "${id}" created at position:`, position);
   }
@@ -268,6 +270,105 @@ export class TargetDummy implements MeleeTarget {
       // Rotate the indicator
       this.rangeIndicator!.rotation.y = time;
     }
+  }
+
+  /**
+   * Setup event listeners for pass-through hit effects
+   */
+  private setupPassThroughEffects(): void {
+    // Listen for pass-through hit effects on this dummy
+    window.addEventListener('dummyHitEffect', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { targetId, hitPoint, movementType, flashDuration, textColor, textDuration } = customEvent.detail;
+      
+      if (targetId === this.id) {
+        this.flashWhite(flashDuration);
+        this.spawnFloatingText('+Speed', textColor, textDuration, hitPoint);
+      }
+    });
+  }
+
+  /**
+   * Flash white when hit by pass-through attack
+   */
+  flashWhite(duration: number = COMBAT_CONFIG.HIT_FLASH_DURATION): void {
+    const material = this.mesh.material as THREE.MeshStandardMaterial;
+    const originalColor = material.color.clone();
+    const originalEmissive = material.emissive.clone();
+    
+    // Flash white
+    material.color.setHex(0xffffff);
+    material.emissive.setHex(0x444444);
+    
+    // Reset after duration
+    window.setTimeout(() => {
+      material.color.copy(originalColor);
+      material.emissive.copy(originalEmissive);
+    }, duration * 1000);
+  }
+
+  /**
+   * Spawn floating "+Speed" text at hit location
+   */
+  spawnFloatingText(text: string, color: string, duration: number, position?: THREE.Vector3): void {
+    // Create canvas for text texture
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const context = canvas.getContext('2d')!;
+    
+    // Style text
+    context.font = 'bold 32px Arial';
+    context.fillStyle = color;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    
+    // Draw text
+    context.fillText(text, canvas.width / 2, canvas.height / 2);
+    
+    // Create texture and material
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ 
+      map: texture,
+      transparent: true,
+      alphaTest: 0.1
+    });
+    
+    // Create sprite
+    const sprite = new THREE.Sprite(material);
+    const textPosition = position || this.position.clone().add(new THREE.Vector3(0, 2, 0));
+    sprite.position.copy(textPosition);
+    sprite.scale.set(2, 0.5, 1);
+    
+    this.scene.add(sprite);
+    
+    // Animate sprite (float up and fade out)
+    const startY = sprite.position.y;
+    const startTime = Date.now();
+    
+    const animate = () => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      const progress = elapsed / duration;
+      
+      if (progress >= 1) {
+        // Animation complete - cleanup
+        this.scene.remove(sprite);
+        material.dispose();
+        texture.dispose();
+        return;
+      }
+      
+      // Float up
+      sprite.position.y = startY + progress * 3;
+      
+      // Fade out
+      material.opacity = 1 - progress;
+      
+      // Continue animation
+      requestAnimationFrame(animate);
+    };
+    
+    animate();
   }
 
   /**

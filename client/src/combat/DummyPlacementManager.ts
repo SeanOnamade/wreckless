@@ -145,6 +145,11 @@ export class DummyPlacementManager {
     // Add to melee combat system
     this.meleeCombat.addTarget(dummy);
     
+    // Notify hit volume system for pass-through detection
+    window.dispatchEvent(new CustomEvent('dummyPlaced', {
+      detail: { dummy }
+    }));
+    
     // Visual feedback
     this.showPlacementFeedback(position);
     
@@ -164,6 +169,11 @@ export class DummyPlacementManager {
     
     // Remove from melee combat system
     this.meleeCombat.removeTarget(lastDummy.id);
+    
+    // Notify hit volume system for removal
+    window.dispatchEvent(new CustomEvent('dummyRemoved', {
+      detail: { dummyId: lastDummy.id }
+    }));
     
     // Clean up the dummy
     lastDummy.dummy.destroy();
@@ -215,12 +225,23 @@ export class DummyPlacementManager {
         // Remove placed dummy
         this.placedDummies.splice(nearestIndex, 1);
         this.meleeCombat.removeTarget(nearestDummy.id);
+        
+        // Notify hit volume system for removal
+        window.dispatchEvent(new CustomEvent('dummyRemoved', {
+          detail: { dummyId: nearestDummy.id }
+        }));
+        
         nearestDummy.dummy.destroy();
         console.log(`🗑️ Removed placed dummy "${nearestDummy.id}" (${nearestDistance.toFixed(2)}m away)`);
       } else {
         // Remove loaded dummy
         this.loadedDummies.splice(nearestIndex, 1);
         this.meleeCombat.removeTarget(nearestDummy.id);
+        
+        // Notify hit volume system for removal
+        window.dispatchEvent(new CustomEvent('dummyRemoved', {
+          detail: { dummyId: nearestDummy.id }
+        }));
         
         // Clean up loaded dummy (if it has destroy method)
         if (nearestDummy.destroy) {

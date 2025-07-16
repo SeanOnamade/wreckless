@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { COMBAT_CONFIG } from '../config';
 
 export interface BlinkAbilityContext {
   playerBody: RAPIER.RigidBody;
@@ -102,6 +103,17 @@ export function executeBlink(context: BlinkAbilityContext): void {
   
   // Perform final collision check at target position
   if (blinkSuccess && checkBlinkTarget(world, finalTargetPosition)) {
+    // PASS-THROUGH HIT DETECTION: Perform capsule sweep along blink path
+    if (COMBAT_CONFIG.USE_PASSTHROUGH_FOR_DUMMIES) {
+      window.dispatchEvent(new CustomEvent('blinkTeleportSweep', {
+        detail: {
+          fromPosition: playerPosition.clone(),
+          toPosition: finalTargetPosition.clone(),
+          timestamp: Date.now()
+        }
+      }));
+    }
+    
     // Execute the blink
     playerBody.setTranslation(finalTargetPosition, true);
     

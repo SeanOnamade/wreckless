@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { SWING } from './swingConfig';
 import { getCurrentPlayerKit, getRemainingCooldown } from './classKit';
+import { COMBAT_CONFIG } from '../config';
 
 export interface GrappleAbilityContext {
   playerBody: RAPIER.RigidBody;
@@ -530,6 +531,19 @@ export function updateGrapple(context: GrappleAbilityContext, deltaTime: number 
     
     // Step 2: Apply pendulum constraint (sphere projection + velocity decomposition)
     applyPendulumConstraint(context);
+    
+    // Step 2.5: PASS-THROUGH HIT DETECTION during swing movement
+    if (COMBAT_CONFIG.USE_PASSTHROUGH_FOR_DUMMIES) {
+      const playerPos = context.playerBody.translation();
+      const currentPos = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
+      
+      window.dispatchEvent(new CustomEvent('swingMovementSweep', {
+        detail: {
+          currentPosition: currentPos.clone(),
+          timestamp: Date.now()
+        }
+      }));
+    }
     
     // Step 3: Update visuals
     updateRopeVisual(context);
