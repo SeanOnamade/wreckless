@@ -138,3 +138,15 @@ Spawn → Checkpoint A (Momentum Pad) → Checkpoint B (Combat Arena) → Chec
 - **KO** – reduce HP to 0, triggering respawn.
 - **CD** – cooldown.
 - **Slipstream** – conditional speed bonus based on distance.
+
+---
+
+*Last Updated: After velocity system implementation and damage scaling adjustments*
+
+---
+
+## Gameplay Mode Decision (MVP)
+
+We're currently using **PvE Dummy Targets** for the MVP. Players will race around the track and hit dummy targets placed on or near the course. Dummies will grant **speed boosts** or other bonuses (e.g. cooldown resets). This ensures the game remains satisfying and testable even without multiplayer.
+
+We are **pinning a future extension (Option 3)** to include PvP combat *alongside* the dummy system. In this version, dummies would remain as optional boost pickups, while players could also melee each other for points or disruption. We'll explore this hybrid mode if there's time after MVP polish.

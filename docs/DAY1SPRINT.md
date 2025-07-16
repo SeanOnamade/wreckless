@@ -48,3 +48,11 @@ client/
 2. We’ll review feel, flag any collision quirks, and slot Day 2 tasks (mobility abilities).
 
 You’re set—happy greyboxing! 🎮
+
+---
+
+## Gameplay Mode Decision (MVP)
+
+We're currently using **PvE Dummy Targets** for the MVP. Players will race around the track and hit dummy targets placed on or near the course. Dummies will grant **speed boosts** or other bonuses (e.g. cooldown resets). This ensures the game remains satisfying and testable even without multiplayer.
+
+We are **pinning a future extension (Option 3)** to include PvP combat *alongside* the dummy system. In this version, dummies would remain as optional boost pickups, while players could also melee each other for points or disruption. We'll explore this hybrid mode if there's time after MVP polish.

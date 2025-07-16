@@ -33,6 +33,7 @@ export interface MeleeTarget {
   rigidBody?: RAPIER.RigidBody;
   takeDamage?: (damage: number, direction: THREE.Vector3) => void;
   applyKnockback?: (force: number, direction: THREE.Vector3) => void;
+  updateRangeIndicator?: (playerPosition: THREE.Vector3, range: number) => void;
 }
 
 export class MeleeCombat {
@@ -163,7 +164,7 @@ export class MeleeCombat {
   private calculateAttackParameters(className: PlayerClass, playerVelocity?: THREE.Vector3) {
     let range = COMBAT_CONFIG.BASE_RANGE;
     let coneAngle: number = COMBAT_CONFIG.BASE_CONE_ANGLE;
-    let damage = COMBAT_CONFIG.DAMAGE[className];
+    let damage: number = COMBAT_CONFIG.DAMAGE[className];
     let is360Sweep = false;
     
     // Apply class-specific modifiers

@@ -10,6 +10,10 @@ export class DebugUI {
   private rocketJumpElement: HTMLSpanElement;
   private blinkMomentumElement: HTMLSpanElement;
   
+  // Speed boost UI elements
+  private speedBoostElement: HTMLSpanElement | null = null;
+  private speedBoostActive = false;
+  
   // Combat UI elements
   private combatContainer: HTMLDivElement | null = null;
   private classElement: HTMLSpanElement | null = null;
@@ -17,6 +21,12 @@ export class DebugUI {
   private lastHitElement: HTMLSpanElement | null = null;
   private targetHealthElement: HTMLSpanElement | null = null;
   private combatLogElement: HTMLDivElement | null = null;
+  
+  // Dummy editing UI elements
+  private dummyContainer: HTMLDivElement | null = null;
+  private editModeElement: HTMLSpanElement | null = null;
+  private previewModeElement: HTMLSpanElement | null = null;
+  private dummyCountElement: HTMLSpanElement | null = null;
   
   private frameCount = 0;
   private lastFpsUpdate = performance.now();
@@ -45,59 +55,65 @@ export class DebugUI {
       right: 10px;
       background: rgba(0, 0, 0, 0.7);
       color: white;
-      padding: 10px;
+      padding: 15px;
+      border-radius: 5px;
       font-family: monospace;
       font-size: 14px;
-      border-radius: 5px;
-      pointer-events: none;
+      min-width: 200px;
       z-index: 1000;
+      backdrop-filter: blur(5px);
     `;
     
-    // Create FPS display
+    // FPS
     const fpsDiv = document.createElement('div');
     fpsDiv.innerHTML = 'FPS: <span id="fps">0</span>';
     this.fpsElement = fpsDiv.querySelector('#fps')!;
     
-    // Create velocity display
+    // 2D Velocity
     const velocityDiv = document.createElement('div');
-    velocityDiv.innerHTML = 'Velocity: <span id="velocity">0.0</span> m/s';
+    velocityDiv.innerHTML = '2D Speed: <span id="velocity">0.0</span> m/s';
     this.velocityElement = velocityDiv.querySelector('#velocity')!;
     
-    // Create vertical velocity display
+    // Vertical velocity
     const vVelocityDiv = document.createElement('div');
-    vVelocityDiv.innerHTML = 'V-Speed: <span id="vvelocity">0.0</span> m/s';
-    this.vVelocityElement = vVelocityDiv.querySelector('#vvelocity')!;
+    vVelocityDiv.innerHTML = 'V Speed: <span id="v-velocity">0.0</span> m/s';
+    this.vVelocityElement = vVelocityDiv.querySelector('#v-velocity')!;
     
-    // Create grounded state display
+    // Grounded state
     const groundedDiv = document.createElement('div');
-    groundedDiv.innerHTML = 'Grounded: <span id="grounded">No</span>';
+    groundedDiv.innerHTML = 'Grounded: <span id="grounded">false</span>';
     this.groundedElement = groundedDiv.querySelector('#grounded')!;
     
-    // Create sliding state display
+    // Sliding state
     const slidingDiv = document.createElement('div');
-    slidingDiv.innerHTML = 'Sliding: <span id="sliding">No</span>';
+    slidingDiv.innerHTML = 'Sliding: <span id="sliding">false</span>';
     this.slidingElement = slidingDiv.querySelector('#sliding')!;
-
-    // Create current speed display
+    
+    // Current speed with effect indicators
     const currentSpeedDiv = document.createElement('div');
-    currentSpeedDiv.innerHTML = 'Speed: <span id="current-speed">0.0</span> m/s';
+    currentSpeedDiv.innerHTML = 'Current Speed: <span id="current-speed">0.0</span> m/s';
     this.currentSpeedElement = currentSpeedDiv.querySelector('#current-speed')!;
-
-    // Create rocket jump state display
+    
+    // Rocket jump state
     const rocketJumpDiv = document.createElement('div');
     rocketJumpDiv.innerHTML = 'Rocket Jump: <span id="rocket-jump">No</span>';
     this.rocketJumpElement = rocketJumpDiv.querySelector('#rocket-jump')!;
-
-    // Create blink momentum state display
+    
+    // Blink momentum state
     const blinkMomentumDiv = document.createElement('div');
     blinkMomentumDiv.innerHTML = 'Blink Momentum: <span id="blink-momentum">No</span>';
     this.blinkMomentumElement = blinkMomentumDiv.querySelector('#blink-momentum')!;
     
-    // Create position display for development
+    // Speed boost state
+    const speedBoostDiv = document.createElement('div');
+    speedBoostDiv.innerHTML = 'Speed Boost: <span id="speed-boost">No</span>';
+    this.speedBoostElement = speedBoostDiv.querySelector('#speed-boost')!;
+
+    // Position (dev mode only)
     let positionDiv: HTMLDivElement | null = null;
     if (this.isDevelopment) {
       positionDiv = document.createElement('div');
-      positionDiv.innerHTML = 'Position: <span id="position">(0.00, 0.00, 0.00)</span>';
+      positionDiv.innerHTML = 'Position: <span id="position">0, 0, 0</span>';
       positionDiv.style.marginTop = '5px';
       positionDiv.style.fontSize = '12px';
       positionDiv.style.fontFamily = 'Courier New, monospace';
@@ -159,11 +175,12 @@ export class DebugUI {
         max-height: 60px;
         overflow-y: auto;
         background: rgba(0, 0, 0, 0.3);
-        padding: 3px;
+        padding: 5px;
         border-radius: 3px;
+        margin-bottom: 5px;
       `;
       
-      // Assemble combat section
+      // Append combat elements
       this.combatContainer.appendChild(combatHeader);
       this.combatContainer.appendChild(classDiv);
       this.combatContainer.appendChild(cooldownDiv);
@@ -173,17 +190,74 @@ export class DebugUI {
       this.combatContainer.appendChild(this.combatLogElement);
     }
     
-    // Create controls info
+    // Create dummy editing section (development mode)
+    if (this.isDevelopment) {
+      this.dummyContainer = document.createElement('div');
+      this.dummyContainer.style.cssText = `
+        margin-top: 15px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.3);
+        font-size: 12px;
+      `;
+      
+      // Dummy editing header
+      const dummyHeader = document.createElement('div');
+      dummyHeader.style.cssText = `
+        color: #66ff66;
+        font-weight: bold;
+        margin-bottom: 8px;
+        font-size: 13px;
+      `;
+      dummyHeader.textContent = '🎯 LEVEL EDITOR';
+      
+      // Status indicators
+      const statusDiv = document.createElement('div');
+      statusDiv.style.cssText = `
+        margin-bottom: 8px;
+        font-size: 11px;
+      `;
+      
+      const editModeDiv = document.createElement('div');
+      editModeDiv.innerHTML = 'Edit Mode: <span id="edit-mode">OFF</span>';
+      this.editModeElement = editModeDiv.querySelector('#edit-mode')!;
+      
+      const previewModeDiv = document.createElement('div');
+      previewModeDiv.innerHTML = 'Preview: <span id="preview-mode">OFF</span>';
+      this.previewModeElement = previewModeDiv.querySelector('#preview-mode')!;
+      
+      const dummyCountDiv = document.createElement('div');
+      dummyCountDiv.innerHTML = 'Dummies: <span id="dummy-count">0 loaded + 0 placed</span>';
+      this.dummyCountElement = dummyCountDiv.querySelector('#dummy-count')!;
+      
+      statusDiv.appendChild(editModeDiv);
+      statusDiv.appendChild(previewModeDiv);
+      statusDiv.appendChild(dummyCountDiv);
+      
+      // Append dummy elements
+      this.dummyContainer.appendChild(dummyHeader);
+      this.dummyContainer.appendChild(statusDiv);
+    }
+    
+    // Controls
     const controlsDiv = document.createElement('div');
-    controlsDiv.style.marginTop = '10px';
-    controlsDiv.style.fontSize = '12px';
-    controlsDiv.style.opacity = '0.8';
+    controlsDiv.style.cssText = `
+      margin-top: 15px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.3);
+      font-size: 12px;
+      color: #ccc;
+    `;
+    
     controlsDiv.innerHTML = this.isDevelopment ? `
       <div>ESC - Menu</div>
       <div>R - Reset</div>
       <div>LMB - Melee Attack</div>
-      <div style="margin-top: 5px; color: #ff0;">P - Log Position</div>
-      <div style="color: #ff0;">C - Copy to Clipboard</div>
+      <div style="color: #0f0;">F - Place Dummy</div>
+      <div style="color: #0f0;">Shift+F - Remove Last</div>
+      <div style="color: #0f0;">Ctrl+Shift+F - Remove Near</div>
+      <div style="color: #0f0;">Ctrl+F - Export All</div>
+      <div style="color: #0f0;">Alt+F - Preview Mode</div>
+      <div style="color: #0f0;">Ctrl+Alt+F - Edit Mode</div>
     ` : `
       <div>ESC - Menu</div>
       <div>R - Reset</div>
@@ -199,17 +273,27 @@ export class DebugUI {
     this.container.appendChild(currentSpeedDiv);
     this.container.appendChild(rocketJumpDiv);
     this.container.appendChild(blinkMomentumDiv);
+    this.container.appendChild(speedBoostDiv);
     if (positionDiv) {
       this.container.appendChild(positionDiv);
     }
     if (this.combatContainer) {
       this.container.appendChild(this.combatContainer);
     }
+    if (this.dummyContainer) {
+      this.container.appendChild(this.dummyContainer);
+    }
     this.container.appendChild(controlsDiv);
     document.body.appendChild(this.container);
     
     // Set up combat event listeners
     this.setupCombatEventListeners();
+    
+    // Set up speed boost event listeners
+    this.setupSpeedBoostEventListeners();
+    
+    // Set up dummy editing event listeners
+    this.setupDummyEditingEventListeners();
   }
   
   update(
@@ -342,6 +426,67 @@ export class DebugUI {
     window.addEventListener('combatLogMessage', (event: Event) => {
       const customEvent = event as CustomEvent;
       this.addCombatLog(customEvent.detail.message);
+    });
+  }
+  
+  /**
+   * Set up event listeners for speed boost events
+   */
+  private setupSpeedBoostEventListeners(): void {
+    if (!this.isDevelopment) return;
+
+    // Listen for speed boost activation
+    window.addEventListener('speedBoostActive', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      this.speedBoostActive = true;
+      if (this.speedBoostElement) {
+        this.speedBoostElement.textContent = `Yes (${customEvent.detail.toSpeed} m/s)`;
+        this.speedBoostElement.style.color = '#0f0'; // Green for active
+      }
+    });
+
+    // Listen for speed boost deactivation
+    window.addEventListener('speedBoostEnded', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      this.speedBoostActive = false;
+      if (this.speedBoostElement) {
+        this.speedBoostElement.textContent = 'No';
+        this.speedBoostElement.style.color = '#888'; // Gray for inactive
+      }
+    });
+  }
+  
+  /**
+   * Set up event listeners for dummy editing updates
+   */
+  private setupDummyEditingEventListeners(): void {
+    if (!this.isDevelopment) return;
+
+    // Listen for edit mode changes
+    window.addEventListener('dummyEditModeChanged', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (this.editModeElement) {
+        this.editModeElement.textContent = customEvent.detail.enabled ? 'ON' : 'OFF';
+        this.editModeElement.style.color = customEvent.detail.enabled ? '#0f0' : '#888';
+      }
+    });
+
+    // Listen for preview mode changes
+    window.addEventListener('dummyPreviewModeChanged', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (this.previewModeElement) {
+        this.previewModeElement.textContent = customEvent.detail.enabled ? 'ON' : 'OFF';
+        this.previewModeElement.style.color = customEvent.detail.enabled ? '#ff0' : '#888';
+      }
+    });
+
+    // Listen for dummy count changes
+    window.addEventListener('dummyCountChanged', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (this.dummyCountElement) {
+        const { loaded, placed } = customEvent.detail;
+        this.dummyCountElement.textContent = `${loaded} loaded + ${placed} placed`;
+      }
     });
   }
   

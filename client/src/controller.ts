@@ -29,6 +29,12 @@ export class FirstPersonController {
   private isBlinkMomentum = false; // Track if current speed boost is from blink
   private blinkMomentumSpeed = 0; // Store the blink momentum speed
   
+  // Speed boost system
+  private baseMoveSpeed = 18.0; // Original move speed
+  private isSpeedBoosted = false;
+  private speedBoostEndTime = 0;
+  private currentMoveSpeed = 18.0;
+  
   // Mouse look
   private euler = new THREE.Euler(0, 0, 0, 'YXZ');
   private pitch = 0;
@@ -60,6 +66,18 @@ export class FirstPersonController {
     
     this.setupEventListeners();
     this.setupSwingStateListener();
+
+    // Listen for blast impulse events
+    window.addEventListener('blastImpulse', (event: Event) => {
+      this.handleBlastImpulse((event as CustomEvent).detail);
+    });
+    
+    // Listen for speed boost events from racing dummies
+    window.addEventListener('speedBoostGranted', (event: Event) => {
+      this.handleSpeedBoost((event as CustomEvent).detail);
+    });
+    
+    console.log('FirstPersonController initialized with pointer lock');
   }
   
   private setupEventListeners() {
@@ -315,9 +333,56 @@ export class FirstPersonController {
     this.canJump = true;
   }
   
+  /**
+   * Handle speed boost from racing dummies
+   */
+  private handleSpeedBoost(data: any): void {
+    const { fromVelocity, toVelocity, duration, damage, source } = data;
+    
+    // Apply speed boost
+    this.currentMoveSpeed = toVelocity;
+    this.moveSpeed = toVelocity; // Update actual moveSpeed used in movement calculations
+    this.isSpeedBoosted = true;
+    this.speedBoostEndTime = Date.now() + duration;
+    
+    console.log(`🏎️ SPEED BOOST ACTIVE! ${fromVelocity}→${toVelocity} m/s for ${(duration/1000).toFixed(1)}s (${damage} damage from ${source})`);
+    
+    // Visual feedback - dispatch event for UI
+    window.dispatchEvent(new CustomEvent('speedBoostActive', {
+      detail: { 
+        fromSpeed: fromVelocity, 
+        toSpeed: toVelocity, 
+        duration: duration,
+        damage: damage 
+      }
+    }));
+  }
+
+  /**
+   * Update speed boost state (call this in update loop)
+   */
+  private updateSpeedBoost(): void {
+    if (this.isSpeedBoosted && Date.now() >= this.speedBoostEndTime) {
+      // Speed boost expired
+      this.isSpeedBoosted = false;
+      this.currentMoveSpeed = this.baseMoveSpeed;
+      this.moveSpeed = this.baseMoveSpeed;
+      
+      console.log(`⏰ Speed boost expired - back to ${this.baseMoveSpeed} m/s`);
+      
+      // Dispatch speed boost end event
+      window.dispatchEvent(new CustomEvent('speedBoostEnded', {
+        detail: { normalSpeed: this.baseMoveSpeed }
+      }));
+    }
+  }
+  
   update(deltaTime: number) {
     // Get current position
     const translation = this.playerBody.translation();
+    
+    // Update speed boost state
+    this.updateSpeedBoost();
     
     // Check for killzone conditions (multiple fallbacks for robustness)
     const shouldRespawn = this.checkKillzoneConditions(translation);
@@ -692,5 +757,11 @@ export class FirstPersonController {
     
     // Reset preserved momentum
     this.preservedMomentum.set(0, 0, 0);
+    
+    // Reset speed boost state
+    this.isSpeedBoosted = false;
+    this.currentMoveSpeed = this.baseMoveSpeed;
+    this.moveSpeed = this.baseMoveSpeed;
+    this.speedBoostEndTime = 0;
   }
 } 

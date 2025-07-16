@@ -1,0 +1,390 @@
+{
+    "dummyPositions": [
+      {
+        "id": "placed_dummy_2",
+        "position": {
+          "x": 1.27,
+          "y": 6.46,
+          "z": -79.72
+        }
+      },
+      {
+        "id": "placed_dummy_4",
+        "position": {
+          "x": 39.64,
+          "y": 16.71,
+          "z": -182.86
+        }
+      },
+      {
+        "id": "placed_dummy_5",
+        "position": {
+          "x": 107.16,
+          "y": 10.16,
+          "z": -187.69
+        }
+      },
+      {
+        "id": "placed_dummy_6",
+        "position": {
+          "x": 148.05,
+          "y": 12.21,
+          "z": -223.11
+        }
+      },
+      {
+        "id": "placed_dummy_7",
+        "position": {
+          "x": 157.7,
+          "y": 10.52,
+          "z": -256.82
+        }
+      },
+      {
+        "id": "placed_dummy_8",
+        "position": {
+          "x": 109.89,
+          "y": 8.16,
+          "z": -294.28
+        }
+      },
+      {
+        "id": "placed_dummy_9",
+        "position": {
+          "x": 61.89,
+          "y": 3.02,
+          "z": -285.2
+        }
+      },
+      {
+        "id": "placed_dummy_10",
+        "position": {
+          "x": 61.9,
+          "y": 3.02,
+          "z": -288.18
+        }
+      },
+      {
+        "id": "placed_dummy_11",
+        "position": {
+          "x": 61.69,
+          "y": 3.02,
+          "z": -291.39
+        }
+      },
+      {
+        "id": "placed_dummy_12",
+        "position": {
+          "x": 33.36,
+          "y": 6.14,
+          "z": -292.59
+        }
+      },
+      {
+        "id": "placed_dummy_13",
+        "position": {
+          "x": 15.99,
+          "y": 6.72,
+          "z": -284.58
+        }
+      },
+      {
+        "id": "placed_dummy_14",
+        "position": {
+          "x": -27.37,
+          "y": 6.72,
+          "z": -308.37
+        }
+      },
+      {
+        "id": "placed_dummy_15",
+        "position": {
+          "x": -65.65,
+          "y": 6.32,
+          "z": -313.74
+        }
+      },
+      {
+        "id": "placed_dummy_16",
+        "position": {
+          "x": -109.46,
+          "y": 6.3,
+          "z": -297.54
+        }
+      },
+      {
+        "id": "placed_dummy_17",
+        "position": {
+          "x": -158.93,
+          "y": 5.75,
+          "z": -293.87
+        }
+      },
+      {
+        "id": "placed_dummy_18",
+        "position": {
+          "x": -199.99,
+          "y": 4.18,
+          "z": -252.41
+        }
+      },
+      {
+        "id": "placed_dummy_20",
+        "position": {
+          "x": -209.16,
+          "y": 8.91,
+          "z": -203.57
+        }
+      },
+      {
+        "id": "placed_dummy_25",
+        "position": {
+          "x": -180.27,
+          "y": 16.71,
+          "z": -145.7
+        }
+      },
+      {
+        "id": "placed_dummy_26",
+        "position": {
+          "x": -140.09,
+          "y": 5.2,
+          "z": -101.13
+        }
+      },
+      {
+        "id": "placed_dummy_27",
+        "position": {
+          "x": -89.19,
+          "y": 10.56,
+          "z": -123.39
+        }
+      },
+      {
+        "id": "placed_dummy_28",
+        "position": {
+          "x": 1.99,
+          "y": 17.11,
+          "z": -118.08
+        }
+      },
+      {
+        "id": "placed_dummy_29",
+        "position": {
+          "x": 1,
+          "y": 17.12,
+          "z": -100.32
+        }
+      },
+      {
+        "id": "placed_dummy_30",
+        "position": {
+          "x": 35.21,
+          "y": 14.3,
+          "z": -108.57
+        }
+      },
+      {
+        "id": "placed_dummy_31",
+        "position": {
+          "x": 100.87,
+          "y": 9.87,
+          "z": -112.03
+        }
+      },
+      {
+        "id": "placed_dummy_32",
+        "position": {
+          "x": 160.15,
+          "y": 11.98,
+          "z": -107.42
+        }
+      },
+      {
+        "id": "placed_dummy_33",
+        "position": {
+          "x": 245.11,
+          "y": 10.73,
+          "z": -109.93
+        }
+      },
+      {
+        "id": "placed_dummy_34",
+        "position": {
+          "x": 266.55,
+          "y": 3.73,
+          "z": -56.87
+        }
+      },
+      {
+        "id": "placed_dummy_35",
+        "position": {
+          "x": 260.23,
+          "y": 3.54,
+          "z": -57.16
+        }
+      },
+      {
+        "id": "placed_dummy_36",
+        "position": {
+          "x": 252.47,
+          "y": 3.2,
+          "z": -57.52
+        }
+      },
+      {
+        "id": "placed_dummy_37",
+        "position": {
+          "x": 174.53,
+          "y": 6.35,
+          "z": -11.45
+        }
+      },
+      {
+        "id": "placed_dummy_38",
+        "position": {
+          "x": 97.55,
+          "y": 3.76,
+          "z": 113.6
+        }
+      },
+      {
+        "id": "placed_dummy_39",
+        "position": {
+          "x": 62.59,
+          "y": 14.55,
+          "z": 96.89
+        }
+      },
+      {
+        "id": "placed_dummy_41",
+        "position": {
+          "x": 19.41,
+          "y": 31.22,
+          "z": -177.39
+        }
+      },
+      {
+        "id": "placed_dummy_45",
+        "position": {
+          "x": 147.38,
+          "y": 33.28,
+          "z": -237.94
+        }
+      },
+      {
+        "id": "placed_dummy_46",
+        "position": {
+          "x": 54.88,
+          "y": 34.19,
+          "z": -289.2
+        }
+      },
+      {
+        "id": "placed_dummy_47",
+        "position": {
+          "x": -73.53,
+          "y": 34.24,
+          "z": -285.67
+        }
+      },
+      {
+        "id": "placed_dummy_48",
+        "position": {
+          "x": -182.26,
+          "y": 11.43,
+          "z": -258.82
+        }
+      },
+      {
+        "id": "placed_dummy_49",
+        "position": {
+          "x": -196.64,
+          "y": 23.59,
+          "z": -166.92
+        }
+      },
+      {
+        "id": "placed_dummy_50",
+        "position": {
+          "x": 191.78,
+          "y": 24.04,
+          "z": -106.9
+        }
+      },
+      {
+        "id": "placed_dummy_51",
+        "position": {
+          "x": 238.24,
+          "y": 16.56,
+          "z": -20.27
+        }
+      },
+      {
+        "id": "placed_dummy_52",
+        "position": {
+          "x": 144.07,
+          "y": 34.25,
+          "z": 20.72
+        }
+      },
+      {
+        "id": "placed_dummy_53",
+        "position": {
+          "x": 53.84,
+          "y": 26.12,
+          "z": 106.61
+        }
+      },
+      {
+        "id": "placed_dummy_54",
+        "position": {
+          "x": -0.2,
+          "y": 21.17,
+          "z": -86.92
+        }
+      },
+      {
+        "id": "placed_dummy_55",
+        "position": {
+          "x": 143.5,
+          "y": 14.42,
+          "z": -197.55
+        }
+      },
+      {
+        "id": "placed_dummy_56",
+        "position": {
+          "x": 130.59,
+          "y": 21.14,
+          "z": -282.88
+        }
+      },
+      {
+        "id": "placed_dummy_57",
+        "position": {
+          "x": 73.25,
+          "y": 10.11,
+          "z": -111.5
+        }
+      },
+      {
+        "id": "placed_dummy_58",
+        "position": {
+          "x": 88.85,
+          "y": 11.24,
+          "z": 85.12
+        }
+      },
+      {
+        "id": "placed_dummy_59",
+        "position": {
+          "x": 22.35,
+          "y": 18.33,
+          "z": 116.61
+        }
+      }
+    ],
+    "totalDummies": 48,
+    "exportedAt": "2025-07-16T05:53:15.462Z"
+  }

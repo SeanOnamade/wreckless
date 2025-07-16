@@ -12,7 +12,9 @@ import { GameHUD } from './hud/GameHUD';
 import { AbilityManager } from './kits/useAbility';
 import { setPlayerClass, getCurrentPlayerKit } from './kits/classKit';
 import { AbilityHUD } from './kits/AbilityHUD';
-import { MeleeCombat, TargetDummy } from './combat';
+import { MeleeCombat, TargetDummy, type MeleeTarget } from './combat';
+import { DummyPlacementManager } from './combat/DummyPlacementManager';
+import { DummyLoader } from './data/DummyLoader';
 
 // Archive confirmation
 console.info("🗄️ Legacy swing archived:", ["grappleLegacy_v2.ts"]);
@@ -317,7 +319,9 @@ let checkpointSystem: CheckpointSystem | null = null;
 let lapHUD: LapHUD | null = null;
 let gameHUD: GameHUD | null = null;
 let meleeCombat: MeleeCombat | null = null;
-let targetDummies: TargetDummy[] = [];
+let targetDummies: MeleeTarget[] = [];
+let dummyPlacementManager: DummyPlacementManager | null = null;
+let dummyLoader: DummyLoader | null = null;
 
 initPhysics(scene, camera).then((world) => {
   physicsWorld = world;
@@ -366,28 +370,48 @@ initPhysics(scene, camera).then((world) => {
   // Initialize melee combat system
   meleeCombat = new MeleeCombat(world.world, camera, world.playerBody);
   
+  // Initialize dummy placement manager for level design
+  dummyPlacementManager = new DummyPlacementManager(scene, world.world, camera, meleeCombat);
+  
+  // Initialize dummy loader for loading saved dummies
+  dummyLoader = new DummyLoader(scene, world.world, meleeCombat);
+  
   // Initialize visual feedback system
   setupVisualFeedback(camera, renderer);
   
-  // Create test target dummies for combat testing
-  if (import.meta.env.DEV) {
-    // Create dummies around the spawn area for testing
-    const dummyPositions = [
-      new THREE.Vector3(5, 2, 5),   // Front-right
-      new THREE.Vector3(-5, 2, 5),  // Front-left
-      new THREE.Vector3(0, 2, 8),   // Front center
-      new THREE.Vector3(8, 2, 0),   // Right side
-      new THREE.Vector3(-8, 2, 0),  // Left side
-    ];
-    
-    dummyPositions.forEach((pos, index) => {
-      const dummy = new TargetDummy(scene, world.world, pos, `dummy_${index}`);
-      targetDummies.push(dummy);
-      meleeCombat!.addTarget(dummy);
+  // Load racing dummies from saved positions
+  if (dummyLoader && import.meta.env.DEV) {
+    dummyLoader.loadDummies().then((loadedDummies) => {
+      console.log(`🏎️ Loaded ${loadedDummies.length} racing dummies with speed boost mechanics`);
+      targetDummies = loadedDummies;
+      
+      // Pass loaded dummies to placement manager for editing
+      if (dummyPlacementManager) {
+        dummyPlacementManager.setLoadedDummies(loadedDummies);
+        console.log(`🔧 Edit mode ready! Use Ctrl+Alt+F to toggle editing of JSON dummies`);
+      }
     });
-    
-    console.log(`🎯 Created ${targetDummies.length} target dummies for combat testing`);
   }
+  
+  // Create test target dummies for combat testing (disabled - using racing dummies instead)
+  // if (import.meta.env.DEV) {
+  //   // Create dummies around the spawn area for testing
+  //   const dummyPositions = [
+  //     new THREE.Vector3(5, 2, 5),   // Front-right
+  //     new THREE.Vector3(-5, 2, 5),  // Front-left
+  //     new THREE.Vector3(0, 2, 8),   // Front center
+  //     new THREE.Vector3(8, 2, 0),   // Right side
+  //     new THREE.Vector3(-8, 2, 0),  // Left side
+  //   ];
+  //   
+  //   dummyPositions.forEach((pos, index) => {
+  //     const dummy = new TargetDummy(scene, world.world, pos, `dummy_${index}`);
+  //     targetDummies.push(dummy);
+  //     meleeCombat!.addTarget(dummy);
+  //   });
+  //   
+  //   console.log(`🎯 Created ${targetDummies.length} target dummies for combat testing`);
+  // }
   
   // Handle melee attack events from mouse input
   window.addEventListener('meleeAttack', () => {
@@ -409,6 +433,12 @@ initPhysics(scene, camera).then((world) => {
     console.log('🗡️ Melee Combat initialized:');
     console.log('  🖱️ Left Click (LMB) to melee attack');
     console.log('  🎯 Target dummies spawned for testing');
+    console.log('🎯 Dummy Placement System ready:');
+    console.log('  F - Place dummy at current position (supports midair!)');
+    console.log('  Shift+F - Remove last placed dummy');
+    console.log('  Ctrl+F - Export dummy positions');
+    console.log('  Ctrl+Shift+F - Remove nearest dummy');
+    console.log('  Alt+F - Toggle placement preview mode');
     
     window.addEventListener('keydown', (event) => {
       if (event.code === 'Digit1') {
@@ -565,8 +595,15 @@ function animate() {
       
       // Update range indicators on all dummies
       targetDummies.forEach(dummy => {
-        dummy.updateRangeIndicator(playerPosition, meleeRange);
+        dummy.updateRangeIndicator?.(playerPosition, meleeRange);
       });
+      
+      // Update placed dummies range indicators too
+      if (dummyPlacementManager) {
+        dummyPlacementManager.getPlacedDummies().forEach(dummy => {
+          dummy.updateRangeIndicator?.(playerPosition, meleeRange);
+        });
+      }
       
       debugUI.updateCombat({
         currentClass: currentKit.className,
@@ -574,6 +611,11 @@ function animate() {
         canMelee: meleeState.canMelee,
         nearestTargetHealth: nearestTarget
       });
+    }
+    
+    // Update dummy placement manager
+    if (dummyPlacementManager) {
+      dummyPlacementManager.update();
     }
     
     // Update checkpoint system
