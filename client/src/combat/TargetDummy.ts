@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { MeleeTarget } from './MeleeCombat';
-import { COMBAT_CONFIG } from '../config';
 
 export class TargetDummy implements MeleeTarget {
   public id: string;
@@ -33,7 +32,6 @@ export class TargetDummy implements MeleeTarget {
     
     this.createVisualMesh();
     this.createPhysicsBody();
-    this.setupPassThroughEffects();
     
     console.log(`🎯 Target dummy "${id}" created at position:`, position);
   }
@@ -108,6 +106,13 @@ export class TargetDummy implements MeleeTarget {
     
     this.rigidBody = this.world.createRigidBody(rigidBodyDesc);
     
+    // CRITICAL: Set userData for HitVolume system detection
+    this.rigidBody.userData = {
+      isDummy: true,
+      id: this.id,
+      type: 'TargetDummy'
+    };
+    
     // Create capsule collider to match visual
     const colliderDesc = RAPIER.ColliderDesc.capsule(0.9, 0.5);
     this.world.createCollider(colliderDesc, this.rigidBody);
@@ -117,9 +122,17 @@ export class TargetDummy implements MeleeTarget {
    * Handle taking damage from melee attacks
    */
   takeDamage(damage: number, _direction: THREE.Vector3): void {
+    // Don't take damage if already KO'd
+    if (this.currentHealth <= 0) {
+      return; // Silently reject damage for KO'd dummies
+    }
+    
     this.currentHealth -= damage;
     
     console.log(`🎯 Dummy ${this.id} took ${damage} damage (${this.currentHealth}/${this.maxHealth} HP remaining)`);
+    
+    // Note: meleeHit events are dispatched by the calling system (HitVolume/MeleeCombat)
+    // to avoid double-dispatching in racing mode
     
     // Visual damage feedback
     this.flashDamage();
@@ -174,26 +187,39 @@ export class TargetDummy implements MeleeTarget {
   private triggerKO(): void {
     console.log(`💀 Dummy ${this.id} KO'd! Respawning in 3 seconds...`);
     
-    // Visual KO effect - make it very obvious
-    const material = this.mesh.material as THREE.MeshStandardMaterial;
-    material.color.setHex(0x222222); // Very dark
-    material.transparent = true;
-    material.opacity = 0.2; // Very transparent
-    material.emissive.setHex(0x440000); // Dark red glow
-    
-    // Scale down the dummy to show it's "defeated"
-    this.mesh.scale.set(0.7, 0.7, 0.7);
-    
-    // Rotate it to "fall over"
-    this.mesh.rotation.z = Math.PI / 6; // 30 degrees
-    
-    // Disable collision temporarily
-    this.rigidBody.setEnabled(false);
-    
-    // Respawn after delay (no label since it's not working well)
-    this.respawnTimer = window.setTimeout(() => {
-      this.respawn();
-    }, 3000);
+    try {
+      // Visual KO effect - make it very obvious
+      const material = this.mesh.material as THREE.MeshStandardMaterial;
+      material.color.setHex(0x222222); // Very dark
+      material.transparent = true;
+      material.opacity = 0.2; // Very transparent
+      material.emissive.setHex(0x440000); // Dark red glow
+      
+      // Scale down the dummy to show it's "defeated"
+      this.mesh.scale.set(0.7, 0.7, 0.7);
+      
+      // Rotate it to "fall over"
+      this.mesh.rotation.z = Math.PI / 6; // 30 degrees
+      
+      // DEFER rigidBody.setEnabled(false) to avoid Rapier "recursive use" error
+      // This happens when setEnabled is called during an active physics query
+      requestAnimationFrame(() => {
+        try {
+          // Disable collision temporarily (deferred to avoid Rapier conflict)
+          this.rigidBody.setEnabled(false);
+        } catch (deferredError) {
+          console.error(`Error in deferred rigidBody disable for ${this.id}:`, deferredError);
+        }
+      });
+      
+      // Respawn after delay
+      this.respawnTimer = window.setTimeout(() => {
+        this.respawn();
+      }, 3000);
+      
+    } catch (error) {
+      console.error(`Error in triggerKO for ${this.id}:`, error);
+    }
   }
 
   /**
@@ -202,18 +228,27 @@ export class TargetDummy implements MeleeTarget {
   private respawn(): void {
     console.log(`✨ Dummy ${this.id} respawned!`);
     
+    // Add to combat log
+    window.dispatchEvent(new CustomEvent('combatLogMessage', {
+      detail: { message: `✨ ${this.id} respawned!` }
+    }));
+    
     // Reset health
     this.currentHealth = this.maxHealth;
     
-    // Reset visuals with "spawn flash"
+    // Enhanced respawn animation with prominent green flash
     const material = this.mesh.material as THREE.MeshStandardMaterial;
-    material.color.setHex(0xff4444);
+    
+    // Start with bright green spawn flash
+    material.color.setHex(0x00ff44); // Bright green color
     material.transparent = false;
     material.opacity = 1.0;
-    material.emissive.setHex(0x00ff00); // Green spawn flash
+    material.emissive.setHex(0x00ff00); // Bright green emissive
     
-    // Reset scale and rotation
-    this.mesh.scale.set(1, 1, 1);
+    // Start with slightly larger scale for pop effect
+    this.mesh.scale.set(1.2, 1.2, 1.2);
+    
+    // Reset rotation to upright immediately
     this.mesh.rotation.z = 0;
     
     // Reset position
@@ -222,10 +257,28 @@ export class TargetDummy implements MeleeTarget {
     // Re-enable collision
     this.rigidBody.setEnabled(true);
     
-    // Remove spawn flash after a moment
+    // Re-enable collision completed
+    
+    // Animate scale back to normal over 200ms
+    const startTime = Date.now();
+    const animateScale = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / 200, 1); // 200ms animation
+      const scale = 1.2 - (0.2 * progress); // From 1.2 to 1.0
+      
+      this.mesh.scale.set(scale, scale, scale);
+      
+      if (progress < 1) {
+        requestAnimationFrame(animateScale);
+      }
+    };
+    requestAnimationFrame(animateScale);
+    
+    // Remove green flash and return to normal color after 300ms
     window.setTimeout(() => {
-      material.emissive.setHex(0x000000);
-    }, 500);
+      material.color.setHex(0xff4444); // Back to normal red
+      material.emissive.setHex(0x000000); // Remove emissive
+    }, 300);
   }
 
   /**
@@ -270,105 +323,6 @@ export class TargetDummy implements MeleeTarget {
       // Rotate the indicator
       this.rangeIndicator!.rotation.y = time;
     }
-  }
-
-  /**
-   * Setup event listeners for pass-through hit effects
-   */
-  private setupPassThroughEffects(): void {
-    // Listen for pass-through hit effects on this dummy
-    window.addEventListener('dummyHitEffect', (event: Event) => {
-      const customEvent = event as CustomEvent;
-      const { targetId, hitPoint, movementType, flashDuration, textColor, textDuration } = customEvent.detail;
-      
-      if (targetId === this.id) {
-        this.flashWhite(flashDuration);
-        this.spawnFloatingText('+Speed', textColor, textDuration, hitPoint);
-      }
-    });
-  }
-
-  /**
-   * Flash white when hit by pass-through attack
-   */
-  flashWhite(duration: number = COMBAT_CONFIG.HIT_FLASH_DURATION): void {
-    const material = this.mesh.material as THREE.MeshStandardMaterial;
-    const originalColor = material.color.clone();
-    const originalEmissive = material.emissive.clone();
-    
-    // Flash white
-    material.color.setHex(0xffffff);
-    material.emissive.setHex(0x444444);
-    
-    // Reset after duration
-    window.setTimeout(() => {
-      material.color.copy(originalColor);
-      material.emissive.copy(originalEmissive);
-    }, duration * 1000);
-  }
-
-  /**
-   * Spawn floating "+Speed" text at hit location
-   */
-  spawnFloatingText(text: string, color: string, duration: number, position?: THREE.Vector3): void {
-    // Create canvas for text texture
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 64;
-    const context = canvas.getContext('2d')!;
-    
-    // Style text
-    context.font = 'bold 32px Arial';
-    context.fillStyle = color;
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    
-    // Draw text
-    context.fillText(text, canvas.width / 2, canvas.height / 2);
-    
-    // Create texture and material
-    const texture = new THREE.CanvasTexture(canvas);
-    const material = new THREE.SpriteMaterial({ 
-      map: texture,
-      transparent: true,
-      alphaTest: 0.1
-    });
-    
-    // Create sprite
-    const sprite = new THREE.Sprite(material);
-    const textPosition = position || this.position.clone().add(new THREE.Vector3(0, 2, 0));
-    sprite.position.copy(textPosition);
-    sprite.scale.set(2, 0.5, 1);
-    
-    this.scene.add(sprite);
-    
-    // Animate sprite (float up and fade out)
-    const startY = sprite.position.y;
-    const startTime = Date.now();
-    
-    const animate = () => {
-      const elapsed = (Date.now() - startTime) / 1000;
-      const progress = elapsed / duration;
-      
-      if (progress >= 1) {
-        // Animation complete - cleanup
-        this.scene.remove(sprite);
-        material.dispose();
-        texture.dispose();
-        return;
-      }
-      
-      // Float up
-      sprite.position.y = startY + progress * 3;
-      
-      // Fade out
-      material.opacity = 1 - progress;
-      
-      // Continue animation
-      requestAnimationFrame(animate);
-    };
-    
-    animate();
   }
 
   /**

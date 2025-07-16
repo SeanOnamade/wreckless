@@ -47,7 +47,7 @@ const activeProjectiles: Set<ActiveProjectile> = new Set();
  */
 export function blastJump(
   world: RAPIER.World,
-  playerBody: RAPIER.RigidBody,
+  _playerBody: RAPIER.RigidBody,
   camera: THREE.Camera,
   scene: THREE.Scene,
   settings: RocketSettings = defaultSettings
@@ -175,7 +175,7 @@ export function updateBlast(): void {
     
     // Method 3: Use Rapier collision detection (most responsive)
     let numContacts = 0;
-    projectile.world.contactPairsWith(projectile.body.collider(0)!, (collider2) => {
+    projectile.world.contactPairsWith(projectile.body.collider(0)!, (_collider2) => {
       numContacts++;
       return true; // Continue checking
     });
@@ -230,7 +230,7 @@ function explodeProjectile(projectile: ActiveProjectile): void {
   
   // Apply impulses to all affected bodies using full 3D physics
   for (const bodyData of affectedBodies) {
-    const { body, distance } = bodyData;
+    const { body } = bodyData;
     
     // Calculate full 3D direction from explosion center to body
     const bodyPos = body.translation();

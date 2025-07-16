@@ -2,22 +2,16 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { SPAWN_POS } from './track/ExternalTrack';
 import { CheckpointSystem } from './systems/CheckpointSystem';
-import type { HitVolumeManager } from './systems/HitVolume';
+import { toggleCombatMode } from './config/combat';
 
 export class FirstPersonController {
   private camera: THREE.Camera;
   private playerBody: RAPIER.RigidBody;
   private controller: RAPIER.KinematicCharacterController;
-  private world: RAPIER.World; // Used for physics queries
   private checkpointSystem: CheckpointSystem | null = null;
-  private hitVolumeManager: HitVolumeManager | null = null;
   
   // Killzone detection
   private timeInVoid = 0;
-  
-  // Position tracking for hit volumes
-  private previousPosition = new THREE.Vector3();
-  private currentPosition = new THREE.Vector3();
   
   // Movement state
   private keys: { [key: string]: boolean } = {};
@@ -39,7 +33,6 @@ export class FirstPersonController {
   private baseMoveSpeed = 18.0; // Original move speed
   private isSpeedBoosted = false;
   private speedBoostEndTime = 0;
-  private currentMoveSpeed = 18.0;
   
   // Mouse look
   private euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -63,12 +56,11 @@ export class FirstPersonController {
     camera: THREE.Camera,
     playerBody: RAPIER.RigidBody,
     controller: RAPIER.KinematicCharacterController,
-    world: RAPIER.World
+    _world: RAPIER.World
   ) {
     this.camera = camera;
     this.playerBody = playerBody;
     this.controller = controller;
-    this.world = world; // May be used for future physics queries
     
     this.setupEventListeners();
     this.setupSwingStateListener();
@@ -86,14 +78,6 @@ export class FirstPersonController {
     console.log('FirstPersonController initialized with pointer lock');
   }
   
-  /**
-   * Set the hit volume manager for pass-through dummy detection
-   */
-  setHitVolumeManager(manager: HitVolumeManager): void {
-    this.hitVolumeManager = manager;
-    console.log('🎯 HitVolume manager connected to controller');
-  }
-  
   private setupEventListeners() {
     // Keyboard events
     document.addEventListener('keydown', (e) => {
@@ -102,6 +86,12 @@ export class FirstPersonController {
       // Special keys
       if (e.code === 'KeyR') {
         this.reset();
+      } else if (e.code === 'KeyM') {
+        // Toggle combat mode for testing
+        const newMode = toggleCombatMode();
+        console.log(`🔄 Combat mode toggled to: ${newMode.toUpperCase()}`);
+        console.log(`   • MANUAL mode: Click to hit dummies (original system)`);
+        console.log(`   • PASSTHROUGH mode: Move through dummies to damage (new system)`);
       }
     });
     
@@ -201,7 +191,6 @@ export class FirstPersonController {
     }
     
     const velocity = data.velocity; // THREE.Vector3 of current swing velocity
-    const _reason = data.reason;
     
     // Apply swing momentum to controller velocity system (like blast impulse)
     
@@ -230,8 +219,6 @@ export class FirstPersonController {
    */
   private handleBlinkMomentumImpulse(data: any): void {
     const impulse = data.impulse; // THREE.Vector3 forward momentum
-    const _blinkDirection = data.blinkDirection;
-    const _distance = data.distance;
     
     // Apply forward momentum to make blink feel more fluid
     // Use rocket jump system to prevent speed capping
@@ -271,8 +258,6 @@ export class FirstPersonController {
    */
   private handleBlastImpulse(data: any): void {
     const impulse = data.impulse;
-    const _explosionPos = data.explosionPosition;
-    const _distance = data.distance;
     const isDirectional3D = data.isDirectional3D;
     const isTF2Style = data.isTF2Style;
     
@@ -353,13 +338,16 @@ export class FirstPersonController {
   private handleSpeedBoost(data: any): void {
     const { fromVelocity, toVelocity, duration, damage, source } = data;
     
+    // Apply speed boost to controller
+    
     // Apply speed boost
-    this.currentMoveSpeed = toVelocity;
     this.moveSpeed = toVelocity; // Update actual moveSpeed used in movement calculations
     this.isSpeedBoosted = true;
     this.speedBoostEndTime = Date.now() + duration;
     
     console.log(`🏎️ SPEED BOOST ACTIVE! ${fromVelocity}→${toVelocity} m/s for ${(duration/1000).toFixed(1)}s (${damage} damage from ${source})`);
+    
+    // Speed boost applied successfully
     
     // Visual feedback - dispatch event for UI
     window.dispatchEvent(new CustomEvent('speedBoostActive', {
@@ -379,7 +367,6 @@ export class FirstPersonController {
     if (this.isSpeedBoosted && Date.now() >= this.speedBoostEndTime) {
       // Speed boost expired
       this.isSpeedBoosted = false;
-      this.currentMoveSpeed = this.baseMoveSpeed;
       this.moveSpeed = this.baseMoveSpeed;
       
       console.log(`⏰ Speed boost expired - back to ${this.baseMoveSpeed} m/s`);
@@ -392,10 +379,8 @@ export class FirstPersonController {
   }
   
   update(deltaTime: number) {
-    // Store previous position for hit volume detection
+    // Get current position
     const translation = this.playerBody.translation();
-    this.previousPosition.copy(this.currentPosition);
-    this.currentPosition.set(translation.x, translation.y, translation.z);
     
     // Update speed boost state
     this.updateSpeedBoost();
@@ -589,21 +574,6 @@ export class FirstPersonController {
     // Update rigid body position
     this.playerBody.setTranslation(newPos, true);
     
-    // Update current position for hit volume detection
-    this.currentPosition.set(newPos.x, newPos.y, newPos.z);
-    
-    // Perform hit volume detection for pass-through dummy hits
-    if (this.hitVolumeManager && this.previousPosition.length() > 0) {
-      const hitResults = this.hitVolumeManager.frameMovementSweep(
-        this.previousPosition, 
-        this.currentPosition
-      );
-      
-      if (hitResults.length > 0) {
-        this.hitVolumeManager.processHitResults(hitResults, 'movement');
-      }
-    }
-    
     // Update camera position and rotation with safety checks
     const cameraHeight = this.isSliding ? 0.4 : 0.8; // Lower camera when sliding
     
@@ -791,7 +761,6 @@ export class FirstPersonController {
     
     // Reset speed boost state
     this.isSpeedBoosted = false;
-    this.currentMoveSpeed = this.baseMoveSpeed;
     this.moveSpeed = this.baseMoveSpeed;
     this.speedBoostEndTime = 0;
   }

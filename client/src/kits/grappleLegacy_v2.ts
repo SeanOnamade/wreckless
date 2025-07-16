@@ -118,7 +118,7 @@ export function executeGrapple(context: GrappleAbilityContext): void {
  * Add initial swing momentum when attaching to prevent getting stuck
  */
 function addInitialSwingMomentum(context: GrappleAbilityContext): void {
-  const { playerBody, camera } = context;
+  const { playerBody } = context;
   
   if (!grappleState.anchorPoint) return;
   

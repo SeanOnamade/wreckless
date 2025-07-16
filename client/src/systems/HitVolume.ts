@@ -1,313 +1,494 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { COMBAT_CONFIG } from '../config';
 import type { FirstPersonController } from '../controller';
-import type { MeleeTarget } from '../combat/MeleeCombat';
+import type { MeleeCombat } from '../combat/MeleeCombat';
+import { 
+  COMBAT_CONFIG, 
+  getHitCapsuleRadius, 
+  getCombatMode,
+  type HitVolumeType 
+} from '../config/combat';
+import { getCurrentPlayerKit } from '../kits/classKit';
 
-export interface HitVolumeResult {
-  target: MeleeTarget;
-  distance: number;
-  hitPoint: THREE.Vector3;
+/**
+ * Damage calculation result
+ */
+interface DamageResult {
+  damage: number;
+  isBonus: boolean;
+  isCrit: boolean;
 }
 
-export class HitVolumeManager {
+/**
+ * HitVolume System - Pass-through damage using capsule sweeps
+ * Handles frame-by-frame movement, blink teleportation, and swing path damage
+ */
+export class HitVolume {
   private world: RAPIER.World;
   private controller: FirstPersonController;
-  private targets: Map<string, MeleeTarget> = new Map();
+  private meleeCombat: MeleeCombat;
+  
+  // Position tracking for frame-by-frame sweeps
+  private lastPosition: THREE.Vector3 = new THREE.Vector3();
+  private currentPosition: THREE.Vector3 = new THREE.Vector3();
+  
+  // Hit tracking to prevent multiple hits per frame
+  private hitCooldowns: Map<string, number> = new Map();
   
   // Performance tracking
-  private lastHitTimes: Map<string, number> = new Map();
-  private tempVectors = {
-    prevPos: new THREE.Vector3(),
-    currentPos: new THREE.Vector3(),
-    direction: new THREE.Vector3(),
-    hitPoint: new THREE.Vector3()
-  };
-
-  constructor(world: RAPIER.World, controller: FirstPersonController) {
+  private sweepCount = 0;
+  private hitCount = 0;
+  
+  // Bonus damage tracking (same as MeleeCombat)
+  private lastBlinkTime = 0;
+  private lastGrappleDetachTime = 0;
+  private isSwingingState = false;
+  
+  constructor(world: RAPIER.World, controller: FirstPersonController, meleeCombat: MeleeCombat) {
     this.world = world;
     this.controller = controller;
+    this.meleeCombat = meleeCombat;
     
-    console.log('🎯 HitVolume system initialized for pass-through dummy hits');
+    // Initialize position tracking
+    this.updatePositionTracking();
+    
+    // Set up bonus damage tracking
+    this.setupBonusTracking();
+    
+    console.log('🎯 HitVolume system initialized for pass-through damage');
   }
 
   /**
-   * Register a target for hit detection
+   * Register HitVolume system with the game loop
+   * Call this each frame to process movement-based damage
    */
-  addTarget(target: MeleeTarget): void {
-    this.targets.set(target.id, target);
+  update(deltaTime: number): void {
+    // CRITICAL: Only run in passthrough mode to prevent double damage
+    if (getCombatMode() !== 'passthrough') {
+      return; // Skip pass-through damage in manual mode
+    }
     
-    // Mark dummy collision bodies for identification
-    if (target.rigidBody) {
-      target.rigidBody.userData = { isDummy: true, targetId: target.id };
-    }
-    
-    if (COMBAT_CONFIG.LOG_HIT_EVENTS) {
-      console.log(`🎯 Registered target for hit detection: ${target.id}`);
-    }
-  }
-
-  /**
-   * Remove a target from hit detection
-   */
-  removeTarget(targetId: string): void {
-    this.targets.delete(targetId);
-    this.lastHitTimes.delete(targetId);
-    
-    if (COMBAT_CONFIG.LOG_HIT_EVENTS) {
-      console.log(`🎯 Removed target from hit detection: ${targetId}`);
-    }
-  }
-
-  /**
-   * Perform frame-by-frame movement sweep for normal player movement
-   */
-  frameMovementSweep(prevPosition: THREE.Vector3, currentPosition: THREE.Vector3): HitVolumeResult[] {
-    if (!COMBAT_CONFIG.USE_PASSTHROUGH_FOR_DUMMIES) {
-      return [];
-    }
-
-    // Skip if no movement
-    const movementDistance = prevPosition.distanceTo(currentPosition);
-    if (movementDistance < 0.01) {
-      return [];
-    }
-
-    return this.performCapsuleSweep(
-      prevPosition,
-      currentPosition,
-      COMBAT_CONFIG.HIT_CAPSULE_RADIUS,
-      'movement'
-    );
-  }
-
-  /**
-   * Perform capsule cast for blink teleportation
-   */
-  blinkTeleportSweep(originPosition: THREE.Vector3, targetPosition: THREE.Vector3): HitVolumeResult[] {
-    if (!COMBAT_CONFIG.USE_PASSTHROUGH_FOR_DUMMIES) {
-      return [];
-    }
-
-    const radius = COMBAT_CONFIG.HIT_CAPSULE_RADIUS * COMBAT_CONFIG.BLINK_SWEEP_EXTRA;
-    
-    return this.performCapsuleSweep(
-      originPosition,
-      targetPosition,
-      radius,
-      'blink'
-    );
-  }
-
-  /**
-   * Perform capsule sweep for grapple swinging
-   */
-  swingMovementSweep(prevPosition: THREE.Vector3, currentPosition: THREE.Vector3): HitVolumeResult[] {
-    if (!COMBAT_CONFIG.USE_PASSTHROUGH_FOR_DUMMIES) {
-      return [];
-    }
-
-    // Use slightly larger radius for swinging due to higher speeds
-    const radius = COMBAT_CONFIG.HIT_CAPSULE_RADIUS * 1.2;
-    
-    return this.performCapsuleSweep(
-      prevPosition,
-      currentPosition,
-      radius,
-      'swing'
-    );
-  }
-
-  /**
-   * Core capsule sweep implementation using multiple ray casts
-   */
-  private performCapsuleSweep(
-    startPos: THREE.Vector3,
-    endPos: THREE.Vector3,
-    radius: number,
-    sweepType: string
-  ): HitVolumeResult[] {
-    const results: HitVolumeResult[] = [];
     const now = Date.now();
     
-    // Calculate sweep direction and distance
-    this.tempVectors.direction.copy(endPos).sub(startPos);
-    const distance = this.tempVectors.direction.length();
+    // Update position tracking
+    this.updatePositionTracking();
     
-    if (distance < 0.01) return results;
+    // Clean up expired hit cooldowns
+    this.cleanupHitCooldowns(now);
     
-    this.tempVectors.direction.normalize();
+    // Perform frame-by-frame movement sweep
+    this.performMovementSweep(deltaTime);
+  }
+
+  /**
+   * Update position tracking for movement sweeps
+   */
+  private updatePositionTracking(): void {
+    // Store previous position
+    this.lastPosition.copy(this.currentPosition);
     
-    // Create multiple rays to simulate capsule (center + 4 cardinal directions)
-    const rayPositions = [
-      startPos.clone(), // Center ray
-      startPos.clone().add(new THREE.Vector3(radius, 0, 0)), // Right
-      startPos.clone().add(new THREE.Vector3(-radius, 0, 0)), // Left
-      startPos.clone().add(new THREE.Vector3(0, radius, 0)), // Up
-      startPos.clone().add(new THREE.Vector3(0, -radius, 0)), // Down
-    ];
+    // Get current position from controller
+    const playerPosition = this.controller.getPosition();
+    this.currentPosition.set(playerPosition.x, playerPosition.y, playerPosition.z);
+  }
+
+  /**
+   * Perform frame-by-frame movement sweep for pass-through damage
+   */
+  private performMovementSweep(deltaTime: number): void {
+    // Check if we've moved enough to trigger a sweep
+    const movementDistance = this.lastPosition.distanceTo(this.currentPosition);
     
-    // Track unique hits to avoid duplicate damage
-    const hitTargets = new Set<string>();
+    // Increase minimum movement to reduce rapid hits (but not too much)
+    const MIN_MOVEMENT = Math.max(COMBAT_CONFIG.MODE.MIN_MOVEMENT_FOR_SWEEP, 0.2); // At least 0.2m movement
     
-    for (const rayStart of rayPositions) {
-      const ray = new RAPIER.Ray(rayStart, this.tempVectors.direction);
+    if (movementDistance < MIN_MOVEMENT) {
+      return; // Not enough movement to trigger sweep
+    }
+    
+    // Limit maximum sweep distance for performance
+    const clampedDistance = Math.min(movementDistance, COMBAT_CONFIG.HIT_VOLUME.MAX_SWEEP_DISTANCE);
+    
+    if (clampedDistance < movementDistance) {
+      console.warn(`⚠️ HitVolume: Clamping sweep distance from ${movementDistance.toFixed(2)}m to ${clampedDistance.toFixed(2)}m`);
+    }
+    
+    // Calculate sweep direction
+    const sweepDirection = this.currentPosition.clone().sub(this.lastPosition).normalize();
+    const sweepStart = this.lastPosition.clone();
+    const sweepEnd = sweepStart.clone().add(sweepDirection.multiplyScalar(clampedDistance));
+    
+    // Perform capsule sweep
+    this.performCapsuleSweep(sweepStart, sweepEnd, 'movement', deltaTime);
+  }
+
+  /**
+   * Perform blink path sweep from origin to destination
+   */
+  blinkSweep(originPosition: THREE.Vector3, destinationPosition: THREE.Vector3): void {
+    console.log(`⚡ HitVolume: Blink sweep from (${originPosition.x.toFixed(1)}, ${originPosition.y.toFixed(1)}, ${originPosition.z.toFixed(1)}) to (${destinationPosition.x.toFixed(1)}, ${destinationPosition.y.toFixed(1)}, ${destinationPosition.z.toFixed(1)})`);
+    
+    this.performCapsuleSweep(originPosition, destinationPosition, 'blink');
+  }
+
+  /**
+   * Perform swing path sweep for grapple movement
+   */
+  swingSweep(fromPosition: THREE.Vector3, toPosition: THREE.Vector3): void {
+    if (COMBAT_CONFIG.DEBUG.LOG_HIT_DETECTION) {
+      console.log(`🪝 HitVolume: Swing sweep from (${fromPosition.x.toFixed(1)}, ${fromPosition.y.toFixed(1)}, ${fromPosition.z.toFixed(1)}) to (${toPosition.x.toFixed(1)}, ${toPosition.y.toFixed(1)}, ${toPosition.z.toFixed(1)})`);
+    }
+    
+    this.performCapsuleSweep(fromPosition, toPosition, 'swing');
+  }
+
+  /**
+   * Core capsule sweep implementation using Rapier physics
+   * Uses position sampling along the path for reliable hit detection
+   */
+  private performCapsuleSweep(
+    startPos: THREE.Vector3, 
+    endPos: THREE.Vector3, 
+    hitType: HitVolumeType,
+    deltaTime: number = 0.016 // Default to 60fps
+  ): void {
+    this.sweepCount++;
+    
+    // Get capsule parameters based on hit type
+    const capsuleRadius = getHitCapsuleRadius(hitType);
+    
+    // Calculate sweep vector
+    const sweepVector = endPos.clone().sub(startPos);
+    const sweepDistance = sweepVector.length();
+    
+    if (sweepDistance < 0.01) {
+      return; // No meaningful movement
+    }
+    
+    if (COMBAT_CONFIG.DEBUG.LOG_HIT_DETECTION) {
+      console.log(`🎯 Performing ${hitType} capsule sweep: distance=${sweepDistance.toFixed(2)}m, radius=${capsuleRadius.toFixed(2)}m`);
+    }
+    
+    // Sample positions along the sweep path for hit detection
+    const numSamples = Math.max(3, Math.ceil(sweepDistance / 2.0)); // Sample every 2 meters
+    const hitTargets = new Set<string>(); // Prevent multiple hits on same target
+    
+    for (let i = 0; i <= numSamples; i++) {
+      const t = i / numSamples;
+      const samplePos = startPos.clone().lerp(endPos, t);
       
-      // Cast ray with filters to only hit dummy targets
-      const hit = this.world.castRay(
-        ray,
-        distance,
-        true, // solid
-        RAPIER.QueryFilterFlags.EXCLUDE_SENSORS | RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC,
-        undefined, // groups
-        undefined, // exclude collider
-        undefined, // exclude rigidbody
-        (collider) => {
-          // Filter: only hit dummy targets
-          const userData = collider.parent()?.userData as any;
-          return Boolean(userData && userData.isDummy === true);
-        }
-      );
+      // Check for intersections at this position
+      this.checkIntersectionsAtPosition(samplePos, capsuleRadius, hitType, sweepDistance, deltaTime, hitTargets);
+    }
+  }
+
+  /**
+   * Check for intersections at a specific position along the sweep path
+   */
+  private checkIntersectionsAtPosition(
+    position: THREE.Vector3, 
+    radius: number, 
+    hitType: HitVolumeType, 
+    sweepDistance: number, 
+    deltaTime: number,
+    hitTargets: Set<string>
+  ): void {
+    // Create a ball shape for intersection testing
+    const testShape = new RAPIER.Ball(radius);
+    const testPos = { x: position.x, y: position.y, z: position.z };
+    const testRot = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
+    
+    // Check for intersections with dummy colliders
+    this.world.intersectionsWithShape(testPos, testRot, testShape, (collider: RAPIER.Collider) => {
+      const userData = collider.parent()?.userData as any;
+      const rigidBody = collider.parent();
       
-      if (hit) {
-        const userData = hit.collider.parent()?.userData as any;
-        const targetId = userData?.targetId;
-        const target = targetId ? this.targets.get(targetId) : null;
-        
-        if (target && !hitTargets.has(target.id)) {
-          // Check cooldown to prevent spam hits
-          const lastHitTime = this.lastHitTimes.get(target.id) || 0;
-          if (now - lastHitTime < COMBAT_CONFIG.HIT_COOLDOWN_PER_DUMMY) {
-            continue;
-          }
-          
-          // Calculate hit point
-          const hitPoint = ray.pointAt(hit.timeOfImpact);
-          
-          results.push({
-            target,
-            distance: hit.timeOfImpact,
-            hitPoint: new THREE.Vector3(hitPoint.x, hitPoint.y, hitPoint.z)
-          });
-          
-          // Mark target as hit to avoid duplicates
-          hitTargets.add(target.id);
-          
-          // Update hit time
-          this.lastHitTimes.set(target.id, now);
-          
-          if (COMBAT_CONFIG.LOG_HIT_EVENTS) {
-            console.log(`🎯 ${sweepType} hit: ${target.id} at distance ${hit.timeOfImpact.toFixed(2)}m`);
-          }
-          
-          // Limit hits per frame for performance
-          if (results.length >= COMBAT_CONFIG.MAX_HITS_PER_FRAME) {
-            break;
-          }
-        }
+      // Filter for dummy colliders only
+      if (!userData || !userData.isDummy || !rigidBody) {
+        return true; // Continue checking
       }
-    }
-    
-    return results;
+      
+      // Skip disabled rigidBodies (KO'd dummies)
+      const isEnabled = rigidBody.isEnabled();
+      
+      if (!isEnabled) {
+        return true; // Continue checking (dummy is KO'd)
+      }
+      
+      const targetId = userData.id;
+      if (!targetId || hitTargets.has(targetId)) {
+        return true; // Continue if already hit or no ID
+      }
+      
+      // Mark as hit to prevent multiple hits
+      hitTargets.add(targetId);
+      
+      // Process the hit
+      this.processHitOnTarget(targetId, hitType, sweepDistance, deltaTime);
+      
+      return true; // Continue checking for more targets
+    });
   }
 
   /**
-   * Process hit results and apply damage/effects
+   * Process hit on a specific target and apply damage
    */
-  processHitResults(hitResults: HitVolumeResult[], movementType: string): void {
-    for (const hit of hitResults) {
-      this.applyPassThroughDamage(hit.target, hit.hitPoint, movementType);
-    }
-  }
-
-  /**
-   * Apply damage and effects for pass-through hits
-   */
-  private applyPassThroughDamage(target: MeleeTarget, hitPoint: THREE.Vector3, movementType: string): void {
-    // Calculate damage based on movement type
-    let damage = 30; // Base pass-through damage
+  private processHitOnTarget(
+    targetId: string,
+    hitType: HitVolumeType,
+    sweepDistance: number,
+    _deltaTime: number
+  ): void {
+    // Check hit cooldown to prevent rapid-fire hits (300ms for racing)
+    const now = Date.now(); // Use current time, not lastUpdateTime
+    const lastHitTime = this.hitCooldowns.get(targetId);
+    const HIT_COOLDOWN_MS = 300; // 300ms between hits on same dummy
     
-    switch (movementType) {
-      case 'blink':
-        damage = 35; // Higher damage for blink hits
-        break;
-      case 'swing':
-        damage = 40; // Highest damage for grapple swing hits
-        break;
-      case 'movement':
-        damage = 25; // Lower damage for normal movement
-        break;
+    if (lastHitTime && (now - lastHitTime) < HIT_COOLDOWN_MS) {
+      return; // Still on cooldown (no spam logging)
     }
     
-    // Calculate direction (simplified - from hit point toward target center)
-    const direction = new THREE.Vector3().copy(target.position).sub(hitPoint).normalize();
+    // Get the target from melee combat system
+    const target = this.meleeCombat.getTarget(targetId);
+    if (!target) {
+      console.warn(`⚠️ HitVolume: Target ${targetId} not found in melee combat system`);
+      return;
+    }
+    
+    // Calculate damage with bonuses based on player class and state
+    const playerVelocity = this.controller.getVelocity();
+    const velocity3D = new THREE.Vector3(playerVelocity.x, playerVelocity.y, playerVelocity.z);
+    const speed = velocity3D.length();
+    
+    // Calculate damage with blink/grapple bonuses
+    const damageResult = this.calculateDamage();
+    const finalDamage = damageResult.damage;
+    
+    // Calculate hit direction (from player towards target)
+    const targetPos = target.position;
+    const playerPos = this.currentPosition;
+    const hitDirection = targetPos.clone().sub(playerPos).normalize();
     
     // Apply damage
     if (target.takeDamage) {
-      target.takeDamage(damage, direction);
+      target.takeDamage(finalDamage, hitDirection);
+    } else {
+      console.warn(`⚠️ Target ${targetId} has no takeDamage method`);
     }
     
-    // Trigger visual effects
-    this.triggerHitEffects(target, hitPoint, movementType);
+    // Set hit cooldown using current time
+    const hitTime = Date.now();
+    this.hitCooldowns.set(targetId, hitTime);
+    this.hitCount++;
+    
+    // Log the hit
+    let hitDescription = `${finalDamage} HP`;
+    if (damageResult.isCrit) hitDescription = `${finalDamage} HP CRIT`;
+    if (damageResult.isBonus) hitDescription = `${finalDamage} HP BONUS`;
+    
+    console.log(`💥 Hit ${targetId} for ${hitDescription}`);
+    
+    // Dispatch hit event for combat log (same format as MeleeCombat)
+    window.dispatchEvent(new CustomEvent('meleeHit', {
+      detail: {
+        targetId,
+        damage: finalDamage,
+        className: this.getCurrentPlayerClass(),
+        knockbackForce: finalDamage * 10, // Same knockback calculation as MeleeCombat
+        direction: hitDirection,
+        isCrit: damageResult.isCrit,
+        isBonus: damageResult.isBonus
+      }
+    }));
+    
+    // Add clean hit info to combat log
+    let logMessage = `💥 ${finalDamage} HP`;
+    if (damageResult.isCrit) logMessage = `💥 ${finalDamage} HP CRIT`;
+    if (damageResult.isBonus) logMessage = `💥 ${finalDamage} HP BONUS`;
+    
+    window.dispatchEvent(new CustomEvent('combatLogMessage', {
+      detail: { message: logMessage }
+    }));
     
     // Dispatch hit event for UI/effects
-    window.dispatchEvent(new CustomEvent('passThrough Hit', {
+    window.dispatchEvent(new CustomEvent('passthroughHit', {
       detail: {
-        targetId: target.id,
-        damage,
-        movementType,
-        hitPoint: hitPoint.clone(),
-        timestamp: Date.now()
+        targetId,
+        damage: finalDamage,
+        hitType,
+        speed,
+        sweepDistance,
+        timestamp: now
       }
     }));
+  }
+
+  /**
+   * Get current player class name
+   */
+  private getCurrentPlayerClass(): string {
+    const currentKit = getCurrentPlayerKit();
+    return currentKit.className;
+  }
+
+  /**
+   * Set up event listeners for bonus damage tracking
+   */
+  private setupBonusTracking(): void {
+    // Track blink activations for bonus damage
+    window.addEventListener('abilityActivated', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail.className === 'blink') {
+        this.lastBlinkTime = Date.now();
+        console.log('⚡ HitVolume: Blink timestamp recorded for bonus damage');
+      }
+    });
     
-    if (COMBAT_CONFIG.LOG_HIT_EVENTS) {
-      console.log(`🎯 Pass-through hit: ${target.id} for ${damage} HP (${movementType})`);
+    // Track grapple state changes
+    window.addEventListener('swingStateChanged', (event: Event) => {
+      const customEvent = event as CustomEvent;
+      this.isSwingingState = customEvent.detail.isSwinging;
+      if (!this.isSwingingState) {
+        this.lastGrappleDetachTime = Date.now();
+        console.log('🪝 HitVolume: Grapple detach timestamp recorded for crit bonus');
+      }
+    });
+    
+    window.addEventListener('grappleDetached', (_event: Event) => {
+      this.lastGrappleDetachTime = Date.now();
+      this.isSwingingState = false;
+      console.log('🪝 HitVolume: Grapple detach timestamp recorded for crit bonus');
+    });
+  }
+
+  /**
+   * Calculate damage with bonus modifiers based on player class and state
+   */
+  private calculateDamage(): DamageResult {
+    const currentKit = getCurrentPlayerKit();
+    const className = currentKit.className;
+    const now = Date.now();
+    
+    // Base flat damage values
+    let damage = 0;
+    let isBonus = false;
+    let isCrit = false;
+    
+    switch (className) {
+      case 'blast':
+        damage = 60; // Flat blast damage (no bonuses)
+        break;
+        
+      case 'grapple':
+        damage = 25; // Base grapple damage
+        
+        // Check for grapple crit conditions
+        const timeSinceGrappleDetach = now - this.lastGrappleDetachTime;
+        const recentlyDetached = timeSinceGrappleDetach < 1000; // 1 second window
+        
+        if (this.isSwingingState || recentlyDetached) {
+          damage = 70; // Grapple crit damage
+          isCrit = true;
+          console.log(`🪝 HitVolume: Grapple CRIT! (swinging: ${this.isSwingingState}, recently detached: ${recentlyDetached})`);
+        }
+        break;
+        
+      case 'blink':
+        damage = 30; // Base blink damage
+        
+        // Check for blink bonus window (500ms after blink)
+        const timeSinceLastBlink = now - this.lastBlinkTime;
+        if (timeSinceLastBlink < 500) {
+          damage = 50; // Blink bonus damage (30 + 20)
+          isBonus = true;
+          console.log(`⚡ HitVolume: Blink BONUS! (${timeSinceLastBlink}ms after blink)`);
+        }
+        break;
+        
+      default:
+        damage = 25; // Fallback
+    }
+    
+    return { damage, isBonus, isCrit };
+  }
+
+  /**
+   * Clean up expired hit cooldowns for performance
+   */
+  private cleanupHitCooldowns(now: number): void {
+    const cooldownDuration = COMBAT_CONFIG.DUMMY.HIT_COOLDOWN_MS;
+    
+    for (const [targetId, lastHitTime] of this.hitCooldowns) {
+      if (now - lastHitTime > cooldownDuration * 2) { // Clean up after 2x cooldown duration
+        this.hitCooldowns.delete(targetId);
+      }
     }
   }
 
   /**
-   * Trigger visual feedback effects for hits
+   * Get performance statistics
    */
-  private triggerHitEffects(target: MeleeTarget, hitPoint: THREE.Vector3, movementType: string): void {
-    // Dispatch visual effect events
-    window.dispatchEvent(new CustomEvent('dummyHitEffect', {
-      detail: {
-        targetId: target.id,
-        hitPoint: hitPoint.clone(),
-        movementType,
-        flashDuration: COMBAT_CONFIG.HIT_FLASH_DURATION,
-        textColor: COMBAT_CONFIG.HIT_TEXT_COLOR,
-        textDuration: COMBAT_CONFIG.HIT_TEXT_DURATION
-      }
-    }));
+  getPerformanceStats(): { sweepCount: number; hitCount: number; hitCooldowns: number } {
+    return {
+      sweepCount: this.sweepCount,
+      hitCount: this.hitCount,
+      hitCooldowns: this.hitCooldowns.size
+    };
   }
 
   /**
-   * Get all registered targets
+   * Reset performance statistics
    */
-  getTargets(): Map<string, MeleeTarget> {
-    return this.targets;
+  resetPerformanceStats(): void {
+    this.sweepCount = 0;
+    this.hitCount = 0;
   }
 
   /**
    * Cleanup resources
    */
   destroy(): void {
-    this.targets.clear();
-    this.lastHitTimes.clear();
+    this.hitCooldowns.clear();
     console.log('🎯 HitVolume system destroyed');
   }
 }
 
 /**
- * Register hit volumes with the player controller for automatic sweep detection
+ * Global HitVolume instance for system registration
  */
-export function registerHitVolumes(controller: FirstPersonController, world: RAPIER.World): HitVolumeManager {
-  const hitVolumeManager = new HitVolumeManager(world, controller);
+let globalHitVolume: HitVolume | null = null;
+
+/**
+ * Register HitVolume system with game components
+ */
+export function registerHitVolumes(
+  world: RAPIER.World,
+  controller: FirstPersonController, 
+  meleeCombat: MeleeCombat
+): HitVolume {
+  if (globalHitVolume) {
+    globalHitVolume.destroy();
+  }
   
-  // TODO: Integrate with controller movement tracking
-  // This will be connected in the controller update loop
+  globalHitVolume = new HitVolume(world, controller, meleeCombat);
   
-  return hitVolumeManager;
+  console.log('🎯 HitVolume system registered globally');
+  return globalHitVolume;
+}
+
+/**
+ * Get the global HitVolume instance
+ */
+export function getHitVolume(): HitVolume | null {
+  return globalHitVolume;
+}
+
+/**
+ * Cleanup global HitVolume instance
+ */
+export function destroyHitVolume(): void {
+  if (globalHitVolume) {
+    globalHitVolume.destroy();
+    globalHitVolume = null;
+  }
 } 

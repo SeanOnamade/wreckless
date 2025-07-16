@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { TargetDummy } from '../combat/TargetDummy';
 import type { MeleeCombat } from '../combat/MeleeCombat';
-import type { DummyPositionData, DummyPosition } from './DummyPositionTypes';
+import type { DummyPositionData } from './DummyPositionTypes';
 import dummyPositionsData from './dummyPositions.json';
 import type { MeleeTarget } from '../combat/MeleeCombat';
 
@@ -145,7 +145,10 @@ export class RacingTargetDummy implements MeleeTarget {
    * Implement MeleeTarget interface by delegating to underlying dummy
    */
   takeDamage(damage: number, direction: THREE.Vector3): void {
-    if (!this.isAvailable) return;
+    // Racing mode: Always apply speed boosts
+    
+    // RACING MODE: Always give speed boosts, but still handle respawn for visual feedback
+    const wasAvailable = this.isAvailable;
     
     // Calculate speed boost duration based on damage
     const baseDuration = this.speedBoostConfig.baseDuration;
@@ -155,20 +158,24 @@ export class RacingTargetDummy implements MeleeTarget {
       this.speedBoostConfig.maxDuration
     );
     
+    // Calculate speed boost duration
+    
     // Apply speed boost to player
     this.grantSpeedBoost(damage, totalDuration);
     
-    // Apply damage to underlying dummy
+    // Apply damage to underlying dummy (handles HP tracking and visual feedback)
     this.targetDummy.takeDamage(damage, direction);
     
-    // Disable dummy temporarily
-    this.isAvailable = false;
-    this.hideTarget();
+    // Only disable/respawn if dummy was available (for visual feedback)
+    if (wasAvailable) {
+      this.isAvailable = false;
+      this.hideTarget();
+      this.scheduleRespawn();
+      
+      // Dummy disabled for visual respawn feedback
+    }
     
-    // Schedule respawn
-    this.scheduleRespawn();
-    
-    console.log(`🏎️ Speed boost granted! Duration: ${(totalDuration/1000).toFixed(1)}s from ${damage} damage`);
+    // Speed boost granted (logging handled by controller)
   }
 
   /**
@@ -200,6 +207,8 @@ export class RacingTargetDummy implements MeleeTarget {
       damage: damage,
       source: this.id
     };
+    
+    // Dispatch speed boost event
     
     // Dispatch speed boost event for the controller to handle
     window.dispatchEvent(new CustomEvent('speedBoostGranted', {
@@ -240,8 +249,8 @@ export class RacingTargetDummy implements MeleeTarget {
       clearTimeout(this.respawnTimer);
     }
     
-    // Respawn after 8-12 seconds (random for variety)
-    const respawnDelay = 8000 + Math.random() * 4000;
+    // Respawn after 2-3 seconds (much faster for racing)
+    const respawnDelay = 2000 + Math.random() * 1000;
     
     this.respawnTimer = window.setTimeout(() => {
       this.respawn();
@@ -256,6 +265,16 @@ export class RacingTargetDummy implements MeleeTarget {
     this.showTarget();
     
     console.log(`🔄 Dummy ${this.id} respawned and ready for boost!`);
+    
+    // Add to combat log  
+          // Dummy is now available for speed boosts again
+  }
+
+  /**
+   * Check if dummy is available for speed boost
+   */
+  isReadyForSpeedBoost(): boolean {
+    return this.isAvailable;
   }
 
   /**

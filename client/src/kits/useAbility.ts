@@ -9,7 +9,7 @@ import {
   getCooldownProgress
 } from './classKit';
 import { executeBlast, updateBlast, type BlastAbilityContext } from './blast';
-import { legacyBlast, updateLegacyBlast, type BlastAbilityContext as LegacyBlastContext } from './blastLegacy';
+import { legacyBlast, type BlastAbilityContext as LegacyBlastContext } from './blastLegacy';
 import { executeGrapple, updateGrapple, onKeyDown as grappleKeyDown, onKeyUp as grappleKeyUp, isSwinging, type GrappleAbilityContext } from './grapple';
 import { executeBlink, updateBlink, type BlinkAbilityContext } from './blink';
 

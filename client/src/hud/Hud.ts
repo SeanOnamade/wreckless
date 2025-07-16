@@ -9,11 +9,10 @@ export class LapHUD {
   private currentLapTimeElement!: HTMLSpanElement;
   private bestLapTimeElement!: HTMLSpanElement;
   private checkpointProgressElement!: HTMLSpanElement;
-  private isDevelopment: boolean;
+  // Removed isDevelopment - no longer needed after respawn hint removal
   
   constructor(lapController: LapController, parentContainer: HTMLDivElement) {
     this.lapController = lapController;
-    this.isDevelopment = import.meta.env.DEV || window.location.hostname === 'localhost';
     
     // Create HUD container
     this.container = document.createElement('div');
@@ -60,13 +59,7 @@ export class LapHUD {
     this.container.appendChild(bestLapTimeDiv);
     this.container.appendChild(checkpointProgressDiv);
     
-    // Add respawn hint in development mode
-    if (this.isDevelopment) {
-      const respawnHintDiv = document.createElement('div');
-      respawnHintDiv.innerHTML = '<span style="color: #888;">Press R to respawn</span>';
-      respawnHintDiv.style.marginTop = '4px';
-      this.container.appendChild(respawnHintDiv);
-    }
+    // Respawn hint removed per user request
   }
   
   /**

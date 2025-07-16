@@ -210,19 +210,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Mixamo** for character animation rigs
 - Built with assistance from **Cursor AI**
 
-## 🎯 Combat System Updates (2025-01-16)
-
-**Pass-Through Dummy Hits**: Enabled proximity-based damage for dummy targets. Players damage dummies by colliding/moving through them during:
-- **Normal Movement**: Capsule sweeps detect hits during frame-to-frame movement
-- **Blink Teleportation**: Capsule casts along teleport path 
-- **Grapple Swinging**: Enhanced hit detection during pendulum movement
-
-**PvP Combat**: Manual click-to-hit system preserved for future player-vs-player combat with planned right-click blocking.
-
-**Speed Boost System**: All dummy hits grant speed boosts (35 m/s for 3-5 seconds based on damage dealt).
-
-**Visual Feedback**: White flash + green "+Speed" text on pass-through hits.
-
 ## 📞 Support
 
 For questions, bug reports, or feature requests:

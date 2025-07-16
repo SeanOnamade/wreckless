@@ -4,7 +4,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import initPhysics from './physics';
 import type { PhysicsWorld } from './physics';
 import { DebugUI } from './ui';
-import { GameMenu } from './menu';
+// import { GameMenu } from './menu';
 import { LapController } from './systems/LapController';
 import { CheckpointSystem } from './systems/CheckpointSystem';
 import { LapHUD } from './hud/Hud';
@@ -12,12 +12,10 @@ import { GameHUD } from './hud/GameHUD';
 import { AbilityManager } from './kits/useAbility';
 import { setPlayerClass, getCurrentPlayerKit } from './kits/classKit';
 import { AbilityHUD } from './kits/AbilityHUD';
-import { MeleeCombat, TargetDummy, type MeleeTarget } from './combat';
+import { MeleeCombat, type MeleeTarget } from './combat';
 import { DummyPlacementManager } from './combat/DummyPlacementManager';
 import { DummyLoader } from './data/DummyLoader';
-import { HitVolumeManager } from './systems/HitVolume';
-
-// Archive confirmation
+import { registerHitVolumes, getHitVolume } from './systems/HitVolume';
 console.info("🗄️ Legacy swing archived:", ["grappleLegacy_v2.ts"]);
 
 // Scene setup
@@ -287,11 +285,11 @@ class ScreenFlash {
 
 // Initialize UI
 const debugUI = new DebugUI();
-const gameMenu = new GameMenu();
+// const gameMenu = new GameMenu(); // Unused variable
 
 // Initialize ability system
 const abilityManager = new AbilityManager();
-let abilityHUD: AbilityHUD | null = null;
+// AbilityHUD is self-initializing, no variable needed
 
 // Initialize movement trail
 let movementTrail: MovementTrail | null = null;
@@ -322,7 +320,6 @@ let gameHUD: GameHUD | null = null;
 let meleeCombat: MeleeCombat | null = null;
 let targetDummies: MeleeTarget[] = [];
 let dummyPlacementManager: DummyPlacementManager | null = null;
-let hitVolumeManager: HitVolumeManager | null = null;
 let dummyLoader: DummyLoader | null = null;
 
 initPhysics(scene, camera).then((world) => {
@@ -337,7 +334,7 @@ initPhysics(scene, camera).then((world) => {
   });
   
   // Initialize ability HUD
-  abilityHUD = new AbilityHUD(abilityManager);
+  new AbilityHUD(abilityManager); // Self-initializing UI component
   
   // Initialize lap controller with callbacks
   lapController = new LapController(
@@ -372,9 +369,9 @@ initPhysics(scene, camera).then((world) => {
   // Initialize melee combat system
   meleeCombat = new MeleeCombat(world.world, camera, world.playerBody);
   
-  // Initialize hit volume manager for pass-through dummy hits
-  hitVolumeManager = new HitVolumeManager(world.world, world.fpsController);
-  world.fpsController.setHitVolumeManager(hitVolumeManager);
+  // Initialize HitVolume system for pass-through damage
+  registerHitVolumes(world.world, world.fpsController, meleeCombat);
+  console.log('🎯 HitVolume system integrated into game loop');
   
   // Initialize dummy placement manager for level design
   dummyPlacementManager = new DummyPlacementManager(scene, world.world, camera, meleeCombat);
@@ -390,14 +387,6 @@ initPhysics(scene, camera).then((world) => {
     dummyLoader.loadDummies().then((loadedDummies) => {
       console.log(`🏎️ Loaded ${loadedDummies.length} racing dummies with speed boost mechanics`);
       targetDummies = loadedDummies;
-      
-      // Register dummies with hit volume manager for pass-through detection
-      if (hitVolumeManager) {
-        loadedDummies.forEach(dummy => {
-          hitVolumeManager!.addTarget(dummy);
-        });
-        console.log(`🎯 Registered ${loadedDummies.length} dummies for pass-through hit detection`);
-      }
       
       // Pass loaded dummies to placement manager for editing
       if (dummyPlacementManager) {
@@ -436,66 +425,15 @@ initPhysics(scene, camera).then((world) => {
     }
   });
   
-  // Handle pass-through hit events for blink teleportation
-  window.addEventListener('blinkTeleportSweep', (event: Event) => {
-    const customEvent = event as CustomEvent;
-    const { fromPosition, toPosition } = customEvent.detail;
-    
-    if (hitVolumeManager) {
-      const hitResults = hitVolumeManager.blinkTeleportSweep(fromPosition, toPosition);
-      if (hitResults.length > 0) {
-        hitVolumeManager.processHitResults(hitResults, 'blink');
-      }
-    }
-  });
-  
-  // Handle pass-through hit events for swing movement
-  window.addEventListener('swingMovementSweep', (event: Event) => {
-    const customEvent = event as CustomEvent;
-    const { currentPosition } = customEvent.detail;
-    
-    if (hitVolumeManager && physicsWorld) {
-      // We need the previous position for the sweep, get it from controller
-      const translation = physicsWorld.playerBody.translation();
-      const prevPos = new THREE.Vector3(translation.x, translation.y, translation.z);
-      
-      const hitResults = hitVolumeManager.swingMovementSweep(prevPos, currentPosition);
-      if (hitResults.length > 0) {
-        hitVolumeManager.processHitResults(hitResults, 'swing');
-      }
-    }
-  });
-  
-  // Handle newly placed dummies - register them with hit volume manager
-  window.addEventListener('dummyPlaced', (event: Event) => {
-    const customEvent = event as CustomEvent;
-    const { dummy } = customEvent.detail;
-    
-    if (hitVolumeManager && dummy) {
-      hitVolumeManager.addTarget(dummy);
-      console.log(`🎯 Registered newly placed dummy "${dummy.id}" for pass-through hit detection`);
-    }
-  });
-  
-  // Handle dummy removal - unregister from hit volume manager
-  window.addEventListener('dummyRemoved', (event: Event) => {
-    const customEvent = event as CustomEvent;
-    const { dummyId } = customEvent.detail;
-    
-    if (hitVolumeManager && dummyId) {
-      hitVolumeManager.removeTarget(dummyId);
-      console.log(`🎯 Unregistered dummy "${dummyId}" from pass-through hit detection`);
-    }
-  });
-  
   // Add developer class switching (keys 1, 2, 3)
   if (import.meta.env.DEV) {
     console.log('🎮 Ability System initialized:');
     console.log('  ⚡ Press E to use ability');
-    console.log('  🔥 Press 1 for Blast class');
-    console.log('  🪝 Press 2 for Grapple class');
-    console.log('  ✨ Press 3 for Blink class');
-    console.log('  🚀 Press L to toggle Rocket Jump / Legacy Blast');
+      console.log('  🔥 Press 1 for Blast class');
+  console.log('  🪝 Press 2 for Grapple class');
+  console.log('  ✨ Press 3 for Blink class');
+  console.log('  🚀 Press L to toggle Rocket Jump / Legacy Blast');
+  console.log('  📋 Press C to copy combat log to clipboard');
     console.log('🗡️ Melee Combat initialized:');
     console.log('  🖱️ Left Click (LMB) to melee attack');
     console.log('  🎯 Target dummies spawned for testing');
@@ -516,6 +454,21 @@ initPhysics(scene, camera).then((world) => {
       } else if (event.code === 'Digit3') {
         setPlayerClass('blink');
         console.log('✨ Switched to Blink class');
+      } else if (event.code === 'KeyC') {
+        // Copy combat log to clipboard
+        if (debugUI) {
+          const combatLog = debugUI.getCombatLog();
+          const logText = combatLog.join('\n');
+          navigator.clipboard.writeText(logText).then(() => {
+            console.log('📋 Combat log copied to clipboard!');
+            console.log('Combat log entries:', combatLog.length);
+          }).catch(err => {
+            console.error('Failed to copy combat log:', err);
+            // Fallback: log the combat log to console
+            console.log('📋 Combat Log (copy failed):');
+            combatLog.forEach(entry => console.log(entry));
+          });
+        }
       }
     });
   }
@@ -621,6 +574,12 @@ function animate() {
       physicsWorld.step(fixedTimeStep);
     }
     accumulator -= fixedTimeStep;
+  }
+  
+  // Update HitVolume system for pass-through damage
+  const hitVolumeSystem = getHitVolume();
+  if (hitVolumeSystem) {
+    hitVolumeSystem.update(deltaTime);
   }
   
   // Update movement trail

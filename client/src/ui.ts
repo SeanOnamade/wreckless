@@ -1,3 +1,5 @@
+import { getCombatMode } from './config/combat';
+
 export class DebugUI {
   private container: HTMLDivElement;
   private fpsElement: HTMLSpanElement;
@@ -10,9 +12,11 @@ export class DebugUI {
   private rocketJumpElement: HTMLSpanElement;
   private blinkMomentumElement: HTMLSpanElement;
   
+  // Combat mode UI elements
+  private combatModeElement: HTMLSpanElement | null = null;
+  
   // Speed boost UI elements
   private speedBoostElement: HTMLSpanElement | null = null;
-  private speedBoostActive = false;
   
   // Combat UI elements
   private combatContainer: HTMLDivElement | null = null;
@@ -35,13 +39,20 @@ export class DebugUI {
   
   // Combat state tracking
   private combatLog: string[] = [];
-  private maxLogEntries = 5;
+  private maxLogEntries = 10;
   
   /**
    * Get the container element for adding additional UI components
    */
   getContainer(): HTMLDivElement {
     return this.container;
+  }
+
+  /**
+   * Get the current combat log entries for copying to clipboard
+   */
+  getCombatLog(): string[] {
+    return [...this.combatLog]; // Return a copy of the combat log
   }
   
   constructor() {
@@ -118,6 +129,23 @@ export class DebugUI {
       positionDiv.style.fontSize = '12px';
       positionDiv.style.fontFamily = 'Courier New, monospace';
       this.positionElement = positionDiv.querySelector('#position')!;
+    }
+
+    // Combat mode indicator (dev mode only)
+    let combatModeDiv: HTMLDivElement | null = null;
+    if (this.isDevelopment) {
+      combatModeDiv = document.createElement('div');
+      combatModeDiv.innerHTML = 'Mode: <span id="combat-mode">PASSTHROUGH</span> <span style="color: #888; font-size: 11px;">(M to toggle)</span>';
+      combatModeDiv.style.cssText = `
+        margin-top: 8px;
+        padding: 5px;
+        background: rgba(100, 150, 255, 0.2);
+        border-radius: 3px;
+        font-size: 12px;
+        border-left: 3px solid #6496FF;
+      `;
+      this.combatModeElement = combatModeDiv.querySelector('#combat-mode')!;
+      this.updateCombatModeDisplay();
     }
     
     // Create combat info section (development mode)
@@ -252,6 +280,7 @@ export class DebugUI {
       <div>ESC - Menu</div>
       <div>R - Reset</div>
       <div>LMB - Melee Attack</div>
+      <div style="color: #6496FF;">M - Toggle Combat Mode</div>
       <div style="color: #0f0;">F - Place Dummy</div>
       <div style="color: #0f0;">Shift+F - Remove Last</div>
       <div style="color: #0f0;">Ctrl+Shift+F - Remove Near</div>
@@ -262,6 +291,7 @@ export class DebugUI {
       <div>ESC - Menu</div>
       <div>R - Reset</div>
       <div>LMB - Melee Attack</div>
+      <div style="color: #6496FF;">M - Toggle Combat Mode</div>
     `;
     
     // Append elements
@@ -276,6 +306,9 @@ export class DebugUI {
     this.container.appendChild(speedBoostDiv);
     if (positionDiv) {
       this.container.appendChild(positionDiv);
+    }
+    if (combatModeDiv) {
+      this.container.appendChild(combatModeDiv);
     }
     if (this.combatContainer) {
       this.container.appendChild(this.combatContainer);
@@ -294,6 +327,9 @@ export class DebugUI {
     
     // Set up dummy editing event listeners
     this.setupDummyEditingEventListeners();
+    
+    // Set up combat mode event listener
+    this.setupCombatModeEventListener();
   }
   
   update(
@@ -438,7 +474,6 @@ export class DebugUI {
     // Listen for speed boost activation
     window.addEventListener('speedBoostActive', (event: Event) => {
       const customEvent = event as CustomEvent;
-      this.speedBoostActive = true;
       if (this.speedBoostElement) {
         this.speedBoostElement.textContent = `Yes (${customEvent.detail.toSpeed} m/s)`;
         this.speedBoostElement.style.color = '#0f0'; // Green for active
@@ -446,9 +481,7 @@ export class DebugUI {
     });
 
     // Listen for speed boost deactivation
-    window.addEventListener('speedBoostEnded', (event: Event) => {
-      const customEvent = event as CustomEvent;
-      this.speedBoostActive = false;
+    window.addEventListener('speedBoostEnded', (_event: Event) => {
       if (this.speedBoostElement) {
         this.speedBoostElement.textContent = 'No';
         this.speedBoostElement.style.color = '#888'; // Gray for inactive
@@ -608,6 +641,32 @@ export class DebugUI {
     this.combatLogElement.scrollTop = 0;
   }
   
+  /**
+   * Update combat mode display
+   */
+  private updateCombatModeDisplay(): void {
+    if (!this.combatModeElement) return;
+    
+    const mode = getCombatMode();
+    this.combatModeElement.textContent = mode.toUpperCase();
+    
+    // Update styling based on mode
+    if (mode === 'manual') {
+      this.combatModeElement.style.color = '#ff6666'; // Red for manual
+    } else {
+      this.combatModeElement.style.color = '#66ff66'; // Green for passthrough
+    }
+  }
+
+  /**
+   * Set up combat mode change event listener
+   */
+  private setupCombatModeEventListener(): void {
+    window.addEventListener('combatModeChanged', () => {
+      this.updateCombatModeDisplay();
+    });
+  }
+
   destroy() {
     if (this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);

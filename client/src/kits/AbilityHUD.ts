@@ -12,7 +12,7 @@ export class AbilityHUD {
   private cooldownText!: HTMLSpanElement;
   private abilityManager: AbilityManager;
   private wasOnCooldown: boolean = false;
-  private lastAbilityUsedTime: number = 0;
+  // Removed _lastAbilityUsedTime - unused timing variable
   private flashOverlay!: HTMLDivElement;
   private instructions!: HTMLDivElement;
 
@@ -272,11 +272,9 @@ export class AbilityHUD {
       // Update flash overlay background color for current ability
       this.flashOverlay.style.background = `radial-gradient(circle, ${colors.flashBg}, transparent)`;
 
-      // Check if ability was just used
-      const currentTime = Date.now();
+            // Check if ability was just used
       if (cooldownState.remainingTime > 0 && !this.wasOnCooldown) {
         this.triggerAbilityUsedEffect();
-        this.lastAbilityUsedTime = currentTime;
       }
 
       // Check if cooldown just completed

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { PlayerClass } from '../kits/classKit';
 import { getCurrentPlayerKit } from '../kits/classKit';
-import { COMBAT_CONFIG as HIT_SYSTEM_CONFIG } from '../config';
+import { COMBAT_CONFIG as PASSTHROUGH_CONFIG, getCombatMode } from '../config/combat';
 
 // Combat constants from PRD
 export const COMBAT_CONFIG = {
@@ -38,58 +38,38 @@ export interface MeleeTarget {
 }
 
 export class MeleeCombat {
-  private world: RAPIER.World;
   private camera: THREE.Camera;
-  private playerBody: RAPIER.RigidBody;
   private lastMeleeTime = 0;
   private canMelee = true;
   
   // For tracking ability timings for bonus damage
   private lastBlinkTime = 0;
   private lastGrappleDetachTime = 0;
-  private isAtSwingBottom = false;
   
   // Test targets (for single player testing)
   private testTargets: Map<string, MeleeTarget> = new Map();
 
-  constructor(world: RAPIER.World, camera: THREE.Camera, playerBody: RAPIER.RigidBody) {
-    this.world = world;
+  constructor(_world: RAPIER.World, camera: THREE.Camera, _playerBody: RAPIER.RigidBody) {
     this.camera = camera;
-    this.playerBody = playerBody;
     
     // Listen for ability events to track timing
-    window.addEventListener('abilityActivated', (event: Event) => {
-      const customEvent = event as CustomEvent;
-      if (customEvent.detail.className === 'blink') {
-        this.lastBlinkTime = Date.now();
-        console.log('⚡ Blink timestamp recorded for damage bonus');
-      }
+    window.addEventListener('blinkUsed', (_event: Event) => {
+      this.lastBlinkTime = Date.now();
     });
     
-    // Listen for grapple state changes
+    window.addEventListener('grappleReleased', (_event: Event) => {
+      this.lastGrappleDetachTime = Date.now();
+    });
+    
+    // Listen for swing state changes
     window.addEventListener('swingStateChanged', (event: Event) => {
       const customEvent = event as CustomEvent;
       this.isSwingingState = customEvent.detail.isSwinging;
-      if (!this.isSwingingState) {
-        this.lastGrappleDetachTime = Date.now();
-        console.log('🪝 Grapple detach timestamp recorded for crit bonus');
-      }
     });
-    
-    window.addEventListener('grappleDetached', (_event: Event) => {
-      this.lastGrappleDetachTime = Date.now();
-      this.isSwingingState = false;
-      console.log('🪝 Grapple detach timestamp recorded for crit bonus');
-    });
-    
+
     // Listen for swing bottom events (if available)
     window.addEventListener('grappleSwingBottom', (_event: Event) => {
-      this.isAtSwingBottom = true;
       console.log('🪝 At swing bottom - grapple crit ready!');
-      // Reset flag after a short window
-      window.setTimeout(() => {
-        this.isAtSwingBottom = false;
-      }, 200);
     });
   }
 
@@ -110,24 +90,18 @@ export class MeleeCombat {
   }
 
   /**
+   * Get a target by ID for HitVolume system
+   */
+  getTarget(targetId: string): MeleeTarget | undefined {
+    return this.testTargets.get(targetId);
+  }
+
+  /**
    * Attempt to perform a melee attack
-   * ARCHIVED: This method is only used for PvP combat when pass-through dummies are enabled
+   * ARCHIVED: Click-to-hit logic preserved for future PvP implementation
    */
   performMelee(playerVelocity?: THREE.Vector3): boolean {
     const now = Date.now();
-    
-    // ARCHIVED LOGIC: Skip dummy targeting if pass-through is enabled
-    if (HIT_SYSTEM_CONFIG.USE_PASSTHROUGH_FOR_DUMMIES) {
-      // Only perform manual melee on player targets (future PvP)
-      const playerTargets = Array.from(this.testTargets.values()).filter(target => 
-        target.id.includes('player') // Future: proper player detection
-      );
-      
-      if (playerTargets.length === 0) {
-        console.log('🗡️ Manual melee skipped - no player targets (dummies use pass-through)');
-        return false;
-      }
-    }
     
     // Check cooldown
     if (!this.canMelee || (now - this.lastMeleeTime) < COMBAT_CONFIG.MELEE_COOLDOWN) {
@@ -137,8 +111,31 @@ export class MeleeCombat {
 
     const currentKit = getCurrentPlayerKit();
     const className = currentKit.className;
+    const combatMode = getCombatMode();
     
-    console.log(`🗡️ Attempting ${className} melee attack...`);
+    // ARCHIVED MANUAL COMBAT: Only use click-to-hit for players or when explicitly disabled
+    if (combatMode === 'manual' || !PASSTHROUGH_CONFIG.MODE.USE_PASSTHROUGH_FOR_DUMMIES) {
+      console.log(`🗡️ Attempting ${className} MANUAL melee attack...`);
+      return this.performManualMeleeAttack(className, playerVelocity, now);
+    }
+    
+    // PASSTHROUGH MODE: For dummies, damage is now handled by HitVolume system
+    // This method only handles manual clicks for PvP targets
+    console.log(`🗡️ Manual click in passthrough mode - checking for PvP targets only...`);
+    
+    // Manual combat in passthrough mode only handles PvP targets
+    
+    return this.performPvPMeleeAttack(className, playerVelocity, now);
+  }
+
+  /**
+   * ARCHIVED: Original manual click-to-hit melee logic
+   * Preserved for PvP implementation and fallback compatibility
+   */
+  private performManualMeleeAttack(className: PlayerClass, playerVelocity?: THREE.Vector3, now?: number): boolean {
+    if (!now) now = Date.now();
+    
+    console.log(`🗡️ [MANUAL] Attempting ${className} melee attack...`);
     
     // Get camera position and direction
     const cameraPosition = this.camera.position.clone();
@@ -169,12 +166,61 @@ export class MeleeCombat {
       this.canMelee = true;
     }, COMBAT_CONFIG.MELEE_COOLDOWN);
     
-    console.log(`🗡️ Melee complete: ${totalHits} targets hit`);
+    console.log(`🗡️ [MANUAL] Melee complete: ${totalHits} targets hit`);
     return totalHits > 0;
   }
 
   /**
-   * Calculate attack parameters based on player class and state
+   * PvP-only manual melee attack (future implementation)
+   * Only targets players, not dummies (which use pass-through)
+   */
+  private performPvPMeleeAttack(_className: PlayerClass, _playerVelocity?: THREE.Vector3, _now?: number): boolean {
+    if (!_now) _now = Date.now();
+    
+    console.log(`🗡️ [PvP] Checking for player targets only...`);
+    
+    // PvP attack - check for player targets only
+    
+    // TODO: Implement PvP target detection
+    // For now, return false since we only have dummies
+    // Future: Filter targets where target.isPlayer === true
+    
+    const playerTargets = Array.from(this.testTargets.values()).filter((_target) => {
+      // TODO: Add isPlayer property to MeleeTarget interface
+      // return target.isPlayer === true;
+      return false; // No players in current implementation
+    });
+    
+    if (playerTargets.length === 0) {
+      console.log(`🗡️ [PvP] No player targets found - dummies use pass-through mode`);
+      return false;
+    }
+    
+    // If we had player targets, we'd use the same manual logic as above
+    // Get camera position and direction
+    // const cameraPosition = this.camera.position.clone();
+    // const cameraDirection = new THREE.Vector3();
+    // this.camera.getWorldDirection(cameraDirection);
+    
+    // Calculate attack parameters based on class
+    // const attackParams = this.calculateAttackParameters(className, playerVelocity);
+    
+    // TODO: Perform hit detection only on player targets
+    // const hitTargets = this.performHitDetectionOnPlayers(cameraPosition, cameraDirection, attackParams, playerTargets);
+    
+    // Set cooldown even for failed attempts
+    this.lastMeleeTime = _now!
+    this.canMelee = false;
+    setTimeout(() => {
+      this.canMelee = true;
+    }, COMBAT_CONFIG.MELEE_COOLDOWN);
+    
+    return false; // No hits in current implementation
+  }
+
+  /**
+   * ARCHIVED: Calculate attack parameters based on player class and state
+   * Preserved for PvP implementation - damage values maintained for balance
    */
   private calculateAttackParameters(className: PlayerClass, playerVelocity?: THREE.Vector3) {
     let range = COMBAT_CONFIG.BASE_RANGE;
@@ -282,7 +328,8 @@ export class MeleeCombat {
   }
 
   /**
-   * Perform hit detection using raycast cone sweep
+   * ARCHIVED: Perform hit detection using raycast cone sweep
+   * Preserved for PvP implementation and manual combat mode
    */
   private performHitDetection(
     origin: THREE.Vector3,
@@ -335,7 +382,8 @@ export class MeleeCombat {
   }
 
   /**
-   * Perform a single raycast and check for target hits
+   * ARCHIVED: Perform a single raycast and check for target hits
+   * Preserved for PvP implementation and manual combat mode
    */
   private performSingleRaycast(
     origin: THREE.Vector3,
@@ -427,12 +475,7 @@ export class MeleeCombat {
     console.log(`💥 Special hit feedback: ${type.toUpperCase()}`);
   }
 
-  /**
-   * Check if the player is currently swinging
-   */
-  private isCurrentlySwinging(): boolean {
-    return this.isSwingingState;
-  }
+  // Removed unused _isCurrentlySwinging method
   
 
   

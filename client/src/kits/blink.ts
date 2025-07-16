@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { COMBAT_CONFIG } from '../config';
 
 export interface BlinkAbilityContext {
   playerBody: RAPIER.RigidBody;
@@ -45,7 +44,7 @@ export function executeBlink(context: BlinkAbilityContext): void {
   const iFramesDuration = 100; // 0.1 seconds of invincibility
   const regenDisableDuration = 1000; // 1 second no regen
   const blinkWindowDuration = 500; // 0.5 second bonus damage window
-  const verticalBoost = 3.0; // Upward boost when holding Space
+  // const verticalBoost = 3.0; // Upward boost when holding Space - unused
   const safetyBuffer = 0.5; // Distance to stop before collision
   const forwardImpulseStrength = 3.0; // Forward momentum after blink
   
@@ -103,17 +102,6 @@ export function executeBlink(context: BlinkAbilityContext): void {
   
   // Perform final collision check at target position
   if (blinkSuccess && checkBlinkTarget(world, finalTargetPosition)) {
-    // PASS-THROUGH HIT DETECTION: Perform capsule sweep along blink path
-    if (COMBAT_CONFIG.USE_PASSTHROUGH_FOR_DUMMIES) {
-      window.dispatchEvent(new CustomEvent('blinkTeleportSweep', {
-        detail: {
-          fromPosition: playerPosition.clone(),
-          toPosition: finalTargetPosition.clone(),
-          timestamp: Date.now()
-        }
-      }));
-    }
-    
     // Execute the blink
     playerBody.setTranslation(finalTargetPosition, true);
     
@@ -224,7 +212,7 @@ function checkBlinkTarget(world: RAPIER.World, targetPosition: THREE.Vector3): b
   
   // Check for intersections at target position
   let hasIntersection = false;
-  world.intersectionsWithShape(testPos, testRot, testShape, (collider) => {
+  world.intersectionsWithShape(testPos, testRot, testShape, (_collider) => {
     // If we find any collision, the position is invalid
     hasIntersection = true;
     return false; // Stop checking after first intersection
