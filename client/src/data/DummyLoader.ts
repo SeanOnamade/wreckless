@@ -139,6 +139,10 @@ export class RacingTargetDummy implements MeleeTarget {
     this.rigidBody = this.targetDummy.rigidBody;
     
     this.speedBoostConfig = speedBoostConfig;
+    
+    // Verify HP initialization
+    const healthStatus = this.targetDummy.getHealthStatus();
+    console.log(`🏎️ Racing dummy ${this.id} initialized - HP: ${healthStatus.current}/${healthStatus.max}`);
   }
 
   /**
@@ -149,6 +153,10 @@ export class RacingTargetDummy implements MeleeTarget {
     
     // RACING MODE: Always give speed boosts, but still handle respawn for visual feedback
     const wasAvailable = this.isAvailable;
+    
+    // Log before delegating to underlying dummy
+    const healthStatus = this.targetDummy.getHealthStatus();
+    console.log(`🏎️ Racing dummy ${this.id} taking ${damage} damage (current: ${healthStatus.current}/${healthStatus.max} HP)`);
     
     // Calculate speed boost duration based on damage
     const baseDuration = this.speedBoostConfig.baseDuration;
@@ -220,24 +228,39 @@ export class RacingTargetDummy implements MeleeTarget {
    * Hide the target visually (simple approach)
    */
   private hideTarget(): void {
+    // DEFER setTranslation to avoid Rapier "recursive use" error
+    // This happens when setTranslation is called during an active physics query
+    requestAnimationFrame(() => {
+      try {
     // Move dummy underground temporarily
     this.rigidBody.setTranslation({
       x: this.position.x,
       y: this.position.y - 100,
       z: this.position.z
     }, true);
+      } catch (deferredError) {
+        console.error(`Error in deferred hideTarget for ${this.id}:`, deferredError);
+      }
+    });
   }
 
   /**
    * Show the target visually 
    */
   private showTarget(): void {
+    // DEFER setTranslation to avoid Rapier "recursive use" error
+    requestAnimationFrame(() => {
+      try {
     // Move dummy back to original position
     this.rigidBody.setTranslation({
       x: this.position.x,
       y: this.position.y,
       z: this.position.z
     }, true);
+      } catch (deferredError) {
+        console.error(`Error in deferred showTarget for ${this.id}:`, deferredError);
+      }
+    });
   }
 
   /**

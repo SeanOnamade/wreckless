@@ -114,15 +114,17 @@ export class MeleeCombat {
     const className = currentKit.className;
     const combatMode = getCombatMode();
     
+    console.log(`🗡️ Manual click detected - Combat mode: ${combatMode}`);
+    
     // ARCHIVED MANUAL COMBAT: Only use click-to-hit for players or when explicitly disabled
     if (combatMode === 'manual' || !PASSTHROUGH_CONFIG.MODE.USE_PASSTHROUGH_FOR_DUMMIES) {
-      console.log(`🗡️ Attempting ${className} MANUAL melee attack...`);
+      console.log(`🗡️ Attempting ${className} MANUAL melee attack (manual mode)...`);
       return this.performManualMeleeAttack(className, playerVelocity, now);
     }
     
     // PASSTHROUGH MODE: For dummies, damage is now handled by HitVolume system
     // This method only handles manual clicks for PvP targets
-    console.log(`🗡️ Manual click in passthrough mode - checking for PvP targets only...`);
+    console.log(`🗡️ Manual click in PASSTHROUGH mode - checking for PvP targets only (dummies use HitVolume)...`);
     
     // Manual combat in passthrough mode only handles PvP targets
     
@@ -178,7 +180,7 @@ export class MeleeCombat {
   private performPvPMeleeAttack(_className: PlayerClass, _playerVelocity?: THREE.Vector3, _now?: number): boolean {
     if (!_now) _now = Date.now();
     
-    console.log(`🗡️ [PvP] Checking for player targets only...`);
+    console.log(`🗡️ [PvP] Checking for player targets only (ignoring dummies in passthrough mode)...`);
     
     // PvP attack - check for player targets only
     
@@ -193,7 +195,15 @@ export class MeleeCombat {
     });
     
     if (playerTargets.length === 0) {
-      console.log(`🗡️ [PvP] No player targets found - dummies use pass-through mode`);
+      console.log(`🗡️ [PvP] No player targets found - dummies use HitVolume passthrough mode (manual click ignored)`);
+      
+      // Set cooldown even though no damage was applied
+      this.lastMeleeTime = _now!
+      this.canMelee = false;
+      setTimeout(() => {
+        this.canMelee = true;
+      }, COMBAT_CONFIG.MELEE_COOLDOWN);
+      
       return false;
     }
     

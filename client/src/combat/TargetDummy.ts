@@ -34,6 +34,7 @@ export class TargetDummy implements MeleeTarget {
     this.createPhysicsBody();
     
     console.log(`🎯 Target dummy "${id}" created at position:`, position);
+    console.log(`🎯 Dummy "${id}" initialized with ${this.currentHealth}/${this.maxHealth} HP`);
   }
 
   private createVisualMesh(): void {
@@ -113,9 +114,13 @@ export class TargetDummy implements MeleeTarget {
       type: 'TargetDummy'
     };
     
-    // Create capsule collider to match visual
-    const colliderDesc = RAPIER.ColliderDesc.capsule(0.9, 0.5);
+    // Create SENSOR collider - detectable but not solid (pass-through for players)
+    const colliderDesc = RAPIER.ColliderDesc.capsule(0.9, 0.5)
+      .setSensor(true); // CRITICAL: Makes dummy pass-through for movement
+    
     this.world.createCollider(colliderDesc, this.rigidBody);
+    
+    console.log(`🎯 Dummy ${this.id} created as SENSOR (pass-through for movement, detectable for hits)`);
   }
 
   /**
@@ -124,12 +129,24 @@ export class TargetDummy implements MeleeTarget {
   takeDamage(damage: number, _direction: THREE.Vector3): void {
     // Don't take damage if already KO'd
     if (this.currentHealth <= 0) {
+      console.log(`🎯 Dummy ${this.id} rejected damage (already KO'd) - ${this.currentHealth}/${this.maxHealth} HP`);
       return; // Silently reject damage for KO'd dummies
     }
     
+    // Log HP BEFORE damage
+    const hpBefore = this.currentHealth;
+    
     this.currentHealth -= damage;
     
-    console.log(`🎯 Dummy ${this.id} took ${damage} damage (${this.currentHealth}/${this.maxHealth} HP remaining)`);
+    // Enhanced combat log showing before/after HP
+    console.log(`🎯 Dummy ${this.id}: ${hpBefore}/${this.maxHealth} HP → took ${damage} damage → ${this.currentHealth}/${this.maxHealth} HP remaining`);
+    
+    // Add to combat log with clear HP status
+    window.dispatchEvent(new CustomEvent('combatLogMessage', {
+      detail: { 
+        message: `🎯 ${this.id}: ${hpBefore} HP → ${damage} dmg → ${this.currentHealth} HP remaining` 
+      }
+    }));
     
     // Note: meleeHit events are dispatched by the calling system (HitVolume/MeleeCombat)
     // to avoid double-dispatching in racing mode
@@ -230,11 +247,12 @@ export class TargetDummy implements MeleeTarget {
     
     // Add to combat log
     window.dispatchEvent(new CustomEvent('combatLogMessage', {
-      detail: { message: `✨ ${this.id} respawned!` }
+      detail: { message: `✨ ${this.id} respawned with full HP!` }
     }));
     
     // Reset health
     this.currentHealth = this.maxHealth;
+    console.log(`✨ Dummy ${this.id} health reset: ${this.currentHealth}/${this.maxHealth} HP`);
     
     // Enhanced respawn animation with prominent green flash
     const material = this.mesh.material as THREE.MeshStandardMaterial;
@@ -296,6 +314,7 @@ export class TargetDummy implements MeleeTarget {
    * Reset health to full (for round resets)
    */
   resetHealth(): void {
+    const oldHealth = this.currentHealth;
     this.currentHealth = this.maxHealth;
     
     // Clear any respawn timer
@@ -321,7 +340,12 @@ export class TargetDummy implements MeleeTarget {
       this.rigidBody.setEnabled(true);
     }
     
-    console.log(`🔄 Dummy ${this.id} health reset to full`);
+    console.log(`🔄 Dummy ${this.id} health reset: ${oldHealth}/${this.maxHealth} HP → ${this.currentHealth}/${this.maxHealth} HP (full)`);
+    
+    // Add to combat log for round resets
+    window.dispatchEvent(new CustomEvent('combatLogMessage', {
+      detail: { message: `🔄 ${this.id} health reset to ${this.currentHealth}/${this.maxHealth} HP` }
+    }));
   }
   
   /**

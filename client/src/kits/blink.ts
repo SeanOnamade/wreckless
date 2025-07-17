@@ -177,12 +177,12 @@ function performBlinkRaycast(
   // Create ray from offset position in blink direction
   const ray = new RAPIER.Ray(rayStart, direction);
   
-  // Cast ray with max distance, excluding sensors and kinematic bodies (player)
+  // Cast ray with max distance, excluding kinematic bodies (player) but including sensors (dummies)
   const hit = world.castRay(
     ray, 
     adjustedMaxDistance, 
     true, // solid
-    RAPIER.QueryFilterFlags.EXCLUDE_SENSORS | RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC
+    RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC // Allow blink to pass through sensor dummies
   );
   
   if (hit) {
