@@ -19,9 +19,9 @@ export class BlinkZoomEffect implements CameraEffect {
   // Current effect state
   private isZooming = false;
   private zoomPhase: 'out' | 'in' = 'out';
-  private zoomStartTime = 0;
   private zoomPhaseStartTime = 0;
   private startFov = 90;
+  private fovCaptured = false;
 
   // Event listener reference for cleanup
   private eventListener: ((event: Event) => void) | null = null;
@@ -67,8 +67,8 @@ export class BlinkZoomEffect implements CameraEffect {
     // Start zoom effect
     this.isZooming = true;
     this.zoomPhase = 'out';
-    this.zoomStartTime = now;
     this.zoomPhaseStartTime = now;
+    this.fovCaptured = false; // Reset FOV capture flag
     
     console.log('📹 BlinkZoom: Teleport zoom effect triggered!');
   }
@@ -77,12 +77,12 @@ export class BlinkZoomEffect implements CameraEffect {
     if (!this.isZooming || !(camera instanceof THREE.PerspectiveCamera)) return;
     
     const now = Date.now();
-    const totalElapsed = now - this.zoomStartTime;
     const phaseElapsed = now - this.zoomPhaseStartTime;
 
     // Store starting FOV when effect begins (before any modifications)
-    if (totalElapsed === 0) {
+    if (!this.fovCaptured) {
       this.startFov = camera.fov;
+      this.fovCaptured = true;
     }
     
     if (this.zoomPhase === 'out') {
@@ -130,6 +130,8 @@ export class BlinkZoomEffect implements CameraEffect {
     
     // Reset effect state
     this.isZooming = false;
+    this.fovCaptured = false;
+    this.zoomPhaseStartTime = 0;
     
     console.log('📹 BlinkZoomEffect: Cleaned up');
   }

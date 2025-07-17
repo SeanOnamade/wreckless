@@ -25,6 +25,7 @@ export class BoostShakeEffect implements CameraEffect {
   private fovBurstEndTime = 0;
   private fovBurstStartValue = 90;
   private fovBurstTime = 0;
+  private fovCaptured = false;
 
   // Event listener reference for cleanup
   private eventListener: ((event: Event) => void) | null = null;
@@ -71,6 +72,7 @@ export class BoostShakeEffect implements CameraEffect {
     this.isFovBursting = true;
     this.fovBurstEndTime = now + this.fovBurstDuration;
     this.fovBurstTime = 0;
+    this.fovCaptured = false; // Reset FOV capture flag
     
     console.log(`📹 BoostShake: Wind effect triggered! Speed ${boostData.fromVelocity}→${boostData.toVelocity} m/s`);
   }
@@ -79,8 +81,9 @@ export class BoostShakeEffect implements CameraEffect {
     const now = Date.now();
 
     // Store the starting FOV when burst begins (before any modifications)
-    if (this.isFovBursting && this.fovBurstTime === 0 && camera instanceof THREE.PerspectiveCamera) {
+    if (this.isFovBursting && !this.fovCaptured && camera instanceof THREE.PerspectiveCamera) {
       this.fovBurstStartValue = camera.fov;
+      this.fovCaptured = true;
     }
 
     // Update wind shake effect
@@ -134,6 +137,9 @@ export class BoostShakeEffect implements CameraEffect {
     // Reset effect states
     this.isWindShaking = false;
     this.isFovBursting = false;
+    this.fovCaptured = false;
+    this.windShakeTime = 0;
+    this.fovBurstTime = 0;
     
     console.log('📹 BoostShakeEffect: Cleaned up');
   }

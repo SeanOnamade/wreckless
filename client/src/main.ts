@@ -27,6 +27,7 @@ import { SpeedFovEffect } from './effects/SpeedFovEffect';
 import { BoostShakeEffect } from './effects/BoostShakeEffect';
 import { HitShakeEffect } from './effects/HitShakeEffect';
 import { BlinkZoomEffect } from './effects/BlinkZoomEffect';
+import { WindStreakEffect } from './effects/WindStreakEffect';
 
 console.info("🗄️ Legacy swing archived:", ["grappleLegacy_v2.ts"]);
 
@@ -50,14 +51,16 @@ const speedFovEffect = new SpeedFovEffect();
 const boostShakeEffect = new BoostShakeEffect();
 const hitShakeEffect = new HitShakeEffect();
 const blinkZoomEffect = new BlinkZoomEffect();
+const windStreakEffect = new WindStreakEffect();
 
 // Register all camera effects
 CameraEffects.register(speedFovEffect);
 CameraEffects.register(boostShakeEffect);
 CameraEffects.register(hitShakeEffect);
 CameraEffects.register(blinkZoomEffect);
+CameraEffects.register(windStreakEffect);
 
-console.log('📹 Camera effects system initialized with 4 effects');
+console.log('📹 Camera effects system initialized with 5 effects');
 
 // Renderer setup
 const renderer = new THREE.WebGLRenderer({
@@ -765,9 +768,10 @@ function animate() {
   
   // Update camera effects system
   if (physicsWorld) {
-    // Feed current speed to the speed FOV effect
+    // Feed current speed to speed-based effects
     const currentSpeed = physicsWorld.fpsController.getCurrentSpeed();
     speedFovEffect.updateSpeed(currentSpeed);
+    windStreakEffect.updateSpeed(currentSpeed);
   }
   CameraEffects.update(deltaTime);
   

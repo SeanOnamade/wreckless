@@ -18,7 +18,8 @@ Expected console output:
 📹 BoostShakeEffect: Listening for speedBoostGranted events
 📹 HitShakeEffect: Listening for passthroughHit events
 📹 BlinkZoomEffect: Listening for blink ability events
-📹 Camera effects system initialized with 4 effects
+📹 WindStreakEffect: Initialized with speed range 30-60 m/s
+📹 Camera effects system initialized with 5 effects
 ```
 
 ---
@@ -129,6 +130,47 @@ const effects = window.CameraEffects || CameraEffects;
 
 ---
 
+## 🎯 Effect 5: Wind Streak Overlay
+
+**What it does:** Subtle wind streak visual overlay when speed exceeds 30 m/s
+
+### Test Steps:
+1. **Get to high speed**: Use blast jump, grapple, or dummy boosts to exceed 30 m/s
+2. **Watch for overlay**: Wind streaks should gradually appear as speed increases
+3. **Test opacity scaling**: 
+   - At 30 m/s: Barely visible streaks
+   - At 45 m/s: Moderate opacity  
+   - At 60+ m/s: Full opacity streaks
+4. **Test fade out**: Slow down below 30 m/s to see streaks fade away
+5. **Check console**: Look for wind streak logs:
+   ```
+   📹 WindStreak: speed=45.2 m/s, opacity=0.350
+   ```
+
+### Expected Behavior:
+- **Gradual appearance**: Smooth opacity transition, not sudden on/off
+- **Speed responsive**: Opacity directly correlates with speed above 30 m/s
+- **No performance impact**: Should not affect frame rate
+- **Graceful asset handling**: Works even without windstreaks.png asset
+- **Fullscreen overlay**: Covers entire viewport with centered streaks
+
+### Asset Requirements:
+- **Image file**: `/public/assets/windstreaks.png` 
+- **Fallback behavior**: If image missing, overlay div still functions
+- **CSS styling**: Uses `mix-blend-mode: screen` for natural blending
+
+### Manual Testing:
+You can test manually in console:
+```javascript
+// Set test opacity (0.0 to 1.0)
+windStreakEffect.setTestOpacity(0.5)
+
+// Get current effect status
+windStreakEffect.getEffectInfo()
+```
+
+---
+
 ## 🐛 Debug Information
 
 ### Console Commands
@@ -204,6 +246,7 @@ blinkZoomEffect.getZoomStatus()
 - [ ] Dummy boost creates wind shake + FOV burst
 - [ ] Dummy hits create brief camera shake
 - [ ] Blink teleports have zoom out/in effect
+- [ ] Wind streaks appear at high speeds (30+ m/s)
 - [ ] No performance impact during normal gameplay
 - [ ] No conflicts between multiple effects
 - [ ] Console shows proper initialization and effect logs
@@ -218,17 +261,18 @@ blinkZoomEffect.getZoomStatus()
 
 ## 🎮 Quick Test Sequence
 
-**5-Minute Full Test:**
+**6-Minute Full Test:**
 
 1. **Start game** → Check console for initialization
 2. **Move around** → Verify speed FOV at different speeds  
 3. **Hit dummy** → Check boost shake + wind effect
 4. **Hit dummy again** → Verify hit shake feedback
 5. **Switch to blink** → Test zoom effect on teleport
-6. **Test combinations** → Use multiple effects together
-7. **Check performance** → Ensure smooth gameplay throughout
+6. **Get high speed** → Test wind streaks at 30+ m/s
+7. **Test combinations** → Use multiple effects together
+8. **Check performance** → Ensure smooth gameplay throughout
 
-**Expected Result:** All four effects work smoothly, provide enhanced game feel, and can be disabled if needed.
+**Expected Result:** All five effects work smoothly, provide enhanced game feel, and can be disabled if needed.
 
 ---
 

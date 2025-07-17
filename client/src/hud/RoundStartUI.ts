@@ -77,7 +77,7 @@ export class RoundStartUI {
         0 0 60px rgba(0, 255, 255, 0.2);
       animation: titlePulse 3s ease-in-out infinite alternate;
     `;
-    title.textContent = '🏁 WRECKLESS';
+    title.textContent = 'WRECKLESS';
     
     // Create subtitle
     const subtitle = document.createElement('h2');
@@ -88,7 +88,7 @@ export class RoundStartUI {
       font-weight: normal;
       text-shadow: 0 0 15px rgba(255, 0, 255, 0.6);
     `;
-    subtitle.textContent = 'Racing Combat Championship';
+    subtitle.textContent = 'Passing Time When You\'re Trapped In It';
     
     // Create instructions
     const instructions = document.createElement('div');
@@ -99,10 +99,10 @@ export class RoundStartUI {
       color: #cccccc;
     `;
     instructions.innerHTML = `
-      <div style="margin-bottom: 15px;">🎯 Hit dummies: <span style="color: #00ff88; text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);">+10 pts</span></div>
-      <div style="margin-bottom: 15px;">✅ Checkpoints: <span style="color: #00ff88; text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);">+30 pts</span></div>
-      <div style="margin-bottom: 15px;">🏁 Complete lap: <span style="color: #00ff88; text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);">+50 pts</span></div>
-      <div style="color: #ffaa00; font-size: 16px; text-shadow: 0 0 8px rgba(255, 170, 0, 0.5);">⏱️ 2 minutes to score as many points as possible!</div>
+      <div style="margin-bottom: 15px;">Hit dummies: <span style="color: #00ff88; text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);">+10 pts</span></div>
+      <div style="margin-bottom: 15px;">Pass checkpoints: <span style="color: #00ff88; text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);">+30 pts</span></div>
+      <div style="margin-bottom: 15px;">Complete laps: <span style="color: #00ff88; text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);">+50 pts</span></div>
+      <div style="color: #ffaa00; font-size: 16px; text-shadow: 0 0 8px rgba(255, 170, 0, 0.5);">2 minutes to score as many points as possible!</div>
     `;
     
     // Create start button
@@ -126,7 +126,7 @@ export class RoundStartUI {
       margin-bottom: 20px;
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
     `;
-    this.startButton.textContent = '🚀 START RACE';
+    this.startButton.textContent = 'START RACE';
     this.startButton.addEventListener('click', this.boundClickHandler);
     
     // Add hover effect

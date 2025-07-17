@@ -65,6 +65,13 @@ export class SpeedFovEffect implements CameraEffect {
     
     // Apply to camera (ensure it's a PerspectiveCamera)
     if (camera instanceof THREE.PerspectiveCamera) {
+      // Safety check: ensure FOV is within reasonable bounds
+      const safeFov = Math.max(60, Math.min(120, this.currentFov));
+      if (safeFov !== this.currentFov) {
+        console.warn(`📹 SpeedFOV: Clamped FOV from ${this.currentFov.toFixed(1)}° to ${safeFov.toFixed(1)}°`);
+        this.currentFov = safeFov;
+      }
+      
       camera.fov = this.currentFov;
       camera.updateProjectionMatrix();
     }
