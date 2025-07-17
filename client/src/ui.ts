@@ -24,6 +24,7 @@ export class DebugUI {
   private meleeCooldownElement: HTMLSpanElement | null = null;
   private lastHitElement: HTMLSpanElement | null = null;
   private targetHealthElement: HTMLSpanElement | null = null;
+  private playerHealthElement: HTMLSpanElement | null = null;
   private combatLogElement: HTMLDivElement | null = null;
   
   // Dummy editing UI elements
@@ -187,6 +188,16 @@ export class DebugUI {
       targetHealthDiv.innerHTML = 'Target: <span id="target-health">No target</span>';
       this.targetHealthElement = targetHealthDiv.querySelector('#target-health')!;
       
+      // Player health (NEW for PvP)
+      const playerHealthDiv = document.createElement('div');
+      playerHealthDiv.innerHTML = 'Player: <span id="player-health">100/100 HP</span>';
+      playerHealthDiv.style.cssText = `
+        margin-top: 3px;
+        font-weight: bold;
+      `;
+      this.playerHealthElement = playerHealthDiv.querySelector('#player-health')!;
+      this.playerHealthElement.style.color = '#66ff66'; // Green for full health
+      
       // Combat log
       const logHeader = document.createElement('div');
       logHeader.style.cssText = `
@@ -214,6 +225,7 @@ export class DebugUI {
       this.combatContainer.appendChild(cooldownDiv);
       this.combatContainer.appendChild(lastHitDiv);
       this.combatContainer.appendChild(targetHealthDiv);
+      this.combatContainer.appendChild(playerHealthDiv);
       this.combatContainer.appendChild(logHeader);
       this.combatContainer.appendChild(this.combatLogElement);
     }
@@ -682,6 +694,27 @@ export class DebugUI {
     window.addEventListener('combatModeChanged', () => {
       this.updateCombatModeDisplay();
     });
+  }
+
+  /**
+   * Update player health display for PvP combat
+   */
+  updatePlayerHealth(health: { current: number; max: number }): void {
+    if (!this.playerHealthElement) return;
+    
+    this.playerHealthElement.textContent = `${health.current}/${health.max} HP`;
+    
+    // Color code based on health percentage
+    const percentage = (health.current / health.max) * 100;
+    if (percentage > 75) {
+      this.playerHealthElement.style.color = '#66ff66'; // Green
+    } else if (percentage > 25) {
+      this.playerHealthElement.style.color = '#ffff66'; // Yellow
+    } else if (percentage > 0) {
+      this.playerHealthElement.style.color = '#ff6666'; // Red
+    } else {
+      this.playerHealthElement.style.color = '#888888'; // Gray (KO'd)
+    }
   }
 
   destroy() {

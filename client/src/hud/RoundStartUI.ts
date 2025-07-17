@@ -88,7 +88,7 @@ export class RoundStartUI {
       font-weight: normal;
       text-shadow: 0 0 15px rgba(255, 0, 255, 0.6);
     `;
-    subtitle.textContent = 'Passing Time When You\'re Trapped In It';
+    subtitle.textContent = 'Time Dilation Jail: August 5th, 3184';
     
     // Create instructions
     const instructions = document.createElement('div');

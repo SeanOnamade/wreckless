@@ -76,7 +76,7 @@ export class RoundEndUI {
         0 0 90px rgba(255, 215, 0, 0.2);
       animation: endTitleGlow 2s ease-in-out infinite alternate;
     `;
-    title.textContent = '🏁 ROUND COMPLETE!';
+    title.textContent = 'ROUND COMPLETE!';
     
     // Create final score display
     const scoreContainer = document.createElement('div');
@@ -312,15 +312,15 @@ export class RoundEndUI {
     const breakdownHTML = `
       <div style="font-size: 18px; color: #ffff00; margin-bottom: 15px; font-weight: bold;">Score Breakdown:</div>
       <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-        <span>🎯 Dummy Hits:</span>
+        <span>Dummy Hits:</span>
         <span>${breakdown.dummyKO.count}x = <strong style="color: #00ff00;">${breakdown.dummyKO.points} pts</strong></span>
       </div>
       <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-        <span>✅ Checkpoints:</span>
+        <span>Checkpoints:</span>
         <span>${breakdown.checkpoint.count}x = <strong style="color: #00ff00;">${breakdown.checkpoint.points} pts</strong></span>
       </div>
       <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
-        <span>🏁 Laps:</span>
+        <span>Laps:</span>
         <span>${breakdown.lap.count}x = <strong style="color: #00ff00;">${breakdown.lap.points} pts</strong></span>
       </div>
       <div style="border-top: 1px solid rgba(255, 255, 255, 0.3); padding-top: 10px; font-size: 16px; color: #cccccc;">

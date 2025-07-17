@@ -15,6 +15,9 @@ import { AbilityHUD } from './kits/AbilityHUD';
 import { MeleeCombat, type MeleeTarget } from './combat';
 import { DummyPlacementManager } from './combat/DummyPlacementManager';
 import { DummyLoader } from './data/DummyLoader';
+import { PlayerHealth } from './player/PlayerHealth';
+import { HealthHUD } from './hud/HealthHUD';
+import { TestingHelpHUD } from './hud/TestingHelpHUD';
 import { registerHitVolumes, getHitVolume } from './systems/HitVolume';
 import { RaceRoundSystem } from './systems/RaceRoundSystem';
 import { ScoreHUD } from './hud/ScoreHUD';
@@ -317,6 +320,12 @@ class ScreenFlash {
 const debugUI = new DebugUI();
 // const gameMenu = new GameMenu(); // Unused variable
 
+// Initialize PvP Player Health System
+new PlayerHealth();
+
+// Note: Player health UI is now handled by HealthHUD.ts
+// (Removed duplicate event listener that was conflicting with HealthHUD)
+
 // Initialize ability system
 const abilityManager = new AbilityManager();
 // AbilityHUD is self-initializing, no variable needed
@@ -416,6 +425,21 @@ let _roundEndUI: RoundEndUI | null = null;
 initPhysics(scene, camera).then((world) => {
   physicsWorld = world;
   
+  // Set up player respawn event handler (now that physicsWorld is available)
+  window.addEventListener('playerRespawn', (event: Event) => {
+    const customEvent = event as CustomEvent;
+    const reason = customEvent.detail?.reason || 'unknown';
+    console.log(`🔄 Player respawn triggered: ${reason}`);
+    
+    // Actually respawn the player
+    if (physicsWorld) {
+      physicsWorld.fpsController.reset();
+      console.log(`✅ Player reset completed for reason: ${reason}`);
+    } else {
+      console.error('❌ Cannot respawn: physicsWorld not available');
+    }
+  });
+  
   // Initialize ability system with game context
   abilityManager.initialize({
     playerBody: world.playerBody,
@@ -468,6 +492,12 @@ initPhysics(scene, camera).then((world) => {
   
   // Initialize game HUD (main UI)
   gameHUD = new GameHUD(lapController);
+  
+  // Initialize health HUD (PvP combat)
+  new HealthHUD();
+  
+  // Initialize testing help HUD (V key overlay)
+  new TestingHelpHUD();
   
   // Listen for round reset to reset game HUD checkpoints
   window.addEventListener('roundReset', () => {

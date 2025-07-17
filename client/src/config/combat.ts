@@ -11,6 +11,9 @@ export const COMBAT_MODE_CONFIG = {
   // Preserve manual combat for future PvP implementation
   USE_MANUAL_FOR_PLAYERS: true,
   
+  // PvP Combat Configuration
+  PVP_ENABLED: false, // Set to true to enable player vs player combat
+  
   // Debug mode for combat system development
   DEBUG_HIT_DETECTION: false,
   

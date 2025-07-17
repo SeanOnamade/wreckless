@@ -49,6 +49,15 @@ export class FirstPersonController {
   private acceleration = 25.0; // How fast we accelerate (increased for snappier feel)
   private deceleration = 8.0; // How fast we stop (reduced for less sluggishness)
   
+  // PvP Combat state
+  private combatState = {
+    isAttacking: false,
+    isBlocking: false,
+    attackStartTime: 0,
+    blockStartTime: 0
+  };
+  private combatTimerInterval: number | null = null;
+  
   // Momentum preservation for airborne movement
   private preservedMomentum = new THREE.Vector3(); // World-space momentum vector
   
@@ -75,6 +84,11 @@ export class FirstPersonController {
       this.handleSpeedBoost((event as CustomEvent).detail);
     });
     
+    // Listen for combat state requests from testing HUD
+    window.addEventListener('requestCombatState', () => {
+      this.broadcastCombatState();
+    });
+    
     console.log('FirstPersonController initialized with pointer lock');
   }
   
@@ -92,6 +106,10 @@ export class FirstPersonController {
         console.log(`🔄 Combat mode toggled to: ${newMode.toUpperCase()}`);
         console.log(`   • MANUAL mode: Click to hit dummies (original system)`);
         console.log(`   • PASSTHROUGH mode: Move through dummies to damage (new system)`);
+      } else if (e.code === 'KeyV') {
+        e.preventDefault(); // Prevent any default browser behavior
+        console.log('🧪 V key detected, calling handleVKeybinds...');
+        this.handleVKeybinds(e);
       }
     });
     
@@ -103,14 +121,65 @@ export class FirstPersonController {
     document.addEventListener('mousedown', (e) => {
       if (!this.isPointerLocked) return;
       
-      if (e.button === 0) { // Left mouse button (LMB)
-        // Dispatch melee attack event
+      if (e.button === 0) { // Left mouse button (LMB) - Attack
+        // Can't attack while blocking
+        if (this.combatState.isBlocking) {
+          console.log('❌ Cannot attack while blocking');
+          return;
+        }
+        
+        this.combatState.isAttacking = true;
+        this.combatState.attackStartTime = Date.now();
+        console.log('⚔️ Attack started (1s limit)');
+        
+        // Start timer for live updates
+        this.startCombatTimer();
+        
+        // Keep existing meleeAttack event for dummy targeting (manual mode)
         window.dispatchEvent(new CustomEvent('meleeAttack', {
           detail: { timestamp: Date.now() }
         }));
-      } else if (e.button === 2) { // Right mouse button (RMB)
-        // Future: blocking functionality
-        console.log('🛡️ RMB pressed (blocking not yet implemented)');
+        
+        // Broadcast state change
+        this.broadcastCombatState();
+        
+      } else if (e.button === 2) { // Right mouse button (RMB) - Block
+        // Can't block while attacking
+        if (this.combatState.isAttacking) {
+          console.log('❌ Cannot block while attacking');
+          return;
+        }
+        
+        this.combatState.isBlocking = true;
+        this.combatState.blockStartTime = Date.now();
+        console.log('🛡️ Blocking started (1s limit)');
+        
+        // Start timer for live updates
+        this.startCombatTimer();
+        
+        // Broadcast state change
+        this.broadcastCombatState();
+      }
+    });
+    
+    // Mouse button release events for PvP combat
+    document.addEventListener('mouseup', (e) => {
+      if (e.button === 0) { // LMB release
+        if (this.combatState.isAttacking) {
+          this.combatState.isAttacking = false;
+          this.combatState.attackStartTime = 0;
+          console.log('⚔️ Attack ended (manual release)');
+          // Broadcast state change
+          this.broadcastCombatState();
+        }
+      } else if (e.button === 2) { // RMB release
+        if (this.combatState.isBlocking) {
+          this.combatState.isBlocking = false;
+          this.combatState.blockStartTime = 0;
+          console.log('🛡️ Blocking ended (manual release)');
+          // Broadcast state change
+          this.broadcastCombatState();
+        }
       }
     });
     
@@ -381,6 +450,9 @@ export class FirstPersonController {
   update(deltaTime: number) {
     // Get current position
     const translation = this.playerBody.translation();
+    
+    // Update combat state (check attack time limit)
+    this.updateCombatState();
     
     // Update speed boost state
     this.updateSpeedBoost();
@@ -763,5 +835,159 @@ export class FirstPersonController {
     this.isSpeedBoosted = false;
     this.moveSpeed = this.baseMoveSpeed;
     this.speedBoostEndTime = 0;
+    
+    // Reset combat state on respawn
+    this.combatState.isAttacking = false;
+    this.combatState.isBlocking = false;
+    this.combatState.attackStartTime = 0;
+    this.combatState.blockStartTime = 0;
+    
+    // Stop combat timer
+    this.stopCombatTimer();
+  }
+  
+  /**
+   * Update combat state (check time limits for both attack and block)
+   */
+  private updateCombatState(): void {
+    const now = Date.now();
+    let stateChanged = false;
+    
+    // Check attack time limit (1 second maximum)
+    if (this.combatState.isAttacking && this.combatState.attackStartTime > 0) {
+      const attackDuration = now - this.combatState.attackStartTime;
+      if (attackDuration > 1000) { // 1 second limit
+        this.combatState.isAttacking = false;
+        this.combatState.attackStartTime = 0;
+        console.log('⏰ Attack time limit reached (1s) - stopped attacking');
+        stateChanged = true;
+      }
+    }
+    
+    // Check block time limit (1 second maximum)
+    if (this.combatState.isBlocking && this.combatState.blockStartTime > 0) {
+      const blockDuration = now - this.combatState.blockStartTime;
+      if (blockDuration > 1000) { // 1 second limit
+        this.combatState.isBlocking = false;
+        this.combatState.blockStartTime = 0;
+        console.log('⏰ Block time limit reached (1s) - stopped blocking');
+        stateChanged = true;
+      }
+    }
+    
+    // Broadcast if any state changed
+    if (stateChanged) {
+      this.broadcastCombatState();
+    }
+  }
+
+  /**
+   * Broadcast current combat state to HUD components
+   */
+  private broadcastCombatState(): void {
+    const now = Date.now();
+    const attackTimeLeft = this.combatState.isAttacking && this.combatState.attackStartTime > 0 ? 
+      Math.max(0, 1000 - (now - this.combatState.attackStartTime)) : 0;
+    const blockTimeLeft = this.combatState.isBlocking && this.combatState.blockStartTime > 0 ? 
+      Math.max(0, 1000 - (now - this.combatState.blockStartTime)) : 0;
+    
+    window.dispatchEvent(new CustomEvent('updateCombatState', {
+      detail: {
+        isAttacking: this.combatState.isAttacking,
+        isBlocking: this.combatState.isBlocking,
+        attackStartTime: this.combatState.attackStartTime,
+        blockStartTime: this.combatState.blockStartTime,
+        attackTimeLeft: attackTimeLeft,
+        blockTimeLeft: blockTimeLeft
+      }
+    }));
+  }
+
+  /**
+   * Start timer for live combat state updates (50ms intervals = 20fps)
+   */
+  private startCombatTimer(): void {
+    if (this.combatTimerInterval !== null) return; // Already running
+    
+    this.combatTimerInterval = window.setInterval(() => {
+      // Only broadcast if there's an active action
+      if (this.combatState.isAttacking || this.combatState.isBlocking) {
+        this.broadcastCombatState();
+      } else {
+        // Stop timer if no active actions
+        this.stopCombatTimer();
+      }
+    }, 50); // 50ms = 20fps for smooth countdown
+  }
+
+  /**
+   * Stop the combat timer
+   */
+  private stopCombatTimer(): void {
+    if (this.combatTimerInterval !== null) {
+      clearInterval(this.combatTimerInterval);
+      this.combatTimerInterval = null;
+    }
+  }
+
+  /**
+   * Handle V key testing commands
+   */
+  private handleVKeybinds(e: KeyboardEvent): void {
+    const shift = e.shiftKey;
+    const ctrl = e.ctrlKey;
+    const alt = e.altKey;
+    
+    console.log(`🧪 V keybind - Shift: ${shift}, Ctrl: ${ctrl}, Alt: ${alt}`);
+    
+    if (shift && ctrl) {
+      // Shift+Ctrl+V: Test KO
+      console.log('🧪 [Shift+Ctrl+V] Testing KO...');
+      window.dispatchEvent(new CustomEvent('playerTakeDamage', {
+        detail: { damage: 100, isBlocking: false }
+      }));
+    } else if (shift && alt) {
+      // Shift+Alt+V: Show PvP mode instructions
+      console.log('🧪 [Shift+Alt+V] PvP Mode Instructions (check console):');
+      console.log('📝 To enable PvP combat:');
+      console.log('   1. Open (in code): client/src/config/combat.ts');
+      console.log('   2. Change (in code): PVP_ENABLED: false → PVP_ENABLED: true');
+      console.log('   3. Create test enemy player using browser console');
+      console.log('   4. Hold LMB + walk into enemy to test PvP damage');
+      console.log('💡 These instructions are displayed in console.');
+    } else if (shift) {
+      // Shift+V: Test damage
+      console.log('🧪 [Shift+V] Testing 30 damage...');
+      window.dispatchEvent(new CustomEvent('playerTakeDamage', {
+        detail: { damage: 30, isBlocking: this.combatState.isBlocking }
+      }));
+    } else if (alt) {
+      // Alt+V: Reset health to full
+      console.log('🧪 [Alt+V] Resetting health to full...');
+      window.dispatchEvent(new CustomEvent('playerHealthChanged', {
+        detail: { current: 100, max: 100 }
+      }));
+    } else {
+      // V alone: Toggle on-screen help overlay
+      console.log('🧪 [V] Toggling on-screen help overlay...');
+      window.dispatchEvent(new CustomEvent('toggleTestingHelp'));
+      
+      // Update combat state for the overlay
+      window.dispatchEvent(new CustomEvent('updateCombatState', {
+        detail: {
+          isAttacking: this.combatState.isAttacking,
+          isBlocking: this.combatState.isBlocking,
+          attackStartTime: this.combatState.attackStartTime,
+          blockStartTime: this.combatState.blockStartTime
+        }
+      }));
+    }
+  }
+
+  /**
+   * Get current combat state for PvP system
+   */
+  getCombatState() {
+    return this.combatState;
   }
 } 

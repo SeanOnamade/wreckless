@@ -97,6 +97,13 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
     .setTranslation(SPAWN_POS.x, SPAWN_POS.y, SPAWN_POS.z);
   const playerBody = world.createRigidBody(playerBodyDesc);
   
+  // CRITICAL: Tag player for HitVolume detection
+  playerBody.userData = { 
+    isPlayer: true, 
+    id: 'localPlayer',
+    type: 'Player'
+  };
+  
   // Create capsule collider
   const playerColliderDesc = RAPIER.ColliderDesc.capsule(capsuleHeight, capsuleRadius);
   world.createCollider(playerColliderDesc, playerBody);

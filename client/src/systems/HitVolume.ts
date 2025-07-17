@@ -4,6 +4,7 @@ import type { FirstPersonController } from '../controller';
 import type { MeleeCombat } from '../combat/MeleeCombat';
 import { 
   COMBAT_CONFIG, 
+  COMBAT_MODE_CONFIG,
   getHitCapsuleRadius, 
   getCombatMode,
   type HitVolumeType 
@@ -204,33 +205,55 @@ export class HitVolume {
     const testPos = { x: position.x, y: position.y, z: position.z };
     const testRot = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
     
-    // Check for intersections with dummy colliders
+    // Check for intersections with both dummies and players
     this.world.intersectionsWithShape(testPos, testRot, testShape, (collider: RAPIER.Collider) => {
       const userData = collider.parent()?.userData as any;
       const rigidBody = collider.parent();
       
-      // Filter for dummy colliders only
-      if (!userData || !userData.isDummy || !rigidBody) {
+      if (!userData || !rigidBody) {
         return true; // Continue checking
       }
       
-      // Skip disabled rigidBodies (KO'd dummies)
-      const isEnabled = rigidBody.isEnabled();
-      
-      if (!isEnabled) {
-        return true; // Continue checking (dummy is KO'd)
+      // Handle dummy colliders (existing logic)
+      if (userData.isDummy) {
+        // Skip disabled rigidBodies (KO'd dummies)
+        const isEnabled = rigidBody.isEnabled();
+        
+        if (!isEnabled) {
+          return true; // Continue checking (dummy is KO'd)
+        }
+        
+        const targetId = userData.id;
+        if (!targetId || hitTargets.has(targetId)) {
+          return true; // Continue if already hit or no ID
+        }
+        
+        // Mark as hit to prevent multiple hits
+        hitTargets.add(targetId);
+        
+        // Process the hit
+        this.processHitOnTarget(targetId, hitType, sweepDistance, deltaTime);
+        
+        return true; // Continue checking for more targets
       }
       
-      const targetId = userData.id;
-      if (!targetId || hitTargets.has(targetId)) {
-        return true; // Continue if already hit or no ID
+      // Handle player colliders (NEW PvP logic)
+      if (COMBAT_MODE_CONFIG.PVP_ENABLED && userData.isPlayer && userData.id !== 'localPlayer') {
+        // PvP hit detected - check if local player is attacking
+        const localCombatState = this.controller.getCombatState();
+        if (localCombatState.isAttacking) {
+          const targetId = userData.id;
+          if (!targetId || hitTargets.has(targetId)) {
+            return true; // Continue if already hit or no ID
+          }
+          
+          // Mark as hit to prevent multiple hits
+          hitTargets.add(targetId);
+          
+          // Process the PvP hit
+          this.processPlayerHit(targetId, hitType, sweepDistance);
+        }
       }
-      
-      // Mark as hit to prevent multiple hits
-      hitTargets.add(targetId);
-      
-      // Process the hit
-      this.processHitOnTarget(targetId, hitType, sweepDistance, deltaTime);
       
       return true; // Continue checking for more targets
     });
@@ -372,6 +395,62 @@ export class HitVolume {
         console.error(`❌ HitVolume: Emergency dispatch also failed:`, emergencyError);
       }
     }
+  }
+
+  /**
+   * Process PvP hit on a player target
+   */
+  private processPlayerHit(playerId: string, hitType: HitVolumeType, _sweepDistance: number): void {
+    const now = Date.now();
+    
+    // FRAME-LEVEL protection: Prevent multiple hits on same target in same frame
+    if (this.frameHitTargets.has(playerId)) {
+      console.log(`🛡️ HitVolume: Prevented duplicate PvP hit on ${playerId} in same frame ${this.frameCount}`);
+      return;
+    }
+    
+    // Check hit cooldown to prevent rapid-fire hits (same as dummies)
+    const lastHitTime = this.hitCooldowns.get(playerId);
+    const HIT_COOLDOWN_MS = 500; // Same cooldown as dummies
+    
+    if (lastHitTime && (now - lastHitTime) < HIT_COOLDOWN_MS) {
+      console.log(`⏰ HitVolume: ${playerId} PvP cooldown (${now - lastHitTime}ms < ${HIT_COOLDOWN_MS}ms)`);
+      return; // Still on cooldown
+    }
+    
+    // CRITICAL: Set cooldown BEFORE applying damage to prevent race conditions
+    this.frameHitTargets.add(playerId);
+    this.hitCooldowns.set(playerId, now);
+    
+    // Calculate damage with bonuses based on player class and state
+    const damageResult = this.calculateDamage();
+    const finalDamage = damageResult.damage;
+    
+    console.log(`⚔️ PvP HIT: Applying ${finalDamage} damage to ${playerId} (${hitType})`);
+    
+    // TODO: Get target player's blocking state (for now assume not blocking)
+    const isTargetBlocking = false;
+    
+    // Dispatch to player health system
+    window.dispatchEvent(new CustomEvent('playerTakeDamage', {
+      detail: { 
+        damage: finalDamage,
+        isBlocking: isTargetBlocking,
+        attackerId: 'localPlayer',
+        hitType
+      }
+    }));
+    
+    // Add to combat log
+    let logMessage = `⚔️ PvP: ${finalDamage} HP`;
+    if (damageResult.isCrit) logMessage = `⚔️ PvP CRIT: ${finalDamage} HP`;
+    if (damageResult.isBonus) logMessage = `⚔️ PvP BONUS: ${finalDamage} HP`;
+    
+    window.dispatchEvent(new CustomEvent('combatLogMessage', {
+      detail: { message: logMessage }
+    }));
+    
+    console.log(`⚔️ PvP hit ${playerId} for ${finalDamage} HP`);
   }
 
   /**
