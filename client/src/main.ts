@@ -20,6 +20,14 @@ import { RaceRoundSystem } from './systems/RaceRoundSystem';
 import { ScoreHUD } from './hud/ScoreHUD';
 import { RoundStartUI } from './hud/RoundStartUI';
 import { RoundEndUI } from './hud/RoundEndUI';
+
+// Camera Effects System
+import { CameraEffects } from './effects/CameraEffectsManager';
+import { SpeedFovEffect } from './effects/SpeedFovEffect';
+import { BoostShakeEffect } from './effects/BoostShakeEffect';
+import { HitShakeEffect } from './effects/HitShakeEffect';
+import { BlinkZoomEffect } from './effects/BlinkZoomEffect';
+
 console.info("🗄️ Legacy swing archived:", ["grappleLegacy_v2.ts"]);
 
 // Scene setup
@@ -35,6 +43,21 @@ const camera = new THREE.PerspectiveCamera(
   1000
 );
 camera.position.set(0, 2, 5);
+
+// Initialize camera effects system
+CameraEffects.setCamera(camera);
+const speedFovEffect = new SpeedFovEffect();
+const boostShakeEffect = new BoostShakeEffect();
+const hitShakeEffect = new HitShakeEffect();
+const blinkZoomEffect = new BlinkZoomEffect();
+
+// Register all camera effects
+CameraEffects.register(speedFovEffect);
+CameraEffects.register(boostShakeEffect);
+CameraEffects.register(hitShakeEffect);
+CameraEffects.register(blinkZoomEffect);
+
+console.log('📹 Camera effects system initialized with 4 effects');
 
 // Renderer setup
 const renderer = new THREE.WebGLRenderer({
@@ -739,6 +762,14 @@ function animate() {
   
   // Update visual feedback effects
   updateVisualFeedback(camera);
+  
+  // Update camera effects system
+  if (physicsWorld) {
+    // Feed current speed to the speed FOV effect
+    const currentSpeed = physicsWorld.fpsController.getCurrentSpeed();
+    speedFovEffect.updateSpeed(currentSpeed);
+  }
+  CameraEffects.update(deltaTime);
   
   // Update UI and checkpoint system
   if (physicsWorld) {
