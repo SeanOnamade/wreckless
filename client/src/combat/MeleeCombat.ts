@@ -35,6 +35,7 @@ export interface MeleeTarget {
   takeDamage?: (damage: number, direction: THREE.Vector3) => void;
   applyKnockback?: (force: number, direction: THREE.Vector3) => void;
   updateRangeIndicator?: (playerPosition: THREE.Vector3, range: number) => void;
+  resetHealth?: () => void;
 }
 
 export class MeleeCombat {

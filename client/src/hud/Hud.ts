@@ -131,7 +131,7 @@ export class LapHUD {
   /**
    * Flash the HUD when a lap is completed
    */
-  flashLapComplete(lapTime: number): void {
+  flashLapComplete(_lapTime: number): void {
     // Flash the total laps element
     const originalColor = this.totalLapsElement.style.color;
     this.totalLapsElement.style.color = '#00ff00';
@@ -142,39 +142,12 @@ export class LapHUD {
       this.totalLapsElement.style.fontWeight = 'normal';
     }, 1000);
     
-    // Show lap time notification
-    this.showLapTimeNotification(lapTime);
+    // Removed lap time notification to avoid duplicate with GameHUD
+    // this.showLapTimeNotification(lapTime);
   }
   
-  private showLapTimeNotification(lapTime: number): void {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0, 0, 0, 0.8);
-      color: #00ff00;
-      padding: 20px;
-      border-radius: 10px;
-      font-family: monospace;
-      font-size: 24px;
-      font-weight: bold;
-      text-align: center;
-      z-index: 9999;
-      pointer-events: none;
-    `;
-    
-    const timeSeconds = (lapTime / 1000).toFixed(2);
-    notification.textContent = `Lap Complete! ${timeSeconds}s`;
-    
-    document.body.appendChild(notification);
-    
-    // Remove notification after 2 seconds
-    setTimeout(() => {
-      document.body.removeChild(notification);
-    }, 2000);
-  }
+  // Removed to avoid duplicate lap complete notifications with GameHUD
+  // private showLapTimeNotification(lapTime: number): void { ... }
   
   /**
    * Clean up HUD resources

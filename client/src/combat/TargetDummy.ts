@@ -291,6 +291,38 @@ export class TargetDummy implements MeleeTarget {
       percentage: (this.currentHealth / this.maxHealth) * 100
     };
   }
+
+  /**
+   * Reset health to full (for round resets)
+   */
+  resetHealth(): void {
+    this.currentHealth = this.maxHealth;
+    
+    // Clear any respawn timer
+    if (this.respawnTimer) {
+      window.clearTimeout(this.respawnTimer);
+      this.respawnTimer = undefined;
+    }
+    
+    // Reset visual state
+    const material = this.mesh.material as THREE.MeshStandardMaterial;
+    material.color.setHex(0xff4444); // Normal red
+    material.transparent = false;
+    material.opacity = 1.0;
+    material.emissive.setHex(0x000000); // No emissive
+    
+    // Reset scale and rotation
+    this.mesh.scale.set(1, 1, 1);
+    this.mesh.rotation.z = 0;
+    this.mesh.position.copy(this.position);
+    
+    // Re-enable collision if disabled
+    if (!this.rigidBody.isEnabled()) {
+      this.rigidBody.setEnabled(true);
+    }
+    
+    console.log(`🔄 Dummy ${this.id} health reset to full`);
+  }
   
   /**
    * Update range indicator based on player proximity

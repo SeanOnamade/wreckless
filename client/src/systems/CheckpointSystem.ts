@@ -206,4 +206,25 @@ export class CheckpointSystem {
     this.checkpoints.clear();
     this.checkpointByHandle.clear();
   }
+  
+  /**
+   * Reset checkpoint system state (called during round reset)
+   */
+  reset(): void {
+    // Reset global debounce timer
+    this.lastTriggerTime = 0;
+    
+    // Reset individual checkpoint trigger times
+    this.checkpoints.forEach(checkpoint => {
+      checkpoint.lastTriggerTime = 0;
+      
+      // Reset debug mesh color if it exists
+      if (checkpoint.debugMesh && this.isDevelopment) {
+        const material = checkpoint.debugMesh.material as THREE.MeshBasicMaterial;
+        material.color.set(0xff0000); // Reset to red
+      }
+    });
+    
+    console.log('🔄 Checkpoint system reset');
+  }
 } 

@@ -15,6 +15,7 @@ export class LapController {
   private totalLaps = 0;
   private currentLapStartTime = 0;
   private bestLapTime = Infinity;
+  private isActive = false; // Track if timing is active
   private onLapComplete?: (lapTime: number, totalLaps: number) => void;
   private onCheckpointVisit?: (checkpoint: CheckpointId, isValid: boolean) => void;
   
@@ -24,7 +25,7 @@ export class LapController {
   ) {
     this.onLapComplete = onLapComplete;
     this.onCheckpointVisit = onCheckpointVisit;
-    this.resetLap();
+    // Don't start timing yet - wait for explicit start
   }
   
   /**
@@ -75,7 +76,9 @@ export class LapController {
   
   private resetLap(): void {
     this.lastCheckpoint = null;
-    this.currentLapStartTime = performance.now();
+    if (this.isActive) {
+      this.currentLapStartTime = performance.now();
+    }
   }
   
   /**
@@ -96,18 +99,35 @@ export class LapController {
       lastCheckpoint: this.lastCheckpoint,
       totalLaps: this.totalLaps,
       bestLapTime: this.bestLapTime === Infinity ? 0 : this.bestLapTime,
-      currentLapTime: performance.now() - this.currentLapStartTime
+      currentLapTime: this.isActive ? performance.now() - this.currentLapStartTime : 0
     };
   }
   
   /**
-   * Reset all lap data
+   * Reset all lap data (but don't start timing yet)
    */
   reset(): void {
     this.state.index = 0;
     this.lastCheckpoint = null;
     this.totalLaps = 0;
     this.bestLapTime = Infinity;
+    this.isActive = false;
+    this.currentLapStartTime = 0;
+  }
+  
+  /**
+   * Start the lap timing (called when round actually begins)
+   */
+  start(): void {
+    this.isActive = true;
     this.currentLapStartTime = performance.now();
+    console.log('🏁 Lap controller timing started');
+  }
+  
+  /**
+   * Stop the lap timing
+   */
+  stop(): void {
+    this.isActive = false;
   }
 } 

@@ -463,6 +463,11 @@ export class DebugUI {
       const customEvent = event as CustomEvent;
       this.addCombatLog(customEvent.detail.message);
     });
+
+    // Listen for combat log clear (for round resets)
+    window.addEventListener('combatLogClear', () => {
+      this.clearCombatLog();
+    });
   }
   
   /**
@@ -639,6 +644,18 @@ export class DebugUI {
     
     // Scroll to top (newest entry)
     this.combatLogElement.scrollTop = 0;
+  }
+
+  /**
+   * Clear the combat log
+   */
+  private clearCombatLog(): void {
+    if (!this.combatLogElement) return;
+    
+    this.combatLog = [];
+    this.combatLogElement.innerHTML = '<div style="color: #888888; font-style: italic;">Combat log cleared</div>';
+    
+    console.log('🔄 Combat log cleared');
   }
   
   /**

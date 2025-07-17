@@ -258,6 +258,28 @@ export class RacingTargetDummy implements MeleeTarget {
   }
 
   /**
+   * Reset health to full (for round resets)
+   */
+  resetHealth(): void {
+    // Reset underlying dummy health
+    if (this.targetDummy.resetHealth) {
+      this.targetDummy.resetHealth();
+    }
+    
+    // Clear respawn timer
+    if (this.respawnTimer) {
+      clearTimeout(this.respawnTimer);
+      this.respawnTimer = undefined;
+    }
+    
+    // Reset availability
+    this.isAvailable = true;
+    this.showTarget();
+    
+    console.log(`🔄 Racing dummy ${this.id} reset to full health`);
+  }
+
+  /**
    * Respawn the dummy
    */
   private respawn(): void {

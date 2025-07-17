@@ -9,6 +9,7 @@ export class GameHUD {
   private checkpointElements: Map<CheckpointId, HTMLSpanElement> = new Map();
   private currentCheckpointIndex = 0;
   private pulseInterval: number | null = null;
+  private timerActive = false;
   
   constructor(lapController: LapController) {
     this.lapController = lapController;
@@ -95,8 +96,8 @@ export class GameHUD {
       font-size: 24px;
       color: #00ff00;
     `;
-    lapTimerContainer.innerHTML = 'Time: <span id="lapTimer">0.00s</span>';
-    this.lapTimerElement = lapTimerContainer.querySelector('#lapTimer')!;
+    lapTimerContainer.innerHTML = 'Lap Time: <span id="lapTimer">0.00s</span>';
+    this.lapTimerElement = lapTimerContainer.querySelector('#lapTimer')!
     
     // Assemble HUD
     this.container.appendChild(this.checkpointBar);
@@ -198,7 +199,7 @@ export class GameHUD {
     this.showLapCompleteMessage(lapTime, lapNumber);
     
     // Reset checkpoint progress
-    this.resetCheckpointProgress();
+    this.doResetCheckpointProgress();
   }
   
   private showLapCompleteMessage(lapTime: number, lapNumber: number): void {
@@ -244,7 +245,7 @@ export class GameHUD {
     }, 2000);
   }
   
-  private resetCheckpointProgress(): void {
+  private doResetCheckpointProgress(): void {
     // Reset all checkpoints to default state
     this.checkpointElements.forEach((element) => {
       element.style.border = '2px solid #666';
@@ -257,11 +258,36 @@ export class GameHUD {
     this.currentCheckpointIndex = 0;
     this.startCurrentCheckpointPulse();
   }
+
+  /**
+   * Public method to reset checkpoint progress (called from main.ts on round reset)
+   */
+  resetCheckpointProgress(): void {
+    this.doResetCheckpointProgress();
+  }
+  
+  /**
+   * Start the lap timer (called when round starts after countdown)
+   */
+  startTimer(): void {
+    this.timerActive = true;
+  }
+  
+  /**
+   * Stop/reset the lap timer
+   */
+  stopTimer(): void {
+    this.timerActive = false;
+    this.lapTimerElement.textContent = '0.00s';
+    this.lapTimerElement.style.color = '#00ff00';
+  }
   
   /**
    * Update lap timer display
    */
   update(): void {
+    if (!this.timerActive) return; // Only update if timer is active
+    
     const progress = this.lapController.getProgress();
     const currentTime = progress.currentLapTime / 1000;
     this.lapTimerElement.textContent = currentTime.toFixed(2) + 's';

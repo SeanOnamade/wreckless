@@ -16,6 +16,10 @@ import { MeleeCombat, type MeleeTarget } from './combat';
 import { DummyPlacementManager } from './combat/DummyPlacementManager';
 import { DummyLoader } from './data/DummyLoader';
 import { registerHitVolumes, getHitVolume } from './systems/HitVolume';
+import { RaceRoundSystem } from './systems/RaceRoundSystem';
+import { ScoreHUD } from './hud/ScoreHUD';
+import { RoundStartUI } from './hud/RoundStartUI';
+import { RoundEndUI } from './hud/RoundEndUI';
 console.info("🗄️ Legacy swing archived:", ["grappleLegacy_v2.ts"]);
 
 // Scene setup
@@ -311,6 +315,62 @@ window.addEventListener('playerRespawn', () => {
   screenFlash.flash('red', 400);
 });
 
+// Listen for dummy hit events to trigger green flash
+window.addEventListener('meleeHit', () => {
+  screenFlash.flash('green', 200);
+});
+
+window.addEventListener('passthroughHit', () => {
+  screenFlash.flash('green', 200);
+});
+
+// Listen for round reset to reset lap controller and checkpoint system
+window.addEventListener('roundReset', () => {
+  if (lapController) {
+    lapController.reset();
+    console.log('🔄 Lap controller reset');
+  }
+  if (checkpointSystem) {
+    checkpointSystem.reset();
+    console.log('🔄 Checkpoint system reset');
+  }
+});
+
+// Listen for player position reset
+window.addEventListener('resetPlayerPosition', () => {
+  if (physicsWorld) {
+    physicsWorld.fpsController.reset();
+    console.log('🔄 Player position reset to spawn');
+  }
+});
+
+// Listen for combat log clear
+window.addEventListener('clearCombatLog', () => {
+  window.dispatchEvent(new CustomEvent('combatLogClear'));
+  console.log('🔄 Combat log cleared');
+});
+
+// Listen for dummy reset
+window.addEventListener('resetAllDummies', () => {
+  // Reset all target dummies
+  targetDummies.forEach(dummy => {
+    if (dummy.resetHealth) {
+      dummy.resetHealth();
+    }
+  });
+  
+  // Reset placement manager dummies too
+  if (dummyPlacementManager) {
+    dummyPlacementManager.getPlacedDummies().forEach(dummy => {
+      if (dummy.resetHealth) {
+        dummy.resetHealth();
+      }
+    });
+  }
+  
+  console.log('🔄 All dummies reset to full health');
+});
+
 // Initialize physics and checkpoint system
 let physicsWorld: PhysicsWorld | null = null;
 let lapController: LapController | null = null;
@@ -321,6 +381,11 @@ let meleeCombat: MeleeCombat | null = null;
 let targetDummies: MeleeTarget[] = [];
 let dummyPlacementManager: DummyPlacementManager | null = null;
 let dummyLoader: DummyLoader | null = null;
+let roundSystem: RaceRoundSystem | null = null;
+// Round UI components (self-managing, no direct references needed)
+let _scoreHUD: ScoreHUD | null = null;
+let _roundStartUI: RoundStartUI | null = null;
+let _roundEndUI: RoundEndUI | null = null;
 
 initPhysics(scene, camera).then((world) => {
   physicsWorld = world;
@@ -336,7 +401,15 @@ initPhysics(scene, camera).then((world) => {
   // Initialize ability HUD
   new AbilityHUD(abilityManager); // Self-initializing UI component
   
-  // Initialize lap controller with callbacks
+  // Initialize round system first
+  roundSystem = new RaceRoundSystem({
+    dummyKOPoints: 10,
+    checkpointPoints: 30,
+    lapCompletePoints: 50,
+    roundDurationMs: 120000 // 2 minutes
+  });
+
+  // Initialize lap controller with callbacks (including round system integration)
   lapController = new LapController(
     (lapTime, totalLaps) => {
       if (import.meta.env.DEV) {
@@ -344,6 +417,8 @@ initPhysics(scene, camera).then((world) => {
       }
       lapHUD?.flashLapComplete(lapTime);
       gameHUD?.onLapComplete(lapTime, totalLaps);
+      // Award lap completion points
+      roundSystem?.onLapComplete(lapTime, totalLaps);
     },
     (checkpoint, isValid) => {
       if (import.meta.env.DEV) {
@@ -351,6 +426,8 @@ initPhysics(scene, camera).then((world) => {
       }
       lapHUD?.flashCheckpoint(checkpoint, isValid);
       gameHUD?.onCheckpointVisited(checkpoint, isValid);
+      // Award checkpoint points
+      roundSystem?.onCheckpointReached(checkpoint, isValid);
     }
   );
   
@@ -365,6 +442,53 @@ initPhysics(scene, camera).then((world) => {
   
   // Initialize game HUD (main UI)
   gameHUD = new GameHUD(lapController);
+  
+  // Listen for round reset to reset game HUD checkpoints
+  window.addEventListener('roundReset', () => {
+    if (gameHUD) {
+      gameHUD.resetCheckpointProgress();
+      console.log('🔄 Game HUD checkpoints reset');
+    }
+  });
+  
+  // Initialize round system UI components
+  if (roundSystem) {
+    _scoreHUD = new ScoreHUD(roundSystem);
+    _roundStartUI = new RoundStartUI(roundSystem);
+    _roundEndUI = new RoundEndUI(roundSystem);
+    
+    // Add callback to start both timers when round begins
+    roundSystem.addCallbacks({
+      onStateChange: (state) => {
+        if (state === 'active') {
+          // Start the lap controller timing
+          if (lapController) {
+            lapController.start();
+          }
+          // Start the GameHUD timer display
+          if (gameHUD) {
+            gameHUD.startTimer();
+          }
+          console.log('🏁 Both timers started after countdown');
+        } else if (state === 'waiting') {
+          // Stop timers when round ends
+          if (lapController) {
+            lapController.stop();
+          }
+          if (gameHUD) {
+            gameHUD.stopTimer();
+          }
+        }
+      }
+    });
+    
+    // Mark as intentionally used (UI components are self-managing)
+    void _scoreHUD;
+    void _roundStartUI;
+    void _roundEndUI;
+    
+    console.log('🏁 Round system UI initialized');
+  }
   
   // Initialize melee combat system
   meleeCombat = new MeleeCombat(world.world, camera, world.playerBody);
@@ -480,6 +604,30 @@ initPhysics(scene, camera).then((world) => {
   movementTrail = new MovementTrail(scene);
   
   animate();
+});
+
+// Add cleanup for round system components on page unload
+window.addEventListener('beforeunload', () => {
+  try {
+    roundSystem?.destroy();
+    _scoreHUD?.destroy();
+    _roundStartUI?.destroy();
+    _roundEndUI?.destroy();
+    console.log('🧹 Round system components cleaned up on page unload');
+  } catch (error) {
+    console.error('Error during cleanup:', error);
+  }
+});
+
+// Also cleanup on visibility change (when tab becomes hidden)
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    // Pause timers when tab is hidden to prevent weird behavior
+    const roundInfo = roundSystem?.getRoundInfo();
+    if (roundInfo?.state === 'active') {
+      console.log('⏸️ Tab hidden during active round - timer behavior may be affected');
+    }
+  }
 });
 
 // Visual feedback state
