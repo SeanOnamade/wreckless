@@ -5,6 +5,7 @@ import type { MeleeCombat } from '../combat/MeleeCombat';
 import type { DummyPositionData } from './DummyPositionTypes';
 import dummyPositionsData from './dummyPositions.json';
 import type { MeleeTarget } from '../combat/MeleeCombat';
+import { Network } from '../net';
 
 export interface SpeedBoostConfig {
   baseDuration: number; // 3 seconds base
@@ -36,6 +37,14 @@ export class DummyLoader {
     this.scene = scene;
     this.world = world;
     this.meleeCombat = meleeCombat;
+    
+    // Register for server dummy state updates when online
+    if (Network.isNetworkingEnabled()) {
+      Network.registerDummyStateCallback((dummyStates) => {
+        this.processDummyStateUpdates(dummyStates);
+      });
+      console.log('🌐 Registered for server dummy state updates');
+    }
   }
 
   /**
@@ -107,6 +116,20 @@ export class DummyLoader {
   getSpeedBoostConfig(): SpeedBoostConfig {
     return this.speedBoostConfig;
   }
+  
+  /**
+   * Process dummy state updates from server (online mode)
+   */
+  private processDummyStateUpdates(dummyStates: Record<string, any>): void {
+    for (const [dummyId, serverState] of Object.entries(dummyStates)) {
+      const localDummy = this.loadedDummies.find(d => d.id === dummyId);
+      
+      if (localDummy) {
+        // Update local dummy to match server state
+        localDummy.updateFromServerState(serverState);
+      }
+    }
+  }
 }
 
 /**
@@ -140,9 +163,39 @@ export class RacingTargetDummy implements MeleeTarget {
     
     this.speedBoostConfig = speedBoostConfig;
     
-    // Verify HP initialization
+    // Verify HP initialization (check passes silently)
+    this.targetDummy.getHealthStatus();
+    // Racing dummy initialized silently
+  }
+
+  /**
+   * Update dummy state from server (online mode)
+   */
+  updateFromServerState(serverState: any): void {
     const healthStatus = this.targetDummy.getHealthStatus();
-    console.log(`🏎️ Racing dummy ${this.id} initialized - HP: ${healthStatus.current}/${healthStatus.max}`);
+    
+    if (serverState.health !== healthStatus.current) {
+      console.log(`🌐 Updating dummy ${this.id}: ${healthStatus.current}→${serverState.health} HP (server sync)`);
+      
+      // Update health via direct property access (bypass normal damage processing)
+      (this.targetDummy as any).currentHealth = serverState.health;
+      
+      // Handle KO state changes
+      if (serverState.health <= 0 && serverState.isAlive === false) {
+        // Dummy was KO'd on server - trigger visual KO
+        if (healthStatus.current > 0) {
+          console.log(`💀 Dummy ${this.id} KO'd by server - triggering visual feedback`);
+          // Trigger KO visual without affecting health (already set)
+          this.targetDummy.takeDamage(0, new THREE.Vector3(0, 0, 0));
+        }
+      } else if (serverState.health > 0 && serverState.isAlive === true) {
+        // Dummy respawned on server
+        if (healthStatus.current <= 0) {
+          console.log(`✨ Dummy ${this.id} respawned by server - updating visual state`);
+          this.targetDummy.resetHealth?.();
+        }
+      }
+    }
   }
 
   /**
@@ -151,7 +204,24 @@ export class RacingTargetDummy implements MeleeTarget {
   takeDamage(damage: number, direction: THREE.Vector3): void {
     // Racing mode: Always apply speed boosts
     
-    // RACING MODE: Always give speed boosts, but still handle respawn for visual feedback
+    // Check if we're in online mode - send damage to server
+    if (Network.isNetworkingEnabled()) {
+      console.log(`🌐 Sending dummy damage to server: ${this.id} -${damage} HP`);
+      
+      // Send damage to server
+      Network.sendDummyDamage(this.id, damage);
+      
+      // Still grant speed boost locally for immediate feedback
+      const baseDuration = this.speedBoostConfig.baseDuration;
+      const bonusDuration = (damage / this.speedBoostConfig.damageScaling) * 1000;
+      const totalDuration = Math.min(baseDuration + bonusDuration, this.speedBoostConfig.maxDuration);
+      this.grantSpeedBoost(damage, totalDuration);
+      
+      // Don't process damage locally - server will handle it and broadcast state
+      return;
+    }
+    
+    // OFFLINE MODE: Continue with local dummy processing
     const wasAvailable = this.isAvailable;
     
     // Log before delegating to underlying dummy
@@ -165,8 +235,6 @@ export class RacingTargetDummy implements MeleeTarget {
       baseDuration + bonusDuration,
       this.speedBoostConfig.maxDuration
     );
-    
-    // Calculate speed boost duration
     
     // Apply speed boost to player
     this.grantSpeedBoost(damage, totalDuration);

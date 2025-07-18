@@ -84,8 +84,14 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   groundMesh.position.y = -0.1;
   scene.add(groundMesh);
   
-  // Create external track
-  await loadExternalTrack(scene, world);
+  // Create external track with error handling
+  try {
+    await loadExternalTrack(scene, world);
+    console.log('✅ Track loaded successfully');
+  } catch (error) {
+    console.error('❌ Track loading failed:', error);
+    console.warn('⚠️ Continuing without external track - using ground plane only');
+  }
   
   // Create player capsule
   const capsuleRadius = 0.5;

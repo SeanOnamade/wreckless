@@ -5,13 +5,23 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "test-server": "node debug-server-clean.js",
+    "test-server-debug": "node debug-server.js",
+    "test-server-physics": "node test-server.js",
+    "test-server-simple": "node test-server-simple.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@dimforge/rapier3d": "^0.18.0-beta.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
     "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@flydotio/dockerfile": "^0.7.10"
   }
 }

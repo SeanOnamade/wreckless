@@ -362,7 +362,6 @@ function releaseSwing(reason: string, context: GrappleAbilityContext): void {
     const playerPos = context.playerBody.translation();
     const playerPosition = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
     const anchorPoint = swingState.anchorPoint as THREE.Vector3; // Explicit type assertion
-    // const toAnchor = anchorPoint.clone().sub(playerPosition); // Unused variable
     const heightDiff = anchorPoint.y - playerPosition.y;
     const horizontalSpeed = Math.sqrt(currentVel.x * currentVel.x + currentVel.z * currentVel.z);
     
@@ -435,10 +434,9 @@ function updatePredictionSphere(context: GrappleAbilityContext): void {
   // Debug logging for prediction issues (occasional)
   if (Math.random() < 0.01) { // 1% chance to reduce spam
     if (hit) {
-      const heightDiff = hit.point.y - playerPosition.y;
-      console.log(`🎯 Raycast hit: dist=${hit.distance.toFixed(1)}m, height diff=${heightDiff.toFixed(1)}m, valid=${hit.distance > 1.0 && heightDiff > 0.5}`);
-    } else {
-      console.log(`🎯 Raycast miss: no hit detected`);
+              // Raycast hit detected
+      } else {
+        // Raycast miss
     }
   }
   

@@ -78,7 +78,7 @@ export class SpeedFovEffect implements CameraEffect {
 
     // Debug logging (throttled)
     if (import.meta.env.DEV && Math.random() < 0.01) { // 1% chance each frame
-      console.log(`📹 SpeedFOV: speed=${this.currentSpeed.toFixed(1)} m/s, FOV=${this.currentFov.toFixed(1)}°`);
+      // SpeedFOV updated silently
     }
   }
 

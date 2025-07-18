@@ -26,7 +26,7 @@ export class CheckpointSystem {
     this.scene = scene;
     this.world = world;
     this.lapController = lapController;
-    this.isDevelopment = import.meta.env.DEV || window.location.hostname === 'localhost';
+    this.isDevelopment = true; // Always show checkpoints for better gameplay
     
     this.initializeCheckpoints();
   }

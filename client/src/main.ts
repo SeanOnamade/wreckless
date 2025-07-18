@@ -4,7 +4,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import initPhysics from './physics';
 import type { PhysicsWorld } from './physics';
 import { DebugUI } from './ui';
-// import { GameMenu } from './menu';
+
 import { LapController } from './systems/LapController';
 import { CheckpointSystem } from './systems/CheckpointSystem';
 import { LapHUD } from './hud/Hud';
@@ -18,6 +18,8 @@ import { DummyLoader } from './data/DummyLoader';
 import { PlayerHealth } from './player/PlayerHealth';
 import { HealthHUD } from './hud/HealthHUD';
 import { TestingHelpHUD } from './hud/TestingHelpHUD';
+import './net'; // Initialize networking layer (only active with #online)
+import { MultiplayerManager, Network } from './net';
 import { registerHitVolumes, getHitVolume } from './systems/HitVolume';
 import { RaceRoundSystem } from './systems/RaceRoundSystem';
 import { ScoreHUD } from './hud/ScoreHUD';
@@ -109,6 +111,9 @@ window.addEventListener('resize', () => {
 
 // Clock for delta time
 const clock = new THREE.Clock();
+
+// Initialize multiplayer manager (only active if online)
+let multiplayerManager: MultiplayerManager | null = null;
 
 // Fixed timestep for physics
 const fixedTimeStep = 1 / 60; // 60 Hz physics
@@ -318,7 +323,6 @@ class ScreenFlash {
 
 // Initialize UI
 const debugUI = new DebugUI();
-// const gameMenu = new GameMenu(); // Unused variable
 
 // Initialize PvP Player Health System
 new PlayerHealth();
@@ -429,12 +433,13 @@ initPhysics(scene, camera).then((world) => {
   window.addEventListener('playerRespawn', (event: Event) => {
     const customEvent = event as CustomEvent;
     const reason = customEvent.detail?.reason || 'unknown';
-    console.log(`🔄 Player respawn triggered: ${reason}`);
     
     // Actually respawn the player
     if (physicsWorld) {
       physicsWorld.fpsController.reset();
-      console.log(`✅ Player reset completed for reason: ${reason}`);
+      if (import.meta.env.DEV) {
+        console.log(`✅ Player reset completed for reason: ${reason}`);
+      }
     } else {
       console.error('❌ Cannot respawn: physicsWorld not available');
     }
@@ -459,6 +464,36 @@ initPhysics(scene, camera).then((world) => {
     roundDurationMs: 120000 // 2 minutes
   });
 
+  // Initialize multiplayer manager for online mode
+  if (window.location.hash.includes('#online')) {
+    multiplayerManager = new MultiplayerManager(scene);
+    console.log('🌐 Multiplayer manager initialized - other players will appear as cubes');
+    
+    // Set up player context provider for networking position corrections
+    Network.setPlayerContextProvider(() => {
+      if (!physicsWorld) return { 
+        position: { x: 0, y: 0, z: 0 }, 
+        velocity: { x: 0, y: 0, z: 0 },
+        cameraDirection: { x: 0, y: 0, z: 1 } 
+      };
+      
+      const position = physicsWorld.devTools.getCurrentPosition();
+      const velocity = physicsWorld.fpsController.getVelocity();
+      
+      // Get camera direction
+      const cameraDirection = new THREE.Vector3();
+      camera.getWorldDirection(cameraDirection);
+      
+      return {
+        position: { x: position.x, y: position.y, z: position.z },
+        velocity: { x: velocity.x, y: velocity.y, z: velocity.z },
+        cameraDirection: { x: cameraDirection.x, y: cameraDirection.y, z: cameraDirection.z }
+      };
+    });
+    
+    console.log('📍 Player context provider connected for ability position corrections');
+  }
+
   // Initialize lap controller with callbacks (including round system integration)
   lapController = new LapController(
     (lapTime, totalLaps) => {
@@ -472,7 +507,7 @@ initPhysics(scene, camera).then((world) => {
     },
     (checkpoint, isValid) => {
       if (import.meta.env.DEV) {
-        console.log(`${isValid ? '✓' : '✗'} Checkpoint ${checkpoint} ${isValid ? 'valid' : 'invalid'}`);
+        // Checkpoint validation (silenced to reduce spam)
       }
       lapHUD?.flashCheckpoint(checkpoint, isValid);
       gameHUD?.onCheckpointVisited(checkpoint, isValid);
@@ -563,7 +598,7 @@ initPhysics(scene, camera).then((world) => {
   setupVisualFeedback(camera, renderer);
   
   // Load racing dummies from saved positions
-  if (dummyLoader && import.meta.env.DEV) {
+  if (dummyLoader) {
     dummyLoader.loadDummies().then((loadedDummies) => {
       console.log(`🏎️ Loaded ${loadedDummies.length} racing dummies with speed boost mechanics`);
       targetDummies = loadedDummies;
@@ -622,19 +657,11 @@ initPhysics(scene, camera).then((world) => {
     console.log('  Shift+F - Remove last placed dummy');
     console.log('  Ctrl+F - Export dummy positions');
     console.log('  Ctrl+Shift+F - Remove nearest dummy');
-    console.log('  Alt+F - Toggle placement preview mode');
+        console.log('  Alt+F - Toggle placement preview mode');
     
+    // Handle other keys in separate listener  
     window.addEventListener('keydown', (event) => {
-      if (event.code === 'Digit1') {
-        setPlayerClass('blast');
-        console.log('🔥 Switched to Blast class');
-      } else if (event.code === 'Digit2') {
-        setPlayerClass('grapple');
-        console.log('🪝 Switched to Grapple class');
-      } else if (event.code === 'Digit3') {
-        setPlayerClass('blink');
-        console.log('✨ Switched to Blink class');
-      } else if (event.code === 'KeyC') {
+      if (event.code === 'KeyC') {
         // Copy combat log to clipboard
         if (debugUI) {
           const combatLog = debugUI.getCombatLog();
@@ -653,6 +680,58 @@ initPhysics(scene, camera).then((world) => {
     });
   }
   
+  // ABILITY SWITCHING - PRODUCTION ENABLED
+  console.log('🔧 Setting up ability switching handlers...');
+  
+  // Create a more robust handler with extensive debugging
+  const handleAbilitySwitching = (event: KeyboardEvent) => {
+    console.log('🎮 ANY key pressed:', event.code, 'target:', event.target);
+    
+    // Don't interfere when typing in inputs
+    if (event.target && (event.target as HTMLElement).tagName === 'INPUT') {
+      console.log('🚫 Ignoring key in input field');
+      return;
+    }
+    
+    if (['Digit1', 'Digit2', 'Digit3'].includes(event.code)) {
+      console.log('🎯 Number key detected:', event.code);
+      event.preventDefault();
+      event.stopPropagation();
+      
+      if (event.code === 'Digit1') {
+        setPlayerClass('blast');
+        console.log('🔥 Switched to Blast class');
+      } else if (event.code === 'Digit2') {
+        setPlayerClass('grapple');
+        console.log('🪝 Switched to Grapple class');
+      } else if (event.code === 'Digit3') {
+        setPlayerClass('blink');
+        console.log('✨ Switched to Blink class');
+      }
+    }
+  };
+  
+  // Add multiple listeners with priority
+  document.addEventListener('keydown', handleAbilitySwitching, true); // Capture phase
+  document.addEventListener('keydown', handleAbilitySwitching, false); // Bubble phase
+  window.addEventListener('keydown', handleAbilitySwitching, true);
+  
+  // Add a direct global test function
+  (window as any).testAbilitySwitch = (className: string) => {
+    console.log('🧪 Manual ability switch test:', className);
+    setPlayerClass(className as any);
+  };
+  
+  console.log('✅ Ability switching handlers installed');
+  console.log('🧪 Test manually with: window.testAbilitySwitch("grapple")');
+  
+  // Add a simple global debug listener to catch ALL keys
+  document.addEventListener('keydown', (e) => {
+    if (['Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
+      console.log('🔍 GLOBAL CAPTURE: Digit key pressed:', e.code);
+    }
+  }, true); // Capture phase - should fire first
+  
   // Add ceiling for grapple testing
   addSwingTestCeiling(scene, physicsWorld?.world);
   
@@ -669,6 +748,7 @@ window.addEventListener('beforeunload', () => {
     _scoreHUD?.destroy();
     _roundStartUI?.destroy();
     _roundEndUI?.destroy();
+    multiplayerManager?.destroy();
     console.log('🧹 Round system components cleaned up on page unload');
   } catch (error) {
     console.error('Error during cleanup:', error);

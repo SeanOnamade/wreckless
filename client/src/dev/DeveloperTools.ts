@@ -7,7 +7,7 @@ export class DeveloperTools {
 
   constructor(playerBody: RAPIER.RigidBody) {
     this.playerBody = playerBody;
-    this.isDevelopment = import.meta.env.DEV || window.location.hostname === 'localhost';
+    this.isDevelopment = true; // Always enable for testing and debugging
     
     if (this.isDevelopment) {
       this.setupEventListeners();

@@ -3,6 +3,8 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { SPAWN_POS } from './track/ExternalTrack';
 import { CheckpointSystem } from './systems/CheckpointSystem';
 import { toggleCombatMode } from './config/combat';
+import { Network } from './net';
+import { getCurrentPlayerKit } from './kits/classKit';
 
 export class FirstPersonController {
   private camera: THREE.Camera;
@@ -15,6 +17,10 @@ export class FirstPersonController {
   
   // Movement state
   private keys: { [key: string]: boolean } = {};
+  
+  // Mouse button state for networking
+  private mouseButtons = { left: false, right: false };
+  
   private moveSpeed = 18.0; // 18 m/s base speed (increased for movement shooter feel)
   private slideSpeed = 24.0; // 24 m/s slide speed (increased for faster gameplay)
   private jumpVelocity = 12.0; // Increased for better jump height with reduced gravity
@@ -97,6 +103,11 @@ export class FirstPersonController {
     document.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
       
+      // Debug: Log digit keys in controller to check for conflicts
+      if (['Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
+        console.log('🎮 Controller captured digit key:', e.code);
+      }
+      
       // Special keys
       if (e.code === 'KeyR') {
         this.reset();
@@ -111,15 +122,29 @@ export class FirstPersonController {
         console.log('🧪 V key detected, calling handleVKeybinds...');
         this.handleVKeybinds(e);
       }
+      
+      // Send current movement state to network (real-time)
+      this.updateNetworkInput();
     });
     
     document.addEventListener('keyup', (e) => {
       this.keys[e.code] = false;
+      
+      // Send current movement state to network (real-time)
+      this.updateNetworkInput();
     });
     
     // Mouse button events for melee combat
     document.addEventListener('mousedown', (e) => {
       if (!this.isPointerLocked) return;
+      
+      // Update network mouse button state FIRST (regardless of combat state)
+      if (e.button === 0) {
+        this.mouseButtons.left = true;
+      } else if (e.button === 2) {
+        this.mouseButtons.right = true;
+      }
+      this.updateNetworkInput();
       
       if (e.button === 0) { // Left mouse button (LMB) - Attack
         // Can't attack while blocking
@@ -164,6 +189,14 @@ export class FirstPersonController {
     
     // Mouse button release events for PvP combat
     document.addEventListener('mouseup', (e) => {
+      // Update network mouse button state FIRST (regardless of combat state)
+      if (e.button === 0) {
+        this.mouseButtons.left = false;
+      } else if (e.button === 2) {
+        this.mouseButtons.right = false;
+      }
+      this.updateNetworkInput();
+      
       if (e.button === 0) { // LMB release
         if (this.combatState.isAttacking) {
           this.combatState.isAttacking = false;
@@ -192,6 +225,12 @@ export class FirstPersonController {
     
     // Simple, responsive mouse events with safety bounds
     document.addEventListener('mousemove', (e) => {
+      // Pointer lock check (reduced logging for performance)
+      if (!this.isPointerLocked && Math.abs(e.movementX) > 0) {
+        // Only log occasionally to avoid spam
+        if (Math.random() < 0.01) console.log('🔒 Mouse not locked - click to enable FPS controls');
+      }
+      
       if (this.isPointerLocked) {
         // Add bounds checking to prevent extreme values that could cause glitches
         const deltaX = Math.max(-0.5, Math.min(0.5, e.movementX * this.mouseSensitivity));
@@ -205,6 +244,33 @@ export class FirstPersonController {
         
         // Normalize yaw to prevent accumulation issues
         this.yaw = this.yaw % (2 * Math.PI);
+        
+        // Send mouse movement to network (preserve current button states)
+        Network.updateMouseInput(this.mouseButtons.left, this.mouseButtons.right, { x: deltaX, y: deltaY });
+        
+        // Send updated camera rotation to network immediately
+        Network.updateCameraInput(this.yaw, this.pitch);
+        
+        // Update debug overlay with current movement state during mouse movement
+        if (Network.isNetworkingEnabled()) {
+          const movementState = {
+            forward: this.keys['KeyW'] || false,
+            backward: this.keys['KeyS'] || false,
+            left: this.keys['KeyA'] || false,
+            right: this.keys['KeyD'] || false
+          };
+          this.updateInputDebugOverlay(movementState);
+        }
+        
+        // Debug: Log when mouse movement updates camera (very rarely to avoid spam)
+        if ((Math.abs(deltaX) > 0.01 || Math.abs(deltaY) > 0.01) && Math.random() < 0.001) {
+          console.log(`🖱️ Mouse moved: yaw=${(this.yaw * 180 / Math.PI).toFixed(1)}° (deltaX=${deltaX.toFixed(3)}) - Camera data sent to network`);
+          
+          // Extra debug: Check what's actually in the network input
+          const debugInfo = Network.getDebugInfo() as any;
+          const cameraData = debugInfo.lastInput?.camera;
+          console.log(`   📡 Current network input camera: yaw=${cameraData?.yaw?.toFixed(3)} pitch=${cameraData?.pitch?.toFixed(3)}`);
+        }
       }
     });
     
@@ -430,6 +496,126 @@ export class FirstPersonController {
   }
 
   /**
+   * Send current input state to network (if online)
+   */
+  private updateNetworkInput(): void {
+    const movementState = {
+      forward: this.keys['KeyW'] || false,
+      backward: this.keys['KeyS'] || false,
+      left: this.keys['KeyA'] || false,
+      right: this.keys['KeyD'] || false
+    };
+    
+    // Send movement input to network
+    Network.updateMovementInput(
+      movementState.forward,
+      movementState.backward,
+      movementState.left,
+      movementState.right
+    );
+    
+    // Send action input (jump, slide, ability)
+    Network.updateActionInput(
+      this.keys['Space'] || false,
+      this.keys['ShiftLeft'] || this.keys['ShiftRight'] || false,
+      this.keys['KeyE'] || false
+    );
+    
+    // Get current ability type
+    const currentKit = getCurrentPlayerKit() || { className: 'blast' };
+    
+    // Send state input (movement enhancement states)
+    Network.updateStateInput(
+      this.isRocketJumping,
+      this.isSwinging,
+      this.isBlinkMomentum,
+      this.isSliding,
+      currentKit.className
+    );
+    
+    // Debug: Log when any interesting states are true (or actions)
+    const hasActions = this.keys['Space'] || this.keys['ShiftLeft'] || this.keys['ShiftRight'] || this.keys['KeyE'];
+    const hasStates = this.isRocketJumping || this.isSwinging || this.isBlinkMomentum || this.isSliding;
+    
+    if (hasStates || (hasActions && Math.random() < 0.1)) { // Log states always, actions occasionally
+      console.log(`🎮 CLIENT input:`, {
+        // Movement
+        movement: {
+          W: this.keys['KeyW'] || false,
+          S: this.keys['KeyS'] || false,
+          A: this.keys['KeyA'] || false,
+          D: this.keys['KeyD'] || false
+        },
+        // Actions
+        actions: {
+          Space: this.keys['Space'] || false,
+          Shift: this.keys['ShiftLeft'] || this.keys['ShiftRight'] || false,
+          E: this.keys['KeyE'] || false
+        },
+        // States
+        states: {
+          rocket: this.isRocketJumping,
+          swing: this.isSwinging, 
+          blink: this.isBlinkMomentum,
+          slide: this.isSliding,
+          ability: currentKit.className
+        }
+      });
+    }
+    
+    // Send mouse input to network
+    Network.updateMouseInput(this.mouseButtons.left, this.mouseButtons.right, { x: 0, y: 0 });
+    
+    // Note: Camera rotation is updated in mousemove event, not here
+    
+    // Update debug overlay if online
+    if (Network.isNetworkingEnabled()) {
+      this.updateInputDebugOverlay(movementState);
+    }
+  }
+
+  /**
+   * Update on-screen debug overlay showing input state
+   */
+  private updateInputDebugOverlay(movement: any): void {
+    let overlay = document.getElementById('input-debug-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'input-debug-overlay';
+      overlay.style.cssText = `
+        position: fixed;
+        top: 120px;
+        left: 20px;
+        background: linear-gradient(135deg, rgba(20, 20, 20, 0.95), rgba(40, 40, 40, 0.95));
+        color: #00ff00;
+        padding: 12px 16px;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        border-radius: 8px;
+        z-index: 999;
+        pointer-events: none;
+        border: 1px solid rgba(0, 255, 0, 0.3);
+        box-shadow: 0 0 15px rgba(0, 255, 0, 0.2);
+        backdrop-filter: blur(5px);
+        min-width: 220px;
+      `;
+      document.body.appendChild(overlay);
+    }
+    
+    const mouseState = `LMB:${this.mouseButtons.left} RMB:${this.mouseButtons.right}`;
+    const moveState = `W:${movement.forward} A:${movement.left} S:${movement.backward} D:${movement.right}`;
+    const yawDegrees = (this.yaw * 180 / Math.PI).toFixed(1);
+    
+    overlay.innerHTML = `
+      <div>🌐 NETWORK INPUT DEBUG</div>
+      <div>Movement: ${moveState}</div>
+      <div>Mouse: ${mouseState}</div>
+      <div>Camera Yaw: ${yawDegrees}°</div>
+      <div>Status: ${Network.isNetworkingEnabled() ? '✅ Online' : '❌ Offline'}</div>
+    `;
+  }
+
+  /**
    * Update speed boost state (call this in update loop)
    */
   private updateSpeedBoost(): void {
@@ -460,9 +646,15 @@ export class FirstPersonController {
     // Check for killzone conditions (multiple fallbacks for robustness)
     const shouldRespawn = this.checkKillzoneConditions(translation);
     if (shouldRespawn) {
-      if (import.meta.env.DEV) {
-        console.log(`⚠️ Killzone triggered - Y: ${translation.y.toFixed(2)}, Time in void: ${this.timeInVoid.toFixed(1)}s`);
-      }
+      // Dispatch respawn event BEFORE reset to avoid circular dependency
+      const respawnPosition = this.checkpointSystem 
+        ? this.checkpointSystem.getLastCheckpointPosition()
+        : SPAWN_POS;
+      
+      window.dispatchEvent(new CustomEvent('playerRespawn', {
+        detail: { reason: 'out-of-bounds', position: respawnPosition }
+      }));
+      
       this.reset();
       return; // Skip rest of update to avoid processing movement
     }
@@ -798,10 +990,7 @@ export class FirstPersonController {
       }));
     }
 
-    // Dispatch respawn event for screen flash effect
-    window.dispatchEvent(new CustomEvent('playerRespawn', {
-      detail: { reason: 'out-of-bounds', position: respawnPosition }
-    }));
+    // Note: playerRespawn event now dispatched by caller to avoid circular dependency
 
     this.playerBody.setTranslation({ x: respawnPosition.x, y: respawnPosition.y, z: respawnPosition.z }, true);
 

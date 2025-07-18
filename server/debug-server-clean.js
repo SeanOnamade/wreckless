@@ -8,40 +8,21 @@ import ServerGameLogic from './ServerGameLogic.js';
 const app = express();
 const server = createServer(app);
 
-// Configure CORS for development and production
-const allowedOrigins = process.env.NODE_ENV === 'production' 
-  ? ["https://wreckless-game.netlify.app", "https://wreckless-game.vercel.app"] // Add your production domains
-  : ["http://localhost:5173", "http://127.0.0.1:5173"];
-
+// Configure CORS for development
 app.use(cors({
-  origin: allowedOrigins,
+  origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
   credentials: true
 }));
 
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
     methods: ["GET", "POST"],
     credentials: true
   }
 });
 
 const gameLogic = new ServerGameLogic();
-
-// Root route
-app.get('/', (req, res) => {
-  res.json({
-    name: 'Wreckless Multiplayer Server',
-    status: 'Running',
-    version: '1.0.0',
-    connectedClients: gameLogic.getPlayerCount(),
-    endpoints: {
-      health: '/ping',
-      websocket: 'ws://wreckless-multiplayer.fly.dev'
-    },
-    timestamp: Date.now()
-  });
-});
 
 // Health check endpoint
 app.get('/ping', (req, res) => {
@@ -132,22 +113,6 @@ io.on('connection', (socket) => {
       ...abilityEvent,
       fromPlayerId: socket.id
     });
-  });
-
-  // Handle dummy damage from clients
-  socket.on('dummyDamage', (damageData) => {
-    const { dummyId, damage } = damageData;
-    console.log(`🎯 ${socket.id.slice(-4)}: Hit ${dummyId} for ${damage} damage`);
-    
-    // Apply damage on server
-    const success = gameLogic.damageServerDummy(dummyId, damage, socket.id);
-    
-    if (success) {
-      // Game state will be broadcast on next tick with updated dummy health
-      console.log(`✅ Server processed dummy damage`);
-    } else {
-      console.log(`❌ Failed to damage ${dummyId} (dead or missing)`);
-    }
   });
 
   // Handle position corrections
@@ -281,7 +246,7 @@ setInterval(() => {
 }, TICK_INTERVAL);
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📡 Tick rate: ${TICK_RATE}Hz (reduced logging)`);

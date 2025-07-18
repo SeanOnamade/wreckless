@@ -57,7 +57,7 @@ export class DebugUI {
   }
   
   constructor() {
-    this.isDevelopment = import.meta.env.DEV || window.location.hostname === 'localhost';
+    this.isDevelopment = true; // Always show debug info for better testing
     
     // Create container
     this.container = document.createElement('div');

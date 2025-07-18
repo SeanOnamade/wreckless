@@ -9,7 +9,10 @@
   "scripts": {
     "dev:client": "npm --workspace client run dev",
     "dev:server": "npm --workspace server run dev",
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "npm run dev:client",
+    "dev:offline": "npm run dev:client", 
+    "dev:online": "concurrently --kill-others --kill-others-on-fail --names \"SERVER,CLIENT\" --prefix-colors \"blue,green\" \"npm --workspace server run test-server\" \"npm run dev:client\"",
+    "kill-servers": "powershell -ExecutionPolicy Bypass -File ./kill-servers.ps1",
     "build:client": "npm --workspace client run build",
     "start:server": "npm --workspace server run start"
   },

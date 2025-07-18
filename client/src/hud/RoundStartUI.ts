@@ -88,7 +88,7 @@ export class RoundStartUI {
       font-weight: normal;
       text-shadow: 0 0 15px rgba(255, 0, 255, 0.6);
     `;
-    subtitle.textContent = 'Time Dilation Jail: August 5th, 3184';
+    subtitle.textContent = 'The Eastern Time Dilation Prison: August 5th, 3184';
     
     // Create instructions
     const instructions = document.createElement('div');
@@ -102,7 +102,7 @@ export class RoundStartUI {
       <div style="margin-bottom: 15px;">Hit dummies: <span style="color: #00ff88; text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);">+10 pts</span></div>
       <div style="margin-bottom: 15px;">Pass checkpoints: <span style="color: #00ff88; text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);">+30 pts</span></div>
       <div style="margin-bottom: 15px;">Complete laps: <span style="color: #00ff88; text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);">+50 pts</span></div>
-      <div style="color: #ffaa00; font-size: 16px; text-shadow: 0 0 8px rgba(255, 170, 0, 0.5);">2 minutes to score as many points as possible!</div>
+      <div style="color: #ffaa00; font-size: 16px; text-shadow: 0 0 8px rgba(255, 170, 0, 0.5);">You have 2 minutes to generate enough clockpower to escape!</div>
     `;
     
     // Create start button

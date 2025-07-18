@@ -137,7 +137,7 @@ export class WindStreakEffect implements CameraEffect {
 
     // Debug logging (throttled)
     if (import.meta.env.DEV && Math.random() < 0.005) { // 0.5% chance each frame
-      console.log(`📹 WindStreak: speed=${this.currentSpeed.toFixed(1)} m/s, opacity=${this.currentOpacity.toFixed(3)}`);
+      // WindStreak updated silently
     }
   }
 

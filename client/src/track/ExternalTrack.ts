@@ -14,7 +14,9 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
   }
     
     const loader = new GLTFLoader();
+    console.log('🏁 Loading track from /lowpoly_racetrack.glb...');
     const gltf = await loader.loadAsync('/lowpoly_racetrack.glb');
+    console.log('🏁 Track GLB loaded, processing scene...');
     const track = gltf.scene;
     
     // Scale and position the track

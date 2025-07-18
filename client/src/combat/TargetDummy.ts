@@ -33,8 +33,7 @@ export class TargetDummy implements MeleeTarget {
     this.createVisualMesh();
     this.createPhysicsBody();
     
-    console.log(`🎯 Target dummy "${id}" created at position:`, position);
-    console.log(`🎯 Dummy "${id}" initialized with ${this.currentHealth}/${this.maxHealth} HP`);
+    // Target dummy created silently
   }
 
   private createVisualMesh(): void {
@@ -120,7 +119,7 @@ export class TargetDummy implements MeleeTarget {
     
     this.world.createCollider(colliderDesc, this.rigidBody);
     
-    console.log(`🎯 Dummy ${this.id} created as SENSOR (pass-through for movement, detectable for hits)`);
+          // Dummy created as SENSOR (silenced)
   }
 
   /**

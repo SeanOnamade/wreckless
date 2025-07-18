@@ -71,7 +71,7 @@ export class DummyPlacementManager {
   private setupKeyBindings(): void {
     window.addEventListener('keydown', (event) => {
       // Only handle in development mode
-      if (!import.meta.env.DEV) return;
+      // Level editor enabled in all builds
       
       if (event.code === 'KeyF') {
         event.preventDefault();

@@ -36,7 +36,7 @@ export class LapController {
     
     if (checkpointId !== expected) {
       if (import.meta.env.DEV) {
-        console.log(`✗ Checkpoint ${checkpointId} visited out of sequence (expected: ${expected})`);
+        // Checkpoint visited out of sequence (silenced to reduce spam)
       }
       this.onCheckpointVisit?.(checkpointId, false);
       return false; // wrong order

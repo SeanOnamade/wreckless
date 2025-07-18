@@ -79,7 +79,7 @@ export class MeleeCombat {
    */
   addTarget(target: MeleeTarget): void {
     this.testTargets.set(target.id, target);
-    console.log(`🎯 Added melee target: ${target.id}`);
+    // Melee target added silently
   }
 
   /**

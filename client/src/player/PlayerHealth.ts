@@ -98,8 +98,6 @@ export class PlayerHealth {
    * Handle respawn events from any source (combat KO, killzone, etc.)
    */
   private handleRespawn(reason: string): void {
-    console.log(`✨ Player respawning due to: ${reason}`);
-    
     // Always reset to full health on respawn regardless of reason
     this.currentHealth = this.maxHealth;
     this.stopRegen();
@@ -115,7 +113,10 @@ export class PlayerHealth {
       detail: { message: `✨ Respawned with full health (${reason})` }
     }));
     
-    console.log('✨ Player respawned with full health!');
+    // Single log for respawn completion
+    if (import.meta.env.DEV) {
+      console.log(`✨ Player respawned due to: ${reason}`);
+    }
   }
 
   /**
