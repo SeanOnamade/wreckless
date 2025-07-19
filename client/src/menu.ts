@@ -1,8 +1,14 @@
 export class GameMenu {
   private menuContainer!: HTMLDivElement;
   private isMenuOpen = false;
+  private boundKeydownHandler: (e: KeyboardEvent) => void;
+  private boundContainerClickHandler: (e: MouseEvent) => void;
   
   constructor() {
+    // Bind event handlers for proper cleanup
+    this.boundKeydownHandler = this.handleKeydown.bind(this);
+    this.boundContainerClickHandler = this.handleContainerClick.bind(this);
+    
     this.createMenuElements();
     this.setupEventListeners();
   }
@@ -37,8 +43,8 @@ export class GameMenu {
     `;
     
     menuContent.innerHTML = `
-      <h2 style="margin: 0 0 20px 0; color: #FF0080;">Wreckless</h2>
-      <p style="margin: 0 0 20px 0; color: #00E6FF;">Can you break your own record time?</p>
+      <h2 style="margin: 0 0 20px 0; color: #FF0080;">Game Paused</h2>
+      <p style="margin: 0 0 20px 0; color: #00E6FF;">What would you like to do?</p>
       <div style="margin: 20px 0; line-height: 1.6;">
         <div><strong>Controls:</strong></div>
         <div>WASD - Move</div>
@@ -61,7 +67,7 @@ export class GameMenu {
         margin-right: 10px;
       ">Resume</button>
       <button id="reset-btn" style="
-        background: #FF0080;
+        background: #FF8800;
         color: white;
         border: none;
         padding: 10px 20px;
@@ -69,7 +75,18 @@ export class GameMenu {
         cursor: pointer;
         font-family: monospace;
         font-weight: bold;
+        margin-right: 10px;
       ">Reset</button>
+      <button id="menu-btn" style="
+        background: #666666;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-family: monospace;
+        font-weight: bold;
+      ">Main Menu</button>
     `;
     
     this.menuContainer.appendChild(menuContent);
@@ -78,29 +95,38 @@ export class GameMenu {
     // Setup button handlers
     const resumeBtn = menuContent.querySelector('#resume-btn') as HTMLButtonElement;
     const resetBtn = menuContent.querySelector('#reset-btn') as HTMLButtonElement;
+    const menuBtn = menuContent.querySelector('#menu-btn') as HTMLButtonElement;
     
     resumeBtn.addEventListener('click', () => this.closeMenu());
     resetBtn.addEventListener('click', () => {
       this.closeMenu();
-      // Dispatch reset event
-      window.dispatchEvent(new CustomEvent('game-reset'));
+      // Dispatch player position reset (same as R key)
+      window.dispatchEvent(new CustomEvent('resetPlayerPosition'));
+    });
+    menuBtn.addEventListener('click', () => {
+      this.closeMenu();
+      // Dispatch main menu event (clean transition to homescreen)
+      window.dispatchEvent(new CustomEvent('main-menu-requested'));
     });
   }
   
+  private handleKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      this.toggleMenu();
+    }
+  }
+  
+  private handleContainerClick(e: MouseEvent): void {
+    if (e.target === this.menuContainer) {
+      this.closeMenu();
+    }
+  }
+  
   private setupEventListeners() {
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        this.toggleMenu();
-      }
-    });
-    
+    document.addEventListener('keydown', this.boundKeydownHandler);
     // Close menu when clicking outside
-    this.menuContainer.addEventListener('click', (e) => {
-      if (e.target === this.menuContainer) {
-        this.closeMenu();
-      }
-    });
+    this.menuContainer.addEventListener('click', this.boundContainerClickHandler);
   }
   
   private toggleMenu() {
@@ -135,6 +161,10 @@ export class GameMenu {
   }
   
   public destroy() {
+    // Remove event listeners to prevent memory leaks
+    document.removeEventListener('keydown', this.boundKeydownHandler);
+    this.menuContainer.removeEventListener('click', this.boundContainerClickHandler);
+    
     if (this.menuContainer.parentNode) {
       this.menuContainer.parentNode.removeChild(this.menuContainer);
     }

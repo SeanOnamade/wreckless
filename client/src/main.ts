@@ -34,6 +34,13 @@ import { HitShakeEffect } from './effects/HitShakeEffect';
 import { BlinkZoomEffect } from './effects/BlinkZoomEffect';
 import { WindStreakEffect } from './effects/WindStreakEffect';
 
+// Day 6 Sprint: Game State Management
+import { gameStateManager } from './state/GameStateManager';
+import { HomeScreen } from './ui/HomeScreen';
+import { ClassSelection } from './ui/ClassSelection';
+import { LobbyScreen } from './ui/LobbyScreen';
+import { GameMenu } from './menu';
+
 console.info("🗄️ Legacy swing archived:", ["grappleLegacy_v2.ts"]);
 
 // Scene setup
@@ -340,7 +347,8 @@ let movementTrail: MovementTrail | null = null;
 // Initialize screen flash system
 const screenFlash = new ScreenFlash();
 
-// gameMenu is used via event handlers
+// Initialize pause menu system
+const gameMenu = new GameMenu();
 
 // Handle reset event from menu
 window.addEventListener('game-reset', () => {
@@ -380,6 +388,14 @@ window.addEventListener('resetPlayerPosition', () => {
   if (physicsWorld) {
     physicsWorld.fpsController.reset();
     console.log('🔄 Player position reset to spawn');
+  }
+});
+
+// Listen for spawn position reset (always spawn, not checkpoint)
+window.addEventListener('resetToSpawn', () => {
+  if (physicsWorld) {
+    physicsWorld.fpsController.resetToSpawn();
+    console.log('🏠 Player reset to spawn position');
   }
 });
 
@@ -426,6 +442,11 @@ let _scoreHUD: ScoreHUD | null = null;
 let _roundStartUI: RoundStartUI | null = null;
 let _roundEndUI: RoundEndUI | null = null;
 
+// Day 6 Sprint: UI State Management
+let homeScreen: HomeScreen | null = null;
+let classSelection: ClassSelection | null = null;
+let lobbyScreen: LobbyScreen | null = null;
+
 initPhysics(scene, camera).then((world) => {
   physicsWorld = world;
   
@@ -463,6 +484,31 @@ initPhysics(scene, camera).then((world) => {
     lapCompletePoints: 50,
     roundDurationMs: 120000 // 2 minutes
   });
+
+  // Day 6 Sprint: Initialize GameStateManager and UI BEFORE round UI components
+  gameStateManager.initialize({
+    roundSystem: roundSystem,
+    multiplayerManager: multiplayerManager || undefined,
+    physicsWorld: world
+  });
+  
+  // Create HomeScreen UI component
+  homeScreen = new HomeScreen(gameStateManager);
+  
+  // Create ClassSelection UI component
+  classSelection = new ClassSelection(gameStateManager);
+  
+  // Create LobbyScreen UI component (placeholder)
+  lobbyScreen = new LobbyScreen(gameStateManager);
+  
+  // Register UI components with GameStateManager
+  gameStateManager.registerComponents({
+    homeScreen: homeScreen,
+    classSelection: classSelection,
+    lobbyScreen: lobbyScreen
+  });
+  
+  console.log('🏠 Day 6 Sprint: Game state management initialized');
 
   // Initialize multiplayer manager for online mode
   if (window.location.hash.includes('#online')) {
@@ -579,6 +625,20 @@ initPhysics(scene, camera).then((world) => {
     void _roundEndUI;
     
     console.log('🏁 Round system UI initialized');
+    
+    // Day 6 Sprint: Register round UI components with GameStateManager for control
+    gameStateManager.registerRoundUIComponents({
+      roundStartUI: _roundStartUI,
+      roundEndUI: _roundEndUI
+    });
+    
+    // Day 6 Sprint: Show homescreen AFTER round UI is created to override it
+    console.log('🏠 Day 6 Sprint: Transitioning from initializing to homescreen');
+    // Use a small delay to ensure all UI components are fully initialized
+    setTimeout(() => {
+      gameStateManager.transitionTo('homescreen');
+      console.log('🏠 Day 6 Sprint: Homescreen transition complete');
+    }, 100);
   }
   
   // Initialize melee combat system
@@ -668,7 +728,6 @@ initPhysics(scene, camera).then((world) => {
           const logText = combatLog.join('\n');
           navigator.clipboard.writeText(logText).then(() => {
             console.log('📋 Combat log copied to clipboard!');
-            console.log('Combat log entries:', combatLog.length);
           }).catch(err => {
             console.error('Failed to copy combat log:', err);
             // Fallback: log the combat log to console
@@ -683,13 +742,23 @@ initPhysics(scene, camera).then((world) => {
   // ABILITY SWITCHING - PRODUCTION ENABLED
   console.log('🔧 Setting up ability switching handlers...');
   
-  // Create a more robust handler with extensive debugging
+  // Create a more robust handler with clean logging
   const handleAbilitySwitching = (event: KeyboardEvent) => {
-    console.log('🎮 ANY key pressed:', event.code, 'target:', event.target);
-    
     // Don't interfere when typing in inputs
     if (event.target && (event.target as HTMLElement).tagName === 'INPUT') {
-      console.log('🚫 Ignoring key in input field');
+      return;
+    }
+    
+    // Don't interfere during menu states - let UI components handle it
+    const currentState = gameStateManager.getCurrentState();
+    if (['homescreen', 'class-selection', 'lobby', 'leaderboard'].includes(currentState)) {
+      return;
+    }
+    
+    // Don't allow class switching during structured gameplay (race mode)
+    // Only allow during freeplay/unstructured modes
+    if (currentState === 'race') {
+      // Class switching disabled during race (logging removed to reduce spam)
       return;
     }
     
@@ -749,6 +818,12 @@ window.addEventListener('beforeunload', () => {
     _roundStartUI?.destroy();
     _roundEndUI?.destroy();
     multiplayerManager?.destroy();
+    // Day 6 Sprint: Cleanup GameStateManager and UI
+    gameStateManager?.destroy();
+    homeScreen?.destroy();
+    classSelection?.destroy();
+    lobbyScreen?.destroy();
+    gameMenu?.destroy();
     console.log('🧹 Round system components cleaned up on page unload');
   } catch (error) {
     console.error('Error during cleanup:', error);

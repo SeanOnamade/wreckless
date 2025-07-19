@@ -9,6 +9,12 @@ export interface ScoreEvent {
   details?: string;
 }
 
+// Configuration constants
+const DEFAULT_DUMMY_KO_POINTS = 10;
+const DEFAULT_CHECKPOINT_POINTS = 30;
+const DEFAULT_LAP_COMPLETE_POINTS = 50;
+const DEFAULT_ROUND_DURATION_MS = 120000; // 2 minutes
+
 export interface RoundConfig {
   dummyKOPoints: number;
   checkpointPoints: number;
@@ -21,7 +27,6 @@ export class RaceRoundSystem {
   private score = 0;
   private scoreEvents: ScoreEvent[] = [];
   private roundStartTime = 0;
-  private roundDurationMs: number;
   private roundTimer: number | null = null;
   private config: RoundConfig;
   private isDestroyed = false;
@@ -36,13 +41,13 @@ export class RaceRoundSystem {
   
   constructor(config: Partial<RoundConfig> = {}) {
     this.config = {
-      dummyKOPoints: 10,
-      checkpointPoints: 30,
-      lapCompletePoints: 50,
-      roundDurationMs: 120000, // 2 minutes
+      dummyKOPoints: DEFAULT_DUMMY_KO_POINTS,
+      checkpointPoints: DEFAULT_CHECKPOINT_POINTS,
+      lapCompletePoints: DEFAULT_LAP_COMPLETE_POINTS,
+      roundDurationMs: DEFAULT_ROUND_DURATION_MS,
       ...config
     };
-    this.roundDurationMs = this.config.roundDurationMs;
+    // Note: this.roundDurationMs now uses this.config.roundDurationMs directly
     
     this.setupEventListeners();
   }
@@ -105,9 +110,9 @@ export class RaceRoundSystem {
       // Start round timer
       this.roundTimer = window.setTimeout(() => {
         this.endRound();
-      }, this.roundDurationMs);
+      }, this.config.roundDurationMs);
       
-      console.log(`🏁 Round started! Duration: ${this.roundDurationMs / 1000}s`);
+      console.log(`🏁 Round started! Duration: ${this.config.roundDurationMs / 1000}s`);
       this.safeExecuteCallbacks(this.onStateChangeCallbacks, this.state);
     } catch (error) {
       console.error('Error starting round:', error);
@@ -141,6 +146,32 @@ export class RaceRoundSystem {
     this.safeExecuteCallbacks(this.onRoundEndCallbacks, this.score, this.scoreEvents);
   }
   
+  /**
+   * Reset internal state only (for main menu - no UI triggers)
+   */
+  resetStateOnly(): void {
+    if (this.isDestroyed) {
+      console.warn('Cannot reset state - system is destroyed');
+      return;
+    }
+    
+    // Clear any active timer
+    if (this.roundTimer) {
+      clearTimeout(this.roundTimer);
+      this.roundTimer = null;
+    }
+    
+    this.state = 'waiting';
+    this.score = 0;
+    this.scoreEvents = [];
+    this.roundStartTime = 0;
+    
+    // Trigger state change callback to stop timers
+    this.safeExecuteCallbacks(this.onStateChangeCallbacks, this.state);
+    
+    console.log('🔄 Round state reset (internal only)');
+  }
+
   /**
    * Reset for a new round
    */
@@ -215,8 +246,8 @@ export class RaceRoundSystem {
     roundProgress: number;
   } {
     const timeElapsed = this.state === 'active' ? performance.now() - this.roundStartTime : 0;
-    const timeRemaining = Math.max(0, this.roundDurationMs - timeElapsed);
-    const roundProgress = this.state === 'active' ? timeElapsed / this.roundDurationMs : 0;
+    const timeRemaining = Math.max(0, this.config.roundDurationMs - timeElapsed);
+    const roundProgress = this.state === 'active' ? timeElapsed / this.config.roundDurationMs : 0;
     
     return {
       state: this.state,

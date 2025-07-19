@@ -12,6 +12,23 @@ export class FirstPersonController {
   private controller: RAPIER.KinematicCharacterController;
   private checkpointSystem: CheckpointSystem | null = null;
   
+  // Event listener references for cleanup
+  private boundKeydownHandler?: (e: KeyboardEvent) => void;
+  private boundKeyupHandler?: (e: KeyboardEvent) => void;
+  private boundMousedownHandler?: (e: MouseEvent) => void;
+  private boundMouseupHandler?: (e: MouseEvent) => void;
+  private boundContextmenuHandler?: (e: Event) => void;
+  private boundMousemoveHandler?: (e: MouseEvent) => void;
+  private boundClickHandler?: () => void;
+  private boundPointerlockchangeHandler?: () => void;
+  private boundBlastImpulseHandler?: (e: Event) => void;
+  private boundSpeedBoostHandler?: (e: Event) => void;
+  private boundCombatStateHandler?: () => void;
+  private boundBlastSelfImpulseHandler?: (e: Event) => void;
+  private boundBlinkMomentumHandler?: (e: Event) => void;
+  private boundSwingStateHandler?: (e: Event) => void;
+  private boundSwingReleaseHandler?: (e: Event) => void;
+  
   // Killzone detection
   private timeInVoid = 0;
   
@@ -77,241 +94,382 @@ export class FirstPersonController {
     this.playerBody = playerBody;
     this.controller = controller;
     
+    // Bind all event handlers for proper cleanup
+    this.initializeEventHandlers();
+    
     this.setupEventListeners();
     this.setupSwingStateListener();
 
-    // Listen for blast impulse events
-    window.addEventListener('blastImpulse', (event: Event) => {
-      this.handleBlastImpulse((event as CustomEvent).detail);
-    });
+    // Listen for blast impulse events with bound handler
+    window.addEventListener('blastImpulse', this.boundBlastImpulseHandler!);
     
-    // Listen for speed boost events from racing dummies
-    window.addEventListener('speedBoostGranted', (event: Event) => {
-      this.handleSpeedBoost((event as CustomEvent).detail);
-    });
+    // Listen for speed boost events from racing dummies with bound handler
+    window.addEventListener('speedBoostGranted', this.boundSpeedBoostHandler!);
     
-    // Listen for combat state requests from testing HUD
-    window.addEventListener('requestCombatState', () => {
-      this.broadcastCombatState();
-    });
+    // Listen for combat state requests from testing HUD with bound handler
+    window.addEventListener('requestCombatState', this.boundCombatStateHandler!);
     
     console.log('FirstPersonController initialized with pointer lock');
   }
   
-  private setupEventListeners() {
-    // Keyboard events
-    document.addEventListener('keydown', (e) => {
-      this.keys[e.code] = true;
-      
-      // Debug: Log digit keys in controller to check for conflicts
-      if (['Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
-        console.log('🎮 Controller captured digit key:', e.code);
-      }
-      
-      // Special keys
-      if (e.code === 'KeyR') {
-        this.reset();
-      } else if (e.code === 'KeyM') {
-        // Toggle combat mode for testing
-        const newMode = toggleCombatMode();
-        console.log(`🔄 Combat mode toggled to: ${newMode.toUpperCase()}`);
-        console.log(`   • MANUAL mode: Click to hit dummies (original system)`);
-        console.log(`   • PASSTHROUGH mode: Move through dummies to damage (new system)`);
-      } else if (e.code === 'KeyV') {
-        e.preventDefault(); // Prevent any default browser behavior
-        console.log('🧪 V key detected, calling handleVKeybinds...');
-        this.handleVKeybinds(e);
-      }
-      
-      // Send current movement state to network (real-time)
-      this.updateNetworkInput();
-    });
+  /**
+   * Initialize all event handlers with proper binding for cleanup
+   */
+  private initializeEventHandlers(): void {
+    // Document event handlers
+    this.boundKeydownHandler = this.handleKeydown.bind(this);
+    this.boundKeyupHandler = this.handleKeyup.bind(this);
+    this.boundMousedownHandler = this.handleMousedown.bind(this);
+    this.boundMouseupHandler = this.handleMouseup.bind(this);
+    this.boundContextmenuHandler = this.handleContextmenu.bind(this);
+    this.boundMousemoveHandler = this.handleMousemove.bind(this);
+    this.boundClickHandler = this.handleClick.bind(this);
+    this.boundPointerlockchangeHandler = this.handlePointerlockchange.bind(this);
     
-    document.addEventListener('keyup', (e) => {
-      this.keys[e.code] = false;
-      
-      // Send current movement state to network (real-time)
-      this.updateNetworkInput();
-    });
-    
-    // Mouse button events for melee combat
-    document.addEventListener('mousedown', (e) => {
-      if (!this.isPointerLocked) return;
-      
-      // Update network mouse button state FIRST (regardless of combat state)
-      if (e.button === 0) {
-        this.mouseButtons.left = true;
-      } else if (e.button === 2) {
-        this.mouseButtons.right = true;
-      }
-      this.updateNetworkInput();
-      
-      if (e.button === 0) { // Left mouse button (LMB) - Attack
-        // Can't attack while blocking
-        if (this.combatState.isBlocking) {
-          console.log('❌ Cannot attack while blocking');
-          return;
-        }
-        
-        this.combatState.isAttacking = true;
-        this.combatState.attackStartTime = Date.now();
-        console.log('⚔️ Attack started (1s limit)');
-        
-        // Start timer for live updates
-        this.startCombatTimer();
-        
-        // Keep existing meleeAttack event for dummy targeting (manual mode)
-        window.dispatchEvent(new CustomEvent('meleeAttack', {
-          detail: { timestamp: Date.now() }
-        }));
-        
-        // Broadcast state change
-        this.broadcastCombatState();
-        
-      } else if (e.button === 2) { // Right mouse button (RMB) - Block
-        // Can't block while attacking
-        if (this.combatState.isAttacking) {
-          console.log('❌ Cannot block while attacking');
-          return;
-        }
-        
-        this.combatState.isBlocking = true;
-        this.combatState.blockStartTime = Date.now();
-        console.log('🛡️ Blocking started (1s limit)');
-        
-        // Start timer for live updates
-        this.startCombatTimer();
-        
-        // Broadcast state change
-        this.broadcastCombatState();
-      }
-    });
-    
-    // Mouse button release events for PvP combat
-    document.addEventListener('mouseup', (e) => {
-      // Update network mouse button state FIRST (regardless of combat state)
-      if (e.button === 0) {
-        this.mouseButtons.left = false;
-      } else if (e.button === 2) {
-        this.mouseButtons.right = false;
-      }
-      this.updateNetworkInput();
-      
-      if (e.button === 0) { // LMB release
-        if (this.combatState.isAttacking) {
-          this.combatState.isAttacking = false;
-          this.combatState.attackStartTime = 0;
-          console.log('⚔️ Attack ended (manual release)');
-          // Broadcast state change
-          this.broadcastCombatState();
-        }
-      } else if (e.button === 2) { // RMB release
-        if (this.combatState.isBlocking) {
-          this.combatState.isBlocking = false;
-          this.combatState.blockStartTime = 0;
-          console.log('🛡️ Blocking ended (manual release)');
-          // Broadcast state change
-          this.broadcastCombatState();
-        }
-      }
-    });
-    
-    // Prevent context menu on right click
-    document.addEventListener('contextmenu', (e) => {
-      if (this.isPointerLocked) {
-        e.preventDefault();
-      }
-    });
-    
-    // Simple, responsive mouse events with safety bounds
-    document.addEventListener('mousemove', (e) => {
-      // Pointer lock check (reduced logging for performance)
-      if (!this.isPointerLocked && Math.abs(e.movementX) > 0) {
-        // Only log occasionally to avoid spam
-        if (Math.random() < 0.01) console.log('🔒 Mouse not locked - click to enable FPS controls');
-      }
-      
-      if (this.isPointerLocked) {
-        // Add bounds checking to prevent extreme values that could cause glitches
-        const deltaX = Math.max(-0.5, Math.min(0.5, e.movementX * this.mouseSensitivity));
-        const deltaY = Math.max(-0.5, Math.min(0.5, e.movementY * this.mouseSensitivity));
-        
-        this.yaw -= deltaX;
-        this.pitch -= deltaY;
-        
-        // Clamp pitch to prevent camera flipping
-        this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.pitch));
-        
-        // Normalize yaw to prevent accumulation issues
-        this.yaw = this.yaw % (2 * Math.PI);
-        
-        // Send mouse movement to network (preserve current button states)
-        Network.updateMouseInput(this.mouseButtons.left, this.mouseButtons.right, { x: deltaX, y: deltaY });
-        
-        // Send updated camera rotation to network immediately
-        Network.updateCameraInput(this.yaw, this.pitch);
-        
-        // Update debug overlay with current movement state during mouse movement
-        if (Network.isNetworkingEnabled()) {
-          const movementState = {
-            forward: this.keys['KeyW'] || false,
-            backward: this.keys['KeyS'] || false,
-            left: this.keys['KeyA'] || false,
-            right: this.keys['KeyD'] || false
-          };
-          this.updateInputDebugOverlay(movementState);
-        }
-        
-        // Debug: Log when mouse movement updates camera (very rarely to avoid spam)
-        if ((Math.abs(deltaX) > 0.01 || Math.abs(deltaY) > 0.01) && Math.random() < 0.001) {
-          console.log(`🖱️ Mouse moved: yaw=${(this.yaw * 180 / Math.PI).toFixed(1)}° (deltaX=${deltaX.toFixed(3)}) - Camera data sent to network`);
-          
-          // Extra debug: Check what's actually in the network input
-          const debugInfo = Network.getDebugInfo() as any;
-          const cameraData = debugInfo.lastInput?.camera;
-          console.log(`   📡 Current network input camera: yaw=${cameraData?.yaw?.toFixed(3)} pitch=${cameraData?.pitch?.toFixed(3)}`);
-        }
-      }
-    });
-    
-    // Pointer lock
-    document.addEventListener('click', () => {
-      if (!this.isPointerLocked) {
-        document.body.requestPointerLock();
-      }
-    });
-    
-    document.addEventListener('pointerlockchange', () => {
-      this.isPointerLocked = document.pointerLockElement === document.body;
-    });
-    
-    // Ability events
-    window.addEventListener('blastSelfImpulse', (event: Event) => {
+    // Window event handlers
+    this.boundBlastImpulseHandler = (event: Event) => {
+      this.handleBlastImpulse((event as CustomEvent).detail);
+    };
+    this.boundSpeedBoostHandler = (event: Event) => {
+      this.handleSpeedBoost((event as CustomEvent).detail);
+    };
+    this.boundCombatStateHandler = () => {
+      this.broadcastCombatState();
+    };
+    this.boundBlastSelfImpulseHandler = (event: Event) => {
       const customEvent = event as CustomEvent;
       this.handleBlastImpulse(customEvent.detail);
-    });
-    
-    window.addEventListener('blinkMomentumImpulse', (event: Event) => {
+    };
+    this.boundBlinkMomentumHandler = (event: Event) => {
       const customEvent = event as CustomEvent;
       this.handleBlinkMomentumImpulse(customEvent.detail);
-    });
+    };
+    this.boundSwingStateHandler = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      this.isSwinging = customEvent.detail.isSwinging;
+      console.log(`🎯 CONTROLLER: Swing state changed - isSwinging: ${this.isSwinging}`);
+    };
+    this.boundSwingReleaseHandler = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      this.handleSwingReleaseMomentum(customEvent.detail);
+    };
+  }
+  
+  /**
+   * Reset all key states to prevent stuck keys during state transitions
+   */
+  public resetKeyStates(): void {
+    this.keys = {};
+    console.log('🎮 Key states reset to prevent stuck keys');
+  }
+
+  /**
+   * Reset player to spawn position (not checkpoint)
+   */
+  public resetToSpawn(): void {
+    // Always use spawn position, not checkpoint
+    const spawnPosition = SPAWN_POS;
+
+    // Clean up any active grapple state
+    if (this.isSwinging) {
+      window.dispatchEvent(new CustomEvent('forceReleaseGrapple', {
+        detail: { reason: 'spawn-reset' }
+      }));
+    }
+
+    this.playerBody.setTranslation({ x: spawnPosition.x, y: spawnPosition.y, z: spawnPosition.z }, true);
+
+    // Reset all velocities
+    this.playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    this.playerBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.velocity.set(0, 0, 0);
+    this.currentSpeed = 0;
+
+    // Reset rotation
+    this.pitch = 0;
+    this.yaw = 0;
+
+    // Reset movement state
+    this.isGrounded = false;
+    this.canJump = true;
+    this.isSliding = false;
+    this.isRocketJumping = false;
+    this.rocketJumpSpeed = 0;
+    this.isBlinkMomentum = false;
+    this.blinkMomentumSpeed = 0;
+    this.isSwinging = false;
+
+    // Reset killzone tracking
+    this.timeInVoid = 0;
+    
+    // Reset preserved momentum
+    this.preservedMomentum.set(0, 0, 0);
+    
+    // Reset speed boost state
+    this.isSpeedBoosted = false;
+    this.moveSpeed = this.baseMoveSpeed;
+    this.speedBoostEndTime = 0;
+    
+    // Reset combat state
+    this.combatState.isAttacking = false;
+    this.combatState.isBlocking = false;
+    this.combatState.attackStartTime = 0;
+    this.combatState.blockStartTime = 0;
+    
+    // Stop combat timer
+    this.stopCombatTimer();
+
+    console.log('🏠 Player reset to spawn position');
+  }
+  
+  /**
+   * Handle keydown events
+   */
+  private handleKeydown(e: KeyboardEvent): void {
+    // Check if input is blocked by game state (menus)
+    if ((window as any).gameInputBlocked) {
+      return; // Don't process input during menus
+    }
+    
+    this.keys[e.code] = true;
+    
+    // Debug: Log digit keys in controller to check for conflicts
+    if (['Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
+      console.log('🎮 Controller captured digit key:', e.code);
+    }
+    
+    // Special keys
+    if (e.code === 'KeyR') {
+      this.reset();
+    } else if (e.code === 'KeyM') {
+      // Toggle combat mode for testing
+      const newMode = toggleCombatMode();
+      console.log(`🔄 Combat mode toggled to: ${newMode.toUpperCase()}`);
+      console.log(`   • MANUAL mode: Click to hit dummies (original system)`);
+      console.log(`   • PASSTHROUGH mode: Move through dummies to damage (new system)`);
+    } else if (e.code === 'KeyV') {
+      e.preventDefault(); // Prevent any default browser behavior
+      console.log('🧪 V key detected, calling handleVKeybinds...');
+      this.handleVKeybinds(e);
+    }
+    
+    // Send current movement state to network (real-time)
+    this.updateNetworkInput();
+  }
+  
+  /**
+   * Handle keyup events
+   */
+  private handleKeyup(e: KeyboardEvent): void {
+    // Check if input is blocked by game state (menus)
+    if ((window as any).gameInputBlocked) {
+      return; // Don't process input during menus
+    }
+    
+    this.keys[e.code] = false;
+    
+    // Send current movement state to network (real-time)
+    this.updateNetworkInput();
+  }
+  
+  /**
+   * Handle mousedown events
+   */
+  private handleMousedown(e: MouseEvent): void {
+    // Check if input is blocked by game state (menus)
+    if ((window as any).gameInputBlocked) {
+      return; // Don't process input during menus
+    }
+    
+    if (!this.isPointerLocked) return;
+    
+    // Update network mouse button state FIRST (regardless of combat state)
+    if (e.button === 0) {
+      this.mouseButtons.left = true;
+    } else if (e.button === 2) {
+      this.mouseButtons.right = true;
+    }
+    this.updateNetworkInput();
+    
+    if (e.button === 0) { // Left mouse button (LMB) - Attack
+      // Can't attack while blocking
+      if (this.combatState.isBlocking) {
+        console.log('❌ Cannot attack while blocking');
+        return;
+      }
+      
+      this.combatState.isAttacking = true;
+      this.combatState.attackStartTime = Date.now();
+      console.log('⚔️ Attack started (1s limit)');
+      
+      // Start timer for live updates
+      this.startCombatTimer();
+      
+      // Keep existing meleeAttack event for dummy targeting (manual mode)
+      window.dispatchEvent(new CustomEvent('meleeAttack', {
+        detail: { timestamp: Date.now() }
+      }));
+      
+      // Broadcast state change
+      this.broadcastCombatState();
+      
+    } else if (e.button === 2) { // Right mouse button (RMB) - Block
+      // Can't block while attacking
+      if (this.combatState.isAttacking) {
+        console.log('❌ Cannot block while attacking');
+        return;
+      }
+      
+      this.combatState.isBlocking = true;
+      this.combatState.blockStartTime = Date.now();
+      console.log('🛡️ Blocking started (1s limit)');
+      
+      // Start timer for live updates
+      this.startCombatTimer();
+      
+      // Broadcast state change
+      this.broadcastCombatState();
+    }
+  }
+  
+  /**
+   * Handle mouseup events
+   */
+  private handleMouseup(e: MouseEvent): void {
+    // Check if input is blocked by game state (menus)
+    if ((window as any).gameInputBlocked) {
+      return; // Don't process input during menus
+    }
+    
+    // Update network mouse button state FIRST (regardless of combat state)
+    if (e.button === 0) {
+      this.mouseButtons.left = false;
+    } else if (e.button === 2) {
+      this.mouseButtons.right = false;
+    }
+    this.updateNetworkInput();
+    
+    if (e.button === 0) { // LMB release
+      if (this.combatState.isAttacking) {
+        this.combatState.isAttacking = false;
+        this.combatState.attackStartTime = 0;
+        console.log('⚔️ Attack ended (manual release)');
+        // Broadcast state change
+        this.broadcastCombatState();
+      }
+    } else if (e.button === 2) { // RMB release
+      if (this.combatState.isBlocking) {
+        this.combatState.isBlocking = false;
+        this.combatState.blockStartTime = 0;
+        console.log('🛡️ Blocking ended (manual release)');
+        // Broadcast state change
+        this.broadcastCombatState();
+      }
+    }
+  }
+  
+  /**
+   * Handle contextmenu events
+   */
+  private handleContextmenu(e: Event): void {
+    if (this.isPointerLocked) {
+      e.preventDefault();
+    }
+  }
+  
+  /**
+   * Handle mousemove events
+   */
+  private handleMousemove(e: MouseEvent): void {
+    // Check if input is blocked by game state (menus)
+    if ((window as any).gameInputBlocked) {
+      return; // Don't process input during menus
+    }
+    
+    // Pointer lock check (reduced logging for performance)
+    if (!this.isPointerLocked && Math.abs(e.movementX) > 0) {
+      // Only log occasionally to avoid spam
+      if (Math.random() < 0.01) console.log('🔒 Mouse not locked - click to enable FPS controls');
+    }
+    
+    if (this.isPointerLocked) {
+      // Add bounds checking to prevent extreme values that could cause glitches
+      const deltaX = Math.max(-0.5, Math.min(0.5, e.movementX * this.mouseSensitivity));
+      const deltaY = Math.max(-0.5, Math.min(0.5, e.movementY * this.mouseSensitivity));
+      
+      this.yaw -= deltaX;
+      this.pitch -= deltaY;
+      
+      // Clamp pitch to prevent camera flipping
+      this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.pitch));
+      
+      // Normalize yaw to prevent accumulation issues
+      this.yaw = this.yaw % (2 * Math.PI);
+      
+      // Send mouse movement to network (preserve current button states)
+      Network.updateMouseInput(this.mouseButtons.left, this.mouseButtons.right, { x: deltaX, y: deltaY });
+      
+      // Send updated camera rotation to network immediately
+      Network.updateCameraInput(this.yaw, this.pitch);
+      
+      // Update debug overlay with current movement state during mouse movement
+      if (Network.isNetworkingEnabled()) {
+        const movementState = {
+          forward: this.keys['KeyW'] || false,
+          backward: this.keys['KeyS'] || false,
+          left: this.keys['KeyA'] || false,
+          right: this.keys['KeyD'] || false
+        };
+        this.updateInputDebugOverlay(movementState);
+      }
+      
+      // Mouse movement logging removed to reduce console spam
+    }
+  }
+  
+  /**
+   * Handle click events
+   */
+  private handleClick(): void {
+    // Check if input is blocked by game state (menus)
+    if ((window as any).gameInputBlocked) {
+      return; // Don't request pointer lock during menus
+    }
+    
+    if (!this.isPointerLocked) {
+      document.body.requestPointerLock();
+    }
+  }
+  
+  /**
+   * Handle pointerlockchange events
+   */
+  private handlePointerlockchange(): void {
+    this.isPointerLocked = document.pointerLockElement === document.body;
+  }
+  
+  private setupEventListeners() {
+    // Use bound event handlers for proper cleanup
+    document.addEventListener('keydown', this.boundKeydownHandler!);
+    document.addEventListener('keyup', this.boundKeyupHandler!);
+    document.addEventListener('mousedown', this.boundMousedownHandler!);
+    document.addEventListener('mouseup', this.boundMouseupHandler!);
+    document.addEventListener('contextmenu', this.boundContextmenuHandler!);
+    document.addEventListener('mousemove', this.boundMousemoveHandler!);
+    document.addEventListener('click', this.boundClickHandler!);
+    document.addEventListener('pointerlockchange', this.boundPointerlockchangeHandler!);
+    
+    // Ability events with bound handlers
+    window.addEventListener('blastSelfImpulse', this.boundBlastSelfImpulseHandler!);
+    window.addEventListener('blinkMomentumImpulse', this.boundBlinkMomentumHandler!);
   }
   
 
   
   private setupSwingStateListener() {
-    // Listen for swing state changes from grapple ability
-    window.addEventListener('swingStateChanged', (event: Event) => {
-      const customEvent = event as CustomEvent;
-      this.isSwinging = customEvent.detail.isSwinging;
-      console.log(`🎯 CONTROLLER: Swing state changed - isSwinging: ${this.isSwinging}`);
-    });
-    
-    // Listen for swing release momentum preservation
-    window.addEventListener('swingReleaseImpulse', (event: Event) => {
-      const customEvent = event as CustomEvent;
-      this.handleSwingReleaseMomentum(customEvent.detail);
-    });
+    // Use bound handlers for proper cleanup
+    window.addEventListener('swingStateChanged', this.boundSwingStateHandler!);
+    window.addEventListener('swingReleaseImpulse', this.boundSwingReleaseHandler!);
   }
   
   /**
@@ -533,35 +691,8 @@ export class FirstPersonController {
       currentKit.className
     );
     
-    // Debug: Log when any interesting states are true (or actions)
-    const hasActions = this.keys['Space'] || this.keys['ShiftLeft'] || this.keys['ShiftRight'] || this.keys['KeyE'];
-    const hasStates = this.isRocketJumping || this.isSwinging || this.isBlinkMomentum || this.isSliding;
-    
-    if (hasStates || (hasActions && Math.random() < 0.1)) { // Log states always, actions occasionally
-      console.log(`🎮 CLIENT input:`, {
-        // Movement
-        movement: {
-          W: this.keys['KeyW'] || false,
-          S: this.keys['KeyS'] || false,
-          A: this.keys['KeyA'] || false,
-          D: this.keys['KeyD'] || false
-        },
-        // Actions
-        actions: {
-          Space: this.keys['Space'] || false,
-          Shift: this.keys['ShiftLeft'] || this.keys['ShiftRight'] || false,
-          E: this.keys['KeyE'] || false
-        },
-        // States
-        states: {
-          rocket: this.isRocketJumping,
-          swing: this.isSwinging, 
-          blink: this.isBlinkMomentum,
-          slide: this.isSliding,
-          ability: currentKit.className
-        }
-      });
-    }
+    // Client input logging removed to reduce console spam
+    // (Debug logging was: movement, actions, states)
     
     // Send mouse input to network
     Network.updateMouseInput(this.mouseButtons.left, this.mouseButtons.right, { x: 0, y: 0 });
@@ -634,6 +765,11 @@ export class FirstPersonController {
   }
   
   update(deltaTime: number) {
+    // Check if input is blocked by game state (menus)
+    if ((window as any).gameInputBlocked) {
+      return; // Don't process movement during menus
+    }
+    
     // Get current position
     const translation = this.playerBody.translation();
     
@@ -1178,5 +1314,83 @@ export class FirstPersonController {
    */
   getCombatState() {
     return this.combatState;
+  }
+  
+  /**
+   * Cleanup all event listeners and resources to prevent memory leaks
+   */
+  public destroy(): void {
+    console.log('🧹 FirstPersonController: Starting cleanup...');
+    
+    // Clear combat timer
+    this.stopCombatTimer();
+    
+    // Remove all document event listeners
+    if (this.boundKeydownHandler) {
+      document.removeEventListener('keydown', this.boundKeydownHandler);
+    }
+    if (this.boundKeyupHandler) {
+      document.removeEventListener('keyup', this.boundKeyupHandler);
+    }
+    if (this.boundMousedownHandler) {
+      document.removeEventListener('mousedown', this.boundMousedownHandler);
+    }
+    if (this.boundMouseupHandler) {
+      document.removeEventListener('mouseup', this.boundMouseupHandler);
+    }
+    if (this.boundContextmenuHandler) {
+      document.removeEventListener('contextmenu', this.boundContextmenuHandler);
+    }
+    if (this.boundMousemoveHandler) {
+      document.removeEventListener('mousemove', this.boundMousemoveHandler);
+    }
+    if (this.boundClickHandler) {
+      document.removeEventListener('click', this.boundClickHandler);
+    }
+    if (this.boundPointerlockchangeHandler) {
+      document.removeEventListener('pointerlockchange', this.boundPointerlockchangeHandler);
+    }
+    
+    // Remove all window event listeners
+    if (this.boundBlastImpulseHandler) {
+      window.removeEventListener('blastImpulse', this.boundBlastImpulseHandler);
+    }
+    if (this.boundSpeedBoostHandler) {
+      window.removeEventListener('speedBoostGranted', this.boundSpeedBoostHandler);
+    }
+    if (this.boundCombatStateHandler) {
+      window.removeEventListener('requestCombatState', this.boundCombatStateHandler);
+    }
+    if (this.boundBlastSelfImpulseHandler) {
+      window.removeEventListener('blastSelfImpulse', this.boundBlastSelfImpulseHandler);
+    }
+    if (this.boundBlinkMomentumHandler) {
+      window.removeEventListener('blinkMomentumImpulse', this.boundBlinkMomentumHandler);
+    }
+    if (this.boundSwingStateHandler) {
+      window.removeEventListener('swingStateChanged', this.boundSwingStateHandler);
+    }
+    if (this.boundSwingReleaseHandler) {
+      window.removeEventListener('swingReleaseImpulse', this.boundSwingReleaseHandler);
+    }
+    
+    // Clear all bound handler references
+    this.boundKeydownHandler = undefined;
+    this.boundKeyupHandler = undefined;
+    this.boundMousedownHandler = undefined;
+    this.boundMouseupHandler = undefined;
+    this.boundContextmenuHandler = undefined;
+    this.boundMousemoveHandler = undefined;
+    this.boundClickHandler = undefined;
+    this.boundPointerlockchangeHandler = undefined;
+    this.boundBlastImpulseHandler = undefined;
+    this.boundSpeedBoostHandler = undefined;
+    this.boundCombatStateHandler = undefined;
+    this.boundBlastSelfImpulseHandler = undefined;
+    this.boundBlinkMomentumHandler = undefined;
+    this.boundSwingStateHandler = undefined;
+    this.boundSwingReleaseHandler = undefined;
+    
+    console.log('✅ FirstPersonController: Cleanup complete - 15+ event listeners removed');
   }
 } 

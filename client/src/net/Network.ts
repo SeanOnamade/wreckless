@@ -127,9 +127,42 @@ class NetworkManager {
       // console.log('📦 Network: Received state update:', state);
     });
 
+    // Listen for race start events
+    this.socket.on('raceStarted', () => {
+      console.log('🏁 Received race start event from server');
+      // Dispatch custom event for GameStateManager to handle
+      window.dispatchEvent(new CustomEvent('multiplayerRaceStart'));
+    });
+
+    // Listen for test responses
+    this.socket.on('testResponse', (data: any) => {
+      console.log('🧪 TEST: Received testResponse from server:', data);
+    });
+
+    // Listen for class selection updates
+    this.socket.on('classUpdate', (data: { playerId: string, playerClass: string, allPlayers: any }) => {
+      console.log('📡 Received classUpdate from server:', data);
+      // Dispatch custom event with player class data
+      window.dispatchEvent(new CustomEvent('lobbyClassUpdate', { detail: data }));
+    });
+
+    // Listen for post-race vote updates
+    this.socket.on('voteUpdate', (voteState: { anotherRound: number, backToMenu: number, totalPlayers: number, unanimous: boolean, decision?: string }) => {
+      console.log('🗳️ Received voteUpdate from server:', voteState);
+      // Dispatch custom event with vote data
+      window.dispatchEvent(new CustomEvent('postRaceVoteUpdate', { detail: voteState }));
+    });
+
+    // Listen for leaderboard updates
+    this.socket.on('leaderboard', (leaderboardData: any) => {
+      console.log('🏆 Received leaderboard from server:', leaderboardData);
+      // Dispatch custom event with leaderboard data
+      window.dispatchEvent(new CustomEvent('leaderboardUpdate', { detail: leaderboardData }));
+    });
+
     // Listen for any other events (extensible)
     this.socket.onAny((eventName, ...args) => {
-      if (eventName !== 'state') { // Don't log state events to avoid spam
+      if (eventName !== 'state' && eventName !== 'raceStarted') { // Don't log frequent events to avoid spam
         console.log(`📨 Network: Received '${eventName}' event:`, args);
       }
     });
@@ -256,8 +289,8 @@ class NetworkManager {
               console.log(`💓 Heartbeat: Player alive on server`);
             }
             
-            // Debug log every 20 sends (once per second at 20Hz)
-            if (syncCount % 20 === 0) {
+            // Position sync logging reduced to avoid spam
+            if (syncCount % 200 === 0) { // Every 10 seconds instead of every second
               console.log(`📍 Position sync: ${syncCount} updates sent, current pos: (${context.position.x.toFixed(1)}, ${context.position.y.toFixed(1)}, ${context.position.z.toFixed(1)})`);
             }
             
@@ -265,13 +298,7 @@ class NetworkManager {
             lastPosition = { ...context.position };
             lastVelocity = { ...context.velocity };
             
-            // Debug log for significant movement
-            if (Math.abs(context.velocity.x) > 5 || Math.abs(context.velocity.y) > 5 || Math.abs(context.velocity.z) > 5) {
-              console.log('📍 Fast movement:', {
-                pos: `(${context.position.x.toFixed(1)}, ${context.position.y.toFixed(1)}, ${context.position.z.toFixed(1)})`,
-                vel: `(${context.velocity.x.toFixed(1)}, ${context.velocity.y.toFixed(1)}, ${context.velocity.z.toFixed(1)})`
-              });
-            }
+            // Fast movement logging removed to reduce console spam
           } // Removed spammy skip logs
         } catch (error) {
           console.warn('Position sync failed:', error);
@@ -464,6 +491,56 @@ class NetworkManager {
     return this.isOnlineMode;
   }
 
+  /**
+   * Send race start event to server (host only)
+   */
+  public sendRaceStart(): void {
+    if (!this.validateConnection('send race start')) {
+      return;
+    }
+
+    console.log('📡 Network: Sending race start event to server...');
+    this.socket!.emit('startRace');
+  }
+
+  /**
+   * Send class selection to server
+   */
+  public sendClassSelection(playerClass: string): void {
+    if (!this.validateConnection('send class selection')) {
+      return;
+    }
+
+    console.log(`📡 Sending class selection: ${playerClass} (connected: ${this.socket!.connected})`);
+    this.socket!.emit('classSelection', { playerClass });
+  }
+
+  /**
+   * Test basic socket connection
+   */
+  public testConnection(): void {
+    if (!this.validateConnection('test connection')) {
+      return;
+    }
+
+    console.log('🧪 Testing socket connection...');
+    console.log('🧪 Socket connected:', this.socket!.connected);
+    console.log('🧪 Socket ID:', this.socket!.id);
+    this.socket!.emit('test', { message: 'Hello from client!' });
+  }
+
+  /**
+   * Request current lobby state from server
+   */
+  public requestLobbyState(): void {
+    if (!this.validateConnection('request lobby state')) {
+      return;
+    }
+
+    console.log(`📡 Requesting lobby state (connected: ${this.socket!.connected}, status: ${this.connectionStatus})`);
+    this.socket!.emit('requestLobbyState');
+  }
+
   // Clean shutdown
   public disconnect(): void {
     if (this.inputInterval) {
@@ -591,8 +668,7 @@ class NetworkManager {
       return;
     }
     
-    if (!this.socket?.connected) {
-      console.log('❌ Cannot test: socket not connected');
+    if (!this.validateConnection('test position correction')) {
       return;
     }
     
@@ -626,8 +702,7 @@ class NetworkManager {
       return;
     }
     
-    if (!this.socket?.connected) {
-      console.log('❌ Cannot test: socket not connected');
+    if (!this.validateConnection('test position sync')) {
       return;
     }
     
@@ -687,6 +762,64 @@ class NetworkManager {
   // Register a callback to process dummy state updates
   public registerDummyStateCallback(callback: (dummyStates: Record<string, any>) => void): void {
     this.dummyStateCallback = callback;
+  }
+
+  /**
+   * Vote for another round in multiplayer
+   */
+  public voteAnotherRound(): void {
+    if (!this.validateConnection('vote for another round')) {
+      return;
+    }
+
+    console.log('🗳️ Network: Voting for ANOTHER ROUND');
+    this.socket!.emit('voteAnotherRound');
+  }
+
+  /**
+   * Vote to go back to menu
+   */
+  public voteBackToMenu(): void {
+    if (!this.validateConnection('vote to go back to menu')) {
+      return;
+    }
+
+    console.log('🗳️ Network: Voting for BACK TO MENU');
+    this.socket!.emit('voteBackToMenu');
+  }
+
+  /**
+   * Check if network is properly connected (helper method for future use)
+   */
+  // private _isConnected(): boolean {
+  //   return !!(this.socket && this.socket.connected);
+  // }
+
+  /**
+   * Validate connection with detailed error logging
+   */
+  private validateConnection(operation: string): boolean {
+    if (!this.socket) {
+      console.warn(`🔧 Network: Cannot ${operation} - socket not initialized`);
+      return false;
+    }
+    if (!this.socket.connected) {
+      console.warn(`🔧 Network: Cannot ${operation} - socket not connected (status: ${this.connectionStatus})`);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Send final race score to server for leaderboard
+   */
+  public sendFinalScore(score: number, events: any[]): void {
+    if (!this.validateConnection('send final score')) {
+      return;
+    }
+
+    console.log(`🏆 Network: Sending final score: ${score} points`);
+    this.socket!.emit('finalScore', { score, events });
   }
 }
 
