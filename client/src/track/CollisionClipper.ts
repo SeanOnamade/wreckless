@@ -151,7 +151,6 @@ export class CollisionClipper {
       if (clipped) {
         clippedGeometries.push(clipped);
         if (import.meta.env.DEV) {
-          const boundingBox = new THREE.Box3().setFromBufferAttribute(clipped.attributes.position as THREE.BufferAttribute);
           // Debug: Range-clipped geometry (silent for performance)
         }
       }

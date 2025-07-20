@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { MeleeTarget } from './MeleeCombat';
 
@@ -9,15 +10,37 @@ export class TargetDummy implements MeleeTarget {
   
   private scene: THREE.Scene;
   private world: RAPIER.World;
-  private mesh!: THREE.Mesh;
+  private mesh!: THREE.Object3D;
   private maxHealth = 100;
   private currentHealth = 100;
   private respawnTimer?: number;
   
-  // Visual effects
-  private damageFlashTimer?: number;
-  private rangeIndicator?: THREE.Mesh;
-  private inRange = false;
+  // Static counter for model cycling
+  private static dummyCounter = 0;
+  private modelType: 'stopwatch' | 'hourglass' | 'chronoshard';
+  
+  // Enhanced FX elements for CursorDay7
+  private hitRing?: THREE.Mesh;
+  private koRing?: THREE.Mesh;
+  private respawnRing?: THREE.Mesh;
+  private sparkles: THREE.Mesh[] = [];
+  
+  // Animation for visual appeal
+  private rotationSpeed: number;
+  private baseRotationSpeed = 0.3; // Slow rotation (radians per second)
+  private floatOffset: number; // For up/down bobbing animation
+  private floatSpeed: number; // Speed of floating animation
+  private basePosition!: THREE.Vector3; // Store the true base position for floating (set during mesh creation)
+  
+  // PERFORMANCE FIX: Cache materials once instead of traversing every frame
+  private cachedMaterials: THREE.MeshStandardMaterial[] = [];
+  private baseGlowIntensity: number = 0;
+  
+  // PERFORMANCE FIX: Cache time calculations
+  private lastGlowUpdate = 0;
+  private readonly GLOW_UPDATE_INTERVAL = 50; // Update every 50ms instead of every frame
+  
+  // Note: Scale values finalized - stopwatch: 1.8x, hourglass: 0.4x, chronoshard: 5.6x
 
   constructor(
     scene: THREE.Scene,
@@ -30,74 +53,221 @@ export class TargetDummy implements MeleeTarget {
     this.position = position.clone();
     this.id = id;
     
-    this.createVisualMesh();
+    // Determine model type based on counter (cycles through 3 models)
+    const modelIndex = TargetDummy.dummyCounter % 3;
+    this.modelType = modelIndex === 0 ? 'stopwatch' : 
+                    modelIndex === 1 ? 'hourglass' : 'chronoshard';
+    TargetDummy.dummyCounter++;
+    
+    // Initialize rotation with slight randomness for variety
+    this.rotationSpeed = this.baseRotationSpeed + (Math.random() - 0.5) * 0.2; // ±0.1 variance
+    
+    // Initialize floating animation with randomness for natural variety
+    this.floatOffset = Math.random() * Math.PI * 2; // Random starting phase
+    this.floatSpeed = 2.5 + (Math.random() - 0.5) * 1.0; // 2.0 to 3.0 speed variance (much faster bobbing)
+    // Note: basePosition will be set during mesh creation
+    
+    this.initializeDummy();
+  }
+
+
+
+  /**
+   * Initialize the dummy with async model loading
+   */
+  private async initializeDummy(): Promise<void> {
+    await this.createVisualMesh();
     this.createPhysicsBody();
+    this.createFXElements();
     
     // Target dummy created silently
   }
 
-  private createVisualMesh(): void {
-    // Create a capsule-like geometry for the dummy
-    const geometry = new THREE.CapsuleGeometry(0.5, 1.8, 8, 16);
+  private async createVisualMesh(): Promise<void> {
+    try {
+      // Load the appropriate GLB model based on type
+      const loader = new GLTFLoader();
+      const modelPath = `/models/${this.modelType}.glb`;
+      const gltf = await loader.loadAsync(modelPath);
+      
+      // Clone the scene to create an independent instance
+      this.mesh = gltf.scene.clone();
+      
+      // Optimized scales for visual consistency and gameplay balance
+      const modelScales = {
+        stopwatch: 1.8,   // Balanced size
+        hourglass: 0.4,   // Smaller, more delicate
+        chronoshard: 5.6  // Larger, more imposing (+0.2 from 5.4)
+      };
+      
+      // Apply visual scale but normalize aspect ratio for gameplay consistency
+      const baseScale = modelScales[this.modelType];
+      
+      // Normalize aspect ratios - make all models roughly the same height/width ratio
+      // This ensures more consistent gameplay despite visual differences
+      const aspectNormalization = {
+        stopwatch: { x: baseScale * 1.0, y: baseScale * 1.0, z: baseScale * 1.0 },   // Square proportions
+        hourglass: { x: baseScale * 1.2, y: baseScale * 1.0, z: baseScale * 1.2 },   // Slightly wider for visibility
+        chronoshard: { x: baseScale * 0.8, y: baseScale * 1.0, z: baseScale * 0.8 }  // Narrower to balance large scale
+      };
+      
+      const normalizedScale = aspectNormalization[this.modelType];
+      this.mesh.scale.set(normalizedScale.x, normalizedScale.y, normalizedScale.z);
+      
+      // Position and setup
+      this.mesh.position.copy(this.position);
+      
+      // Store the adjusted base position for floating animation
+      this.basePosition = this.position.clone();
+      if (this.modelType === 'hourglass') {
+        this.basePosition.y -= 0.6; // Move hourglass down slightly for better centering
+      } else if (this.modelType === 'chronoshard') {
+        this.basePosition.y += 0.4; // Move chronoshard up slightly for better visibility
+      }
+      
+      this.mesh.castShadow = true;
+      this.mesh.receiveShadow = true;
+      
+      // Enable shadows and add magical glow to all child meshes
+      this.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          
+          // Add subtle magical glow based on dummy type
+          if (child.material instanceof THREE.MeshStandardMaterial) {
+            this.addMagicalGlow(child.material);
+          }
+        }
+      });
+      
+      // Set userData for identification
+      this.mesh.userData = {
+        isDummy: true,
+        id: this.id,
+        type: 'TargetDummy',
+        modelType: this.modelType
+      };
+      
+      this.scene.add(this.mesh);
+      
+      console.log(`✨ Loaded ${this.modelType} model for dummy ${this.id}`);
+      
+    } catch (error) {
+      console.error(`❌ Failed to load ${this.modelType} model for dummy ${this.id}:`, error);
+      
+      // Fallback to basic geometry if model loading fails
+      this.createFallbackMesh();
+    }
+  }
+
+  /**
+   * Create a fallback mesh if GLB loading fails
+   */
+  private createFallbackMesh(): void {
+    const geometry = new THREE.CapsuleGeometry(0.8, 2.4, 8, 16);
     const material = new THREE.MeshStandardMaterial({
-      color: 0xff4444,
-      roughness: 0.7,
-      metalness: 0.1
+      color: 0xff3333,
+      metalness: 0.2,
+      roughness: 0.6
     });
     
     this.mesh = new THREE.Mesh(geometry, material);
     this.mesh.position.copy(this.position);
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
-    this.mesh.name = `target_dummy_${this.id}`;
     
-    // Add a simple face/target marking
-    const faceGeometry = new THREE.CircleGeometry(0.2, 8);
-    const faceMaterial = new THREE.MeshBasicMaterial({ 
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.8
-    });
-    const face = new THREE.Mesh(faceGeometry, faceMaterial);
-    face.position.set(0, 0.6, 0.51); // Front of the dummy, upper part
-    this.mesh.add(face);
+    // Add magical glow to fallback mesh too
+    this.addMagicalGlow(material);
     
-    // Add target rings
-    for (let i = 1; i <= 3; i++) {
-      const ringGeometry = new THREE.RingGeometry(0.05 * i, 0.05 * i + 0.02, 8);
-      const ringMaterial = new THREE.MeshBasicMaterial({ 
-        color: i % 2 === 0 ? 0xff0000 : 0xffffff,
-        transparent: true,
-        opacity: 0.7
-      });
-      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-      ring.position.set(0, 0.6, 0.52);
-      this.mesh.add(ring);
+    // Set fallback basePosition for floating animation
+    this.basePosition = this.position.clone();
+    if (this.modelType === 'hourglass') {
+      this.basePosition.y -= 0.6; // Apply hourglass offset
+    } else if (this.modelType === 'chronoshard') {
+      this.basePosition.y += 0.4; // Apply chronoshard offset
     }
     
-    this.scene.add(this.mesh);
+    this.mesh.userData = {
+      isDummy: true,
+      id: this.id,
+      type: 'TargetDummy'
+    };
     
-    // Create range indicator
-    this.createRangeIndicator();
+    this.scene.add(this.mesh);
+    console.log(`⚠️ Using fallback mesh for dummy ${this.id}`);
   }
-  
-  private createRangeIndicator(): void {
-    // Create a floating outline around the dummy instead of ground ring
-    const outlineGeometry = new THREE.CylinderGeometry(1.2, 1.2, 0.1, 16);
-    const outlineMaterial = new THREE.MeshBasicMaterial({
-      color: 0x00ff00,
+
+  /**
+   * Create enhanced FX elements for hit/KO/respawn feedback
+   */
+  private createFXElements(): void {
+    // Hit ring - orange emissive torus (scaled for larger dummy)
+    const hitRingGeometry = new THREE.TorusGeometry(1.5, 0.3, 8, 16);
+    const hitRingMaterial = new THREE.MeshStandardMaterial({
+      color: 0xff6600,
       transparent: true,
       opacity: 0,
-      wireframe: true,
-      blending: THREE.AdditiveBlending
+      emissive: 0xff3300,
+      emissiveIntensity: 0,
+      side: THREE.DoubleSide
+    });
+    this.hitRing = new THREE.Mesh(hitRingGeometry, hitRingMaterial);
+    this.hitRing.position.copy(this.position);
+    this.hitRing.rotation.x = Math.PI / 2; // Lay flat
+    this.hitRing.visible = false;
+    this.scene.add(this.hitRing);
+
+    // KO ring - red explosion ring (scaled for larger dummy)
+    const koRingGeometry = new THREE.TorusGeometry(1.8, 0.4, 8, 16);
+    const koRingMaterial = new THREE.MeshStandardMaterial({
+      color: 0xff0000,
+      transparent: true,
+      opacity: 0,
+      emissive: 0xff0000,
+      emissiveIntensity: 0,
+      side: THREE.DoubleSide
+    });
+    this.koRing = new THREE.Mesh(koRingGeometry, koRingMaterial);
+    this.koRing.position.copy(this.position);
+    this.koRing.rotation.x = Math.PI / 2;
+    this.koRing.visible = false;
+    this.scene.add(this.koRing);
+
+    // Respawn ring - green spawn ring (scaled for larger dummy)
+    const respawnRingGeometry = new THREE.TorusGeometry(1.6, 0.35, 8, 16);
+    const respawnRingMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00ff44,
+      transparent: true,
+      opacity: 0,
+      emissive: 0x00ff44,
+      emissiveIntensity: 0,
+      side: THREE.DoubleSide
+    });
+    this.respawnRing = new THREE.Mesh(respawnRingGeometry, respawnRingMaterial);
+    this.respawnRing.position.copy(this.position);
+    this.respawnRing.rotation.x = Math.PI / 2;
+    this.respawnRing.visible = false;
+    this.scene.add(this.respawnRing);
+
+    // Create sparkle particles
+    const sparkleGeometry = new THREE.SphereGeometry(0.05, 6, 6);
+    const sparkleMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffff00,
+      transparent: true,
+      opacity: 0
     });
     
-    this.rangeIndicator = new THREE.Mesh(outlineGeometry, outlineMaterial);
-    this.rangeIndicator.position.copy(this.position);
-    this.rangeIndicator.position.y += 2.5; // Float above the dummy
-    
-    this.scene.add(this.rangeIndicator);
+    for (let i = 0; i < 6; i++) {
+      const sparkle = new THREE.Mesh(sparkleGeometry, sparkleMaterial.clone());
+      sparkle.position.copy(this.position);
+      sparkle.visible = false;
+      this.sparkles.push(sparkle);
+      this.scene.add(sparkle);
+    }
   }
+  
+
 
   private createPhysicsBody(): void {
     // Create a static rigid body for the dummy
@@ -113,8 +283,10 @@ export class TargetDummy implements MeleeTarget {
       type: 'TargetDummy'
     };
     
-    // Create SENSOR collider - detectable but not solid (pass-through for players)
-    const colliderDesc = RAPIER.ColliderDesc.capsule(0.9, 0.5)
+    // Create STANDARDIZED SENSOR collider - same hitbox for all dummy types regardless of visual scale
+    // This ensures consistent gameplay: all dummies have identical hit detection
+    // Capsule: radius 0.9, half-height 1.3 (good balance for all visual models)
+    const colliderDesc = RAPIER.ColliderDesc.capsule(1.3, 0.9)
       .setSensor(true); // CRITICAL: Makes dummy pass-through for movement
     
     this.world.createCollider(colliderDesc, this.rigidBody);
@@ -147,16 +319,99 @@ export class TargetDummy implements MeleeTarget {
       }
     }));
     
-    // Note: meleeHit events are dispatched by the calling system (HitVolume/MeleeCombat)
-    // to avoid double-dispatching in racing mode
-    
-    // Visual damage feedback
-    this.flashDamage();
+    // Enhanced visual damage feedback
+    this.triggerHitFX();
     
     // Check for KO
     if (this.currentHealth <= 0) {
       this.triggerKO();
     }
+  }
+
+
+
+  /**
+   * Simplified hit feedback - no visual changes to dummy appearance
+   */
+  private triggerHitFX(): void {
+    // Keep hit ring effect but no color/scale changes to the dummy itself
+    if (this.hitRing) {
+      this.hitRing.visible = true;
+      this.hitRing.scale.set(0.1, 0.1, 0.1);
+      const ringMaterial = this.hitRing.material as THREE.MeshStandardMaterial;
+      ringMaterial.opacity = 0.8;
+      ringMaterial.emissiveIntensity = 1.0;
+      
+      // Animate ring expansion
+      const startTime = Date.now();
+      const animateHitRing = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / 300, 1); // 300ms animation
+        
+        const scale = 0.1 + (2.0 * progress); // Expand from 0.1 to 2.1
+        this.hitRing!.scale.set(scale, scale, scale);
+        
+        const opacity = 0.8 * (1 - progress); // Fade out
+        const intensity = 1.0 * (1 - progress);
+        ringMaterial.opacity = opacity;
+        ringMaterial.emissiveIntensity = intensity;
+        
+        if (progress < 1) {
+          requestAnimationFrame(animateHitRing);
+        } else {
+          this.hitRing!.visible = false;
+        }
+      };
+      requestAnimationFrame(animateHitRing);
+    }
+
+    // Keep sparkle particles effect
+    this.triggerSparkles();
+    
+    // Note: No color or scale changes to the dummy mesh itself
+  }
+
+  /**
+   * Sparkle particle effect around the dummy
+   */
+  private triggerSparkles(): void {
+    this.sparkles.forEach((sparkle, index) => {
+      sparkle.visible = true;
+      
+      // Random position around larger dummy
+      const angle = (index / this.sparkles.length) * Math.PI * 2;
+      const radius = 2.0; // Increased for larger dummy
+      const height = Math.random() * 2.5; // Taller sparkle range
+      
+      sparkle.position.set(
+        this.position.x + Math.cos(angle) * radius,
+        this.position.y + height,
+        this.position.z + Math.sin(angle) * radius
+      );
+      
+      const sparkleMaterial = sparkle.material as THREE.MeshBasicMaterial;
+      sparkleMaterial.opacity = 1.0;
+      
+      // Animate sparkles
+      const startTime = Date.now();
+      const animateSparkle = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / 400, 1); // 400ms animation
+        
+        // Float upward
+        sparkle.position.y = this.position.y + height + (progress * 1.5);
+        
+        // Fade out
+        sparkleMaterial.opacity = 1.0 * (1 - progress);
+        
+        if (progress < 1) {
+          requestAnimationFrame(animateSparkle);
+        } else {
+          sparkle.visible = false;
+        }
+      };
+      requestAnimationFrame(animateSparkle);
+    });
   }
 
   /**
@@ -178,50 +433,49 @@ export class TargetDummy implements MeleeTarget {
   }
 
   /**
-   * Flash red when taking damage
-   */
-  private flashDamage(): void {
-    if (this.damageFlashTimer) {
-      window.clearTimeout(this.damageFlashTimer);
-    }
-    
-    // Change to damage color
-    const material = this.mesh.material as THREE.MeshStandardMaterial;
-    material.color.setHex(0xff8888);
-    material.emissive.setHex(0x220000);
-    
-    // Reset after flash duration
-    this.damageFlashTimer = window.setTimeout(() => {
-      material.color.setHex(0xff4444);
-      material.emissive.setHex(0x000000);
-    }, 150);
-  }
-
-  /**
-   * Handle KO and respawn logic
+   * Handle KO and respawn logic with minimal visual changes
    */
   private triggerKO(): void {
     console.log(`💀 Dummy ${this.id} KO'd! Respawning in 3 seconds...`);
     
     try {
-      // Visual KO effect - make it very obvious
-      const material = this.mesh.material as THREE.MeshStandardMaterial;
-      material.color.setHex(0x222222); // Very dark
-      material.transparent = true;
-      material.opacity = 0.2; // Very transparent
-      material.emissive.setHex(0x440000); // Dark red glow
-      
-      // Scale down the dummy to show it's "defeated"
-      this.mesh.scale.set(0.7, 0.7, 0.7);
-      
-      // Rotate it to "fall over"
-      this.mesh.rotation.z = Math.PI / 6; // 30 degrees
+      // Just hide the mesh instead of changing colors/scale
+      this.mesh.visible = false;
+
+      // KO explosion ring effect
+      if (this.koRing) {
+        this.koRing.visible = true;
+        this.koRing.scale.set(0.1, 0.1, 0.1);
+        const ringMaterial = this.koRing.material as THREE.MeshStandardMaterial;
+        ringMaterial.opacity = 1.0;
+        ringMaterial.emissiveIntensity = 1.5;
+        
+        // Animate explosion ring
+        const startTime = Date.now();
+        const animateKORing = () => {
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(elapsed / 600, 1); // 600ms animation
+          
+          const scale = 0.1 + (3.5 * progress); // Large explosion ring
+          this.koRing!.scale.set(scale, scale, scale);
+          
+          const opacity = 1.0 * (1 - Math.pow(progress, 1.5)); // Fade out
+          const intensity = 1.5 * (1 - progress);
+          ringMaterial.opacity = opacity;
+          ringMaterial.emissiveIntensity = intensity;
+          
+          if (progress < 1) {
+            requestAnimationFrame(animateKORing);
+          } else {
+            this.koRing!.visible = false;
+          }
+        };
+        requestAnimationFrame(animateKORing);
+      }
       
       // DEFER rigidBody.setEnabled(false) to avoid Rapier "recursive use" error
-      // This happens when setEnabled is called during an active physics query
       requestAnimationFrame(() => {
         try {
-          // Disable collision temporarily (deferred to avoid Rapier conflict)
           this.rigidBody.setEnabled(false);
         } catch (deferredError) {
           console.error(`Error in deferred rigidBody disable for ${this.id}:`, deferredError);
@@ -239,7 +493,7 @@ export class TargetDummy implements MeleeTarget {
   }
 
   /**
-   * Respawn the dummy with full health
+   * Respawn the dummy with minimal visual changes
    */
   private respawn(): void {
     console.log(`✨ Dummy ${this.id} respawned!`);
@@ -251,51 +505,47 @@ export class TargetDummy implements MeleeTarget {
     
     // Reset health
     this.currentHealth = this.maxHealth;
-    console.log(`✨ Dummy ${this.id} health reset: ${this.currentHealth}/${this.maxHealth} HP`);
     
-    // Enhanced respawn animation with prominent green flash
-    const material = this.mesh.material as THREE.MeshStandardMaterial;
-    
-    // Start with bright green spawn flash
-    material.color.setHex(0x00ff44); // Bright green color
-    material.transparent = false;
-    material.opacity = 1.0;
-    material.emissive.setHex(0x00ff00); // Bright green emissive
-    
-    // Start with slightly larger scale for pop effect
-    this.mesh.scale.set(1.2, 1.2, 1.2);
-    
-    // Reset rotation to upright immediately
+    // Reset position and rotation immediately
+    this.mesh.position.copy(this.basePosition); // Use basePosition for respawn
     this.mesh.rotation.z = 0;
     
-    // Reset position
-    this.mesh.position.copy(this.position);
+    // Simply show the mesh again - no color/scale changes
+    this.mesh.visible = true;
     
     // Re-enable collision
     this.rigidBody.setEnabled(true);
-    
-    // Re-enable collision completed
-    
-    // Animate scale back to normal over 200ms
-    const startTime = Date.now();
-    const animateScale = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / 200, 1); // 200ms animation
-      const scale = 1.2 - (0.2 * progress); // From 1.2 to 1.0
+
+    // Keep respawn ring effect but no changes to dummy appearance
+    if (this.respawnRing) {
+      this.respawnRing.visible = true;
+      this.respawnRing.scale.set(3.0, 3.0, 3.0);
+      const ringMaterial = this.respawnRing.material as THREE.MeshStandardMaterial;
+      ringMaterial.opacity = 0.8;
+      ringMaterial.emissiveIntensity = 1.2;
       
-      this.mesh.scale.set(scale, scale, scale);
-      
-      if (progress < 1) {
-        requestAnimationFrame(animateScale);
-      }
-    };
-    requestAnimationFrame(animateScale);
-    
-    // Remove green flash and return to normal color after 300ms
-    window.setTimeout(() => {
-      material.color.setHex(0xff4444); // Back to normal red
-      material.emissive.setHex(0x000000); // Remove emissive
-    }, 300);
+      // Animate respawn ring (contracts inward)
+      const startTime = Date.now();
+      const animateRespawnRing = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / 400, 1); // 400ms animation
+        
+        const scale = 3.0 - (2.7 * progress); // Contract from 3.0 to 0.3
+        this.respawnRing!.scale.set(scale, scale, scale);
+        
+        const opacity = 0.8 * (1 - progress);
+        const intensity = 1.2 * (1 - progress);
+        ringMaterial.opacity = opacity;
+        ringMaterial.emissiveIntensity = intensity;
+        
+        if (progress < 1) {
+          requestAnimationFrame(animateRespawnRing);
+        } else {
+          this.respawnRing!.visible = false;
+        }
+      };
+      requestAnimationFrame(animateRespawnRing);
+    }
   }
 
   /**
@@ -322,17 +572,9 @@ export class TargetDummy implements MeleeTarget {
       this.respawnTimer = undefined;
     }
     
-    // Reset visual state
-    const material = this.mesh.material as THREE.MeshStandardMaterial;
-    material.color.setHex(0xff4444); // Normal red
-    material.transparent = false;
-    material.opacity = 1.0;
-    material.emissive.setHex(0x000000); // No emissive
-    
-    // Reset scale and rotation
-    this.mesh.scale.set(1, 1, 1);
-    this.mesh.rotation.z = 0;
-    this.mesh.position.copy(this.position);
+    // Reset visual state - just ensure dummy is visible and positioned correctly
+    this.mesh.visible = true;
+    this.mesh.position.copy(this.basePosition); // Use basePosition for reset
     
     // Re-enable collision if disabled
     if (!this.rigidBody.isEnabled()) {
@@ -347,38 +589,7 @@ export class TargetDummy implements MeleeTarget {
     }));
   }
   
-  /**
-   * Update range indicator based on player proximity
-   */
-  updateRangeIndicator(playerPosition: THREE.Vector3, meleeRange: number): void {
-    if (!this.rangeIndicator) return;
-    
-    const distance = this.position.distanceTo(playerPosition);
-    const wasInRange = this.inRange;
-    this.inRange = distance <= meleeRange;
-    
-    const material = this.rangeIndicator.material as THREE.MeshBasicMaterial;
-    
-    if (this.inRange && !wasInRange) {
-      // Just entered range - very visible floating indicator
-      material.opacity = 1.0;
-      material.color.setHex(0x00ff00); // Bright green
-      console.log(`🎯 ${this.id} entered melee range (${distance.toFixed(1)}m)`);
-    } else if (!this.inRange && wasInRange) {
-      // Just left range - fade out
-      material.opacity = 0;
-      console.log(`🎯 ${this.id} left melee range (${distance.toFixed(1)}m)`);
-    } else if (this.inRange) {
-      // Still in range - rotating wireframe
-      const time = Date.now() * 0.002;
-      const pulse = 0.7 + 0.3 * Math.sin(time * 2);
-      material.opacity = pulse;
-      material.color.setHex(0x00ff00);
-      
-      // Rotate the indicator
-      this.rangeIndicator!.rotation.y = time;
-    }
-  }
+
 
   /**
    * Cleanup resources
@@ -387,22 +598,158 @@ export class TargetDummy implements MeleeTarget {
     if (this.respawnTimer) {
       window.clearTimeout(this.respawnTimer);
     }
-    if (this.damageFlashTimer) {
-      window.clearTimeout(this.damageFlashTimer);
-    }
     
     this.scene.remove(this.mesh);
     this.world.removeRigidBody(this.rigidBody);
-    
-    // Clean up range indicator
-    if (this.rangeIndicator) {
-      this.scene.remove(this.rangeIndicator);
-      this.rangeIndicator.geometry.dispose();
-      (this.rangeIndicator.material as THREE.Material).dispose();
-      this.rangeIndicator = undefined;
+
+    // Clean up FX elements
+    if (this.hitRing) {
+      this.scene.remove(this.hitRing);
+      this.hitRing.geometry.dispose();
+      (this.hitRing.material as THREE.Material).dispose();
+      this.hitRing = undefined;
     }
+    if (this.koRing) {
+      this.scene.remove(this.koRing);
+      this.koRing.geometry.dispose();
+      (this.koRing.material as THREE.Material).dispose();
+      this.koRing = undefined;
+    }
+    if (this.respawnRing) {
+      this.scene.remove(this.respawnRing);
+      this.respawnRing.geometry.dispose();
+      (this.respawnRing.material as THREE.Material).dispose();
+      this.respawnRing = undefined;
+    }
+    this.sparkles.forEach(sparkle => {
+      this.scene.remove(sparkle);
+      sparkle.geometry.dispose();
+      (sparkle.material as THREE.Material).dispose();
+    });
+    this.sparkles = [];
     
     console.log(`🗑️ Target dummy ${this.id} destroyed`);
+  }
+
+
+
+  /**
+   * Add magical glow effect to dummy materials based on type
+   */
+  private addMagicalGlow(material: THREE.MeshStandardMaterial): void {
+    // Define glow colors and tinting for each dummy type to match their time-travel theme
+    const glowConfig = {
+      stopwatch: {
+        emissive: 0x6699cc, // Soft blue-gray glow - representing clockwork precision
+        intensity: 0.08,
+        colorTint: 0x8899dd, // Blue tint to shift red components toward blue
+        tintStrength: 0.4 // How much to blend the tint (0 = none, 1 = full override)
+      },
+      hourglass: {
+        emissive: 0xff8844, // Warm amber glow - representing flowing time
+        intensity: 0.12,
+        colorTint: 0xddaa77, // Warm amber tint to enhance natural colors
+        tintStrength: 0.2 // Subtle tinting for hourglass
+      },
+      chronoshard: {
+        emissive: 0x44ff88, // Green-cyan glow - representing temporal energy
+        intensity: 0.18,
+        colorTint: 0x77dd99, // Green-cyan tint for temporal energy
+        tintStrength: 0.3 // Moderate tinting for mystical look
+      }
+    };
+    
+    const config = glowConfig[this.modelType];
+    
+    // Apply color tinting to harmonize model colors with glow
+    if (config.tintStrength > 0) {
+      const originalColor = material.color.clone();
+      const tintColor = new THREE.Color(config.colorTint);
+      
+      // Blend original color with tint color
+      material.color.lerpColors(originalColor, tintColor, config.tintStrength);
+    }
+    
+    // Apply the glow effect
+    material.emissive.setHex(config.emissive);
+    material.emissiveIntensity = config.intensity;
+    
+    // Enhance metalness and reduce roughness for more magical appearance
+    material.metalness = Math.min(material.metalness + 0.2, 1.0);
+    material.roughness = Math.max(material.roughness - 0.1, 0.0);
+  }
+
+  /**
+   * Update dummy animations (rotation and floating) - called each frame
+   */
+  update(deltaTime: number): void {
+    // Only animate if dummy is alive and visible
+    if (this.currentHealth > 0 && this.mesh.visible) {
+      // Smooth rotation around Y-axis to show off the model design
+      this.mesh.rotation.y += this.rotationSpeed * deltaTime;
+      
+      // Keep rotation in 0-2π range for numerical stability
+      if (this.mesh.rotation.y > Math.PI * 2) {
+        this.mesh.rotation.y -= Math.PI * 2;
+      }
+      
+      // Dramatic floating up/down animation with ease-in-ease-out rhythm
+      this.floatOffset += this.floatSpeed * deltaTime;
+      
+      // Keep floatOffset in reasonable bounds for numerical stability
+      if (this.floatOffset > Math.PI * 4) {
+        this.floatOffset -= Math.PI * 4; // Reset every 2 complete cycles
+      }
+      
+      // Optimized ease-in-ease-out motion using smoothstep
+      const rawSin = Math.sin(this.floatOffset);
+      // Use optimized smoothstep: t = 3t² - 2t³
+      const t = (rawSin + 1) * 0.5; // Convert from [-1,1] to [0,1]
+      const smoothed = t * t * (3 - 2 * t); // Smoothstep formula
+      const floatAmount = (smoothed * 2 - 1) * 0.3; // Convert back to [-1,1] and scale (reduced to prevent ground clipping)
+      
+      // Apply floating animation - basePosition already includes hourglass offset
+      this.mesh.position.copy(this.basePosition);
+      this.mesh.position.y += floatAmount;
+      
+      // Add subtle glow pulsing for magical effect
+      this.updateGlowPulse(deltaTime);
+    }
+  }
+
+  /**
+   * Update magical glow pulsing animation
+   */
+  private updateGlowPulse(deltaTime: number): void {
+    const currentTime = Date.now();
+    if (currentTime - this.lastGlowUpdate > this.GLOW_UPDATE_INTERVAL) {
+      this.lastGlowUpdate = currentTime;
+      this.cachedMaterials = [];
+      this.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+          this.cachedMaterials.push(child.material);
+        }
+      });
+      this.baseGlowIntensity = this.getBaseGlowIntensity();
+    }
+
+    const glowPulse = Math.sin(currentTime * 0.001) * 0.3 + 1.0; // 0.7 to 1.3 multiplier
+
+    this.cachedMaterials.forEach(material => {
+      material.emissiveIntensity = this.baseGlowIntensity * glowPulse;
+    });
+  }
+
+  /**
+   * Get base glow intensity for this dummy type
+   */
+  private getBaseGlowIntensity(): number {
+    const baseIntensities = {
+      stopwatch: 0.08, // Reduced from 0.15 for subtler glow
+      hourglass: 0.12,
+      chronoshard: 0.18
+    };
+    return baseIntensities[this.modelType];
   }
 
 

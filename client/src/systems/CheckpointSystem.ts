@@ -19,8 +19,8 @@ export class CheckpointSystem {
   private scene: THREE.Scene;
   private isDevelopment: boolean;
   private readonly DEBOUNCE_TIME = 1000; // 1 second debounce per checkpoint
-  private readonly CHECK_RADIUS = 6; // Simplified detection radius
-  private readonly BEACON_HEIGHT = 50; // Height of golden beacon
+  private readonly CHECK_RADIUS = 12; // Larger detection radius for easier gameplay
+  private readonly BEACON_HEIGHT = 80; // Taller beacon for better visibility
   
   // Performance optimization: cache frequently used values
   private currentNextCheckpoint: CheckpointId | null = null;
@@ -32,7 +32,7 @@ export class CheckpointSystem {
   private static sharedParticleMaterial: THREE.MeshBasicMaterial | null = null;
   private static instanceCount = 0;
   
-  constructor(scene: THREE.Scene, world: RAPIER.World, lapController: LapController) {
+  constructor(scene: THREE.Scene, _world: RAPIER.World, lapController: LapController) {
     this.scene = scene;
     this.lapController = lapController;
     this.isDevelopment = true; // Always show checkpoints for better gameplay
@@ -111,25 +111,31 @@ export class CheckpointSystem {
   }
   
   private createCheckpoint(id: CheckpointId, position: THREE.Vector3): void {
-    // Create debug visual (simplified geometry)
+    // Create beautiful detection zone visual
     let debugMesh: THREE.Mesh | undefined;
     if (this.isDevelopment) {
-      const geometry = new THREE.SphereGeometry(this.CHECK_RADIUS, 8, 6); // Low-poly sphere
-      const material = new THREE.MeshBasicMaterial({ 
-        color: 0xff0000,
+      const geometry = new THREE.SphereGeometry(this.CHECK_RADIUS, 32, 16); // Smooth sphere
+      const material = new THREE.MeshStandardMaterial({ 
+        color: 0xffff44, // Bright vibrant yellow
         transparent: true,
-        opacity: 0.3,
-        wireframe: true
+        opacity: 0.15, // Very subtle
+        metalness: 0.9,
+        roughness: 0.1,
+        emissive: 0xffee00, // Bright yellow glow
+        emissiveIntensity: 0.1,
+        side: THREE.DoubleSide, // Visible from inside
+        depthWrite: false // Prevent z-fighting
       });
       
       debugMesh = new THREE.Mesh(geometry, material);
       debugMesh.position.copy(position);
       debugMesh.name = `checkpoint_${id}_debug`;
+      debugMesh.renderOrder = -1; // Render behind other objects
       this.scene.add(debugMesh);
     }
     
-    // Create enhanced golden beacon with gradient fade - BEAUTIFUL DESIGN
-    const beaconGeometry = new THREE.CylinderGeometry(1.2, 1.2, this.BEACON_HEIGHT, 12);
+    // Create enhanced golden beacon with gradient fade - BEAUTIFUL DESIGN (larger for visibility)
+    const beaconGeometry = new THREE.CylinderGeometry(2.4, 2.4, this.BEACON_HEIGHT, 16);
     
     // Use shared material - MEMORY OPTIMIZED
     const beacon = new THREE.Mesh(beaconGeometry, CheckpointSystem.sharedBeaconMaterial!.clone());
@@ -137,8 +143,8 @@ export class CheckpointSystem {
     beacon.name = `checkpoint_${id}_beacon`;
     beacon.visible = false; // Hidden by default, will be shown for next checkpoint
     
-    // Add a glowing ring at the base - FIXED POSITIONING
-    const ringGeometry = new THREE.RingGeometry(1.5, 2.2, 16);
+    // Add a glowing ring at the base - FIXED POSITIONING (larger for visibility)
+    const ringGeometry = new THREE.RingGeometry(3.0, 4.5, 20);
     const ringMaterial = new THREE.MeshBasicMaterial({
       color: 0xffd700,
       transparent: true,
@@ -158,13 +164,13 @@ export class CheckpointSystem {
     const particleGeometry = new THREE.SphereGeometry(0.1, 6, 6);
     
     // Create several small sparkle particles with deterministic positioning
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       const particle = new THREE.Mesh(particleGeometry, CheckpointSystem.sharedParticleMaterial!.clone());
-      const angle = (i / 6) * Math.PI * 2;
-      const radius = 2.5;
+      const angle = (i / 8) * Math.PI * 2;
+      const radius = 5.0; // Larger orbit radius to match bigger checkpoint
       
       // FIXED: Deterministic initial positioning (no Math.random())
-      const baseHeight = (i / 6) * this.BEACON_HEIGHT * 0.6 - this.BEACON_HEIGHT / 2 + 5; // Spread particles vertically
+      const baseHeight = (i / 8) * this.BEACON_HEIGHT * 0.6 - this.BEACON_HEIGHT / 2 + 5; // Spread particles vertically across taller beacon
       
       particle.position.set(
         Math.cos(angle) * radius,
@@ -232,6 +238,31 @@ export class CheckpointSystem {
     this.currentNextCheckpoint = nextCheckpointId;
   }
   
+  /**
+   * Update beautiful golden detection zone pulsing - SUBTLE AND MAGICAL
+   */
+  private updateDetectionZonePulse(): void {
+    const currentTime = Date.now() * 0.001; // Convert to seconds
+    
+    this.checkpoints.forEach((checkpoint) => {
+      if (!checkpoint.debugMesh) return;
+      
+      const material = checkpoint.debugMesh.material as THREE.MeshStandardMaterial;
+      
+      // Gentle breathing effect for opacity (very subtle)
+      const breathe = Math.sin(currentTime * 1.5) * 0.05; // ±0.05 variation
+      material.opacity = 0.15 + breathe;
+      
+      // Soft emissive pulsing for magical glow
+      const glow = Math.sin(currentTime * 2.0 + Math.PI * 0.5) * 0.03; // ±0.03 variation, offset phase
+      material.emissiveIntensity = 0.1 + glow;
+      
+      // Very subtle scale pulsing (almost imperceptible but adds life)
+      const scalePulse = Math.sin(currentTime * 1.2) * 0.02 + 1.0; // 0.98 to 1.02 scale
+      checkpoint.debugMesh.scale.setScalar(scalePulse);
+    });
+  }
+
   /**
    * Update beacon pulse animation with enhanced effects - PERFORMANCE OPTIMIZED
    */
@@ -377,26 +408,35 @@ export class CheckpointSystem {
     if (this.currentNextCheckpoint) {
       this.updateBeaconPulse(this.currentNextCheckpoint);
     }
+    
+    // Update beautiful golden sphere pulsing for all checkpoints
+    this.updateDetectionZonePulse();
   }
   
   private flashCheckpoint(checkpoint: CheckpointData): void {
     if (!checkpoint.debugMesh) return;
     
-    const material = checkpoint.debugMesh.material as THREE.MeshBasicMaterial;
+    const material = checkpoint.debugMesh.material as THREE.MeshStandardMaterial;
     
     // Clear any existing timeout to prevent conflicts
     if (checkpoint.colorTimeout) {
       clearTimeout(checkpoint.colorTimeout);
     }
     
-    // Flash green
-    material.color.set(0x00ff00);
+    // Flash bright lime green for successful hit
+    material.color.set(0x44ff44); // Bright lime green
+    material.emissive.set(0x22cc22); // Green glow
+    material.emissiveIntensity = 0.4; // Bright flash
+    material.opacity = 0.6; // More visible during flash
     
-    // Reset to red after delay (with proper cleanup tracking)
+    // Reset to bright yellow after delay
     checkpoint.colorTimeout = window.setTimeout(() => {
-      material.color.set(0xff0000);
+      material.color.set(0xffff44); // Back to bright yellow
+      material.emissive.set(0xffee00); // Back to yellow glow
+      material.emissiveIntensity = 0.1; // Back to subtle
+      material.opacity = 0.15; // Back to subtle
       checkpoint.colorTimeout = undefined;
-    }, 300);
+    }, 500); // Slightly longer flash for better visibility
   }
   
   /**
@@ -534,10 +574,13 @@ export class CheckpointSystem {
         checkpoint.colorTimeout = undefined;
       }
       
-      // Reset debug mesh color immediately
+      // Reset debug mesh to bright yellow appearance immediately
       if (checkpoint.debugMesh) {
-        const material = checkpoint.debugMesh.material as THREE.MeshBasicMaterial;
-        material.color.set(0xff0000); // Reset to red
+        const material = checkpoint.debugMesh.material as THREE.MeshStandardMaterial;
+        material.color.set(0xffff44); // Reset to bright yellow
+        material.emissive.set(0xffee00); // Yellow glow
+        material.emissiveIntensity = 0.1; // Subtle intensity
+        material.opacity = 0.15; // Subtle opacity
       }
     });
     

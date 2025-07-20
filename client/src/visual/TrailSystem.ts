@@ -16,7 +16,6 @@ export class TrailSystem {
   private trailSpacing = 0.12; // Small spacing for continuous lines
   private speedThreshold = 10; // m/s - reasonable threshold
   private fadeTime = 1600; // Nice fade time for smooth trails
-  private trailWidth = 0.5; // Not used for line trails
   
   // Trail data
   private trailPoints: Array<{
@@ -26,7 +25,6 @@ export class TrailSystem {
   private lastPosition: THREE.Vector3 | null = null;
   private smoothedPosition: THREE.Vector3 | null = null;
   private lastVelocity: THREE.Vector3 = new THREE.Vector3();
-  private currentSpeed = 0;
   
   // Smoothing parameters (smooth and curvy)
   private smoothingFactor = 0.3; // Good balance for smooth curves
@@ -76,7 +74,6 @@ export class TrailSystem {
   }
 
   update(playerPosition: THREE.Vector3, currentSpeed: number, activeKit: string): void {
-    this.currentSpeed = currentSpeed;
     const now = Date.now();
     
     // Performance optimization: limit geometry updates to ~50 FPS

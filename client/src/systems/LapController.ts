@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+
 
 export type CheckpointId = 'A' | 'B' | 'C' | 'FINISH';
 

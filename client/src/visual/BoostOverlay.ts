@@ -5,7 +5,6 @@
  */
 export class BoostOverlay {
   private container: HTMLDivElement | null = null;
-  private progressBar: HTMLDivElement | null = null;
   private progressFill: HTMLDivElement | null = null;
   private vignette: HTMLDivElement | null = null;
   

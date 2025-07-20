@@ -33,10 +33,17 @@ import { WindStreakEffect } from './effects/WindStreakEffect';
 import { BlinkZoomEffect } from './effects/BlinkZoomEffect';
 import { BoostShakeEffect } from './effects/BoostShakeEffect';
 import { HitShakeEffect } from './effects/HitShakeEffect';
+import { BlastShakeEffect } from './effects/BlastShakeEffect';
 import { CheckpointHitEffect } from './effects/CheckpointHitEffect';
 
 // Scene Backdrop System
 import { SceneBackdrop } from './visual/SceneBackdrop';
+
+// Ability visual effects
+import { BlinkScreenFlash } from './effects/BlinkScreenFlash';
+import { BlastExplosionRing } from './effects/BlastExplosionRing';
+import { BlinkRingEffect } from './effects/BlinkRingEffect';
+import { GrappleLatchRing } from './effects/GrappleLatchRing';
 
 // Trail System
 import { TrailSystem } from './visual/TrailSystem';
@@ -78,6 +85,7 @@ CameraEffects.setCamera(camera);
 const speedFovEffect = new SpeedFovEffect();
 const boostShakeEffect = new BoostShakeEffect();
 const hitShakeEffect = new HitShakeEffect();
+const blastShakeEffect = new BlastShakeEffect();
 const blinkZoomEffect = new BlinkZoomEffect();
 const windStreakEffect = new WindStreakEffect();
 const checkpointHitEffect = new CheckpointHitEffect();
@@ -86,11 +94,28 @@ const checkpointHitEffect = new CheckpointHitEffect();
 CameraEffects.register(speedFovEffect);
 CameraEffects.register(boostShakeEffect);
 CameraEffects.register(hitShakeEffect);
+CameraEffects.register(blastShakeEffect);
 CameraEffects.register(blinkZoomEffect);
 CameraEffects.register(windStreakEffect);
 CameraEffects.register(checkpointHitEffect);
 
-console.log('📹 Camera effects system initialized with 6 effects');
+console.log('📹 Camera effects system initialized with 7 effects');
+
+// Initialize ability visual effects
+const blinkScreenFlash = new BlinkScreenFlash();
+blinkScreenFlash.initialize();
+
+const blastExplosionRing = new BlastExplosionRing();
+blastExplosionRing.setScene(scene);
+blastExplosionRing.initialize();
+
+const blinkRingEffect = new BlinkRingEffect();
+blinkRingEffect.setScene(scene);
+blinkRingEffect.initialize();
+
+const grappleLatchRing = new GrappleLatchRing();
+grappleLatchRing.setScene(scene);
+grappleLatchRing.initialize();
 
 // Renderer setup
 const renderer = new THREE.WebGLRenderer({
@@ -134,21 +159,13 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Clock for delta time
-const clock = new THREE.Clock();
-
 // Initialize multiplayer manager (only active if online)
 let multiplayerManager: MultiplayerManager | null = null;
-
-// Adaptive physics timestep (performance optimization)
-const maxTimeStep = 1 / 30; // Minimum 30 Hz for stability
-const idealTimeStep = 1 / 60; // 60 Hz when performance allows
-let accumulator = 0;
 
 /**
  * Add invisible sky plane for grapple targeting (performance-optimized)
  */
-function addInvisibleSkyPlane(scene: THREE.Scene, world?: RAPIER.World): void {
+function addInvisibleSkyPlane(_scene: THREE.Scene, world?: RAPIER.World): void {
   const skyY = 30; // Lower for easier access, still above all track geometry  
   const skySize = 600; // Optimized size - still covers full track area
   
@@ -165,64 +182,7 @@ function addInvisibleSkyPlane(scene: THREE.Scene, world?: RAPIER.World): void {
   }
 }
 
-/**
- * Add ceiling at Y=35 with grey-white checkerboard pattern for swing testing
- */
-function addSwingTestCeiling(scene: THREE.Scene, world?: RAPIER.World): void {
-  const ceilingY = 45; // Optimal height: avoids Y=8-14 void-walking zone, perfect for grapple
-  const ceilingSize = 600; // 600x600 units (expanded for grapple accommodation)
-  
-  // Create ceiling geometry
-  const ceilingGeometry = new THREE.PlaneGeometry(ceilingSize, ceilingSize);
-  
-  // Create checkerboard pattern texture
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d')!;
-  
-  const tileSize = 32; // 16x16 tiles
-  for (let x = 0; x < 16; x++) {
-    for (let y = 0; y < 16; y++) {
-      const isEven = (x + y) % 2 === 0;
-      ctx.fillStyle = isEven ? '#E0E0E0' : '#F8F8F8'; // Light grey and white
-      ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
-    }
-  }
-  
-  // Create texture from canvas
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(8, 8); // Repeat pattern 8x8 times
-  
-  // Create ceiling material
-  const ceilingMaterial = new THREE.MeshLambertMaterial({ 
-    map: texture,
-    side: THREE.DoubleSide
-  });
-  
-  // Create ceiling mesh
-  const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
-  ceiling.rotation.x = Math.PI / 2; // Rotate to face downward
-  ceiling.position.set(0, ceilingY, 0);
-  ceiling.receiveShadow = true;
-  
-  scene.add(ceiling);
-  
-  // Create physics collider for the ceiling (CRITICAL for grapple!)
-  if (world) {
-    const ceilingBody = world.createRigidBody(
-      RAPIER.RigidBodyDesc.fixed().setTranslation(0, ceilingY, 0)
-    );
-    const ceilingCollider = RAPIER.ColliderDesc.cuboid(ceilingSize / 2, 0.1, ceilingSize / 2);
-    world.createCollider(ceilingCollider, ceilingBody);
-    
-    console.log(`🏗️ Added ceiling at Y=${ceilingY} with ${ceilingSize}x${ceilingSize} checkerboard pattern + collision`);
-  } else {
-    console.log(`🏗️ Added ceiling at Y=${ceilingY} with ${ceilingSize}x${ceilingSize} checkerboard pattern (no collision)`);
-  }
-}
+
 
 // Old MovementTrail class removed - now using TrailSystem
 
@@ -271,6 +231,8 @@ hudToggle.registerDebugElement(debugUI.getContainer());
 
 // Initialize boost overlay system
 const boostOverlay = new BoostOverlay();
+// Mark as intentionally used (self-managing UI component)
+void boostOverlay;
 
 // Initialize PvP Player Health System
 new PlayerHealth();
@@ -808,6 +770,13 @@ window.addEventListener('beforeunload', () => {
     lobbyScreen?.destroy();
     gameMenu?.destroy();
     
+    // Cleanup FX effects to prevent memory leaks
+    blastShakeEffect?.cleanup();
+    blinkScreenFlash?.cleanup();
+    blastExplosionRing?.cleanup();
+    blinkRingEffect?.cleanup();
+    grappleLatchRing?.cleanup();
+    
     console.log('🧹 All systems cleaned up on page unload');
   } catch (error) {
     console.error('Error during cleanup:', error);
@@ -973,6 +942,29 @@ function animate() {
       console.error('⚠️ Camera effects update error:', error);
     }
 
+    // Update ability visual effects
+    try {
+      blastExplosionRing.update(deltaTime);
+      blinkRingEffect.update(deltaTime);
+      grappleLatchRing.update(deltaTime);
+    } catch (error) {
+      console.error('⚠️ Ability effects update error:', error);
+    }
+
+    // Update dummy rotation animations
+    try {
+      if (targetDummies && targetDummies.length > 0) {
+        targetDummies.forEach(dummy => {
+          // Check if dummy has update method (TargetDummy or RacingTargetDummy)
+          if ('update' in dummy && typeof dummy.update === 'function') {
+            (dummy as any).update(deltaTime);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('⚠️ Dummy animation update error:', error);
+    }
+
     // Update UI and checkpoint system
     if (physicsWorld) {
       const velocity = physicsWorld.fpsController.getVelocity();
@@ -986,20 +978,9 @@ function animate() {
       const position = physicsWorld.devTools.getCurrentPosition();
       debugUI.update(velocity, grounded, sliding, position, currentSpeed, isRocketJumping, rocketJumpSpeed, isBlinkMomentum, blinkMomentumSpeed);
       
-      // Update combat UI and range indicators
+      // Combat system is active (melee combat handled by separate update cycle)
       if (meleeCombat) {
-        const currentKit = getCurrentPlayerKit();
-        const meleeState = meleeCombat.getMeleeState();
-        const playerPosition = new THREE.Vector3(position.x, position.y, position.z);
-        
-        // TODO: Add range indicator updates when methods are implemented
-        // meleeCombat.updateRangeIndicator(scene, playerPosition, currentKit.className);
-        
-        // Update game HUD if available
-        if (gameHUD) {
-          // TODO: Add combat state update when method is implemented  
-          // gameHUD.updateCombatState(meleeState, currentKit);
-        }
+        // Melee combat updates are handled in the combat system
       }
       
       // Update checkpoint system

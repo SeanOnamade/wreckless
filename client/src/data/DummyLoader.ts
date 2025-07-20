@@ -263,14 +263,7 @@ export class RacingTargetDummy implements MeleeTarget {
     }
   }
 
-  /**
-   * Delegate updateRangeIndicator to underlying dummy
-   */
-  updateRangeIndicator(playerPosition: THREE.Vector3, range: number): void {
-    if (this.targetDummy.updateRangeIndicator) {
-      this.targetDummy.updateRangeIndicator(playerPosition, range);
-    }
-  }
+
 
   /**
    * Grant speed boost to player based on damage dealt
@@ -388,6 +381,15 @@ export class RacingTargetDummy implements MeleeTarget {
    */
   isReadyForSpeedBoost(): boolean {
     return this.isAvailable;
+  }
+
+  /**
+   * Update dummy animation (delegates to underlying TargetDummy)
+   */
+  update(deltaTime: number): void {
+    if (this.targetDummy.update) {
+      this.targetDummy.update(deltaTime);
+    }
   }
 
   /**

@@ -14,7 +14,6 @@ export class GameHUD {
   // 2D Checkpoint arrow system (HUD-based)
   private arrowContainer!: HTMLDivElement;
   private arrowElement!: HTMLDivElement;
-  private scene: THREE.Scene | null = null;
   private camera: THREE.Camera | null = null;
   private lastArrowUpdate = 0;
   private readonly ARROW_UPDATE_INTERVAL = 100; // Back to 100ms for smoother 2D updates
@@ -29,11 +28,10 @@ export class GameHUD {
   }
   
   /**
-   * Set the checkpoint system reference and scene for 2D arrow calculations
+   * Set the checkpoint system reference and camera for 2D arrow calculations
    */
-  setCheckpointSystem(checkpointSystem: CheckpointSystem, scene?: THREE.Scene, camera?: THREE.Camera): void {
+  setCheckpointSystem(checkpointSystem: CheckpointSystem, _scene?: THREE.Scene, camera?: THREE.Camera): void {
     this.checkpointSystem = checkpointSystem;
-    if (scene) this.scene = scene;
     if (camera) this.camera = camera;
   }
   
@@ -429,7 +427,6 @@ export class GameHUD {
     
     // Clear references
     this.checkpointElements.clear();
-    this.scene = null;
     this.camera = null;
     this.checkpointSystem = null;
   }

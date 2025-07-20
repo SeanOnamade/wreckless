@@ -15,10 +15,14 @@ export interface GrappleState {
   anchorPoint: THREE.Vector3 | null;
   ropeLength: number;
   hookMesh: THREE.Mesh | null;
-  ropeLine: THREE.Line | null;
+  ropeLine: THREE.Mesh | null; // Changed from Line to Mesh for tube geometry
   predictionMesh: THREE.Mesh | null;
   attachTime: number;
   lastInputTime: number; // Track for auto-release
+  
+  // Hook flash animation
+  hookFlashStartTime: number;
+  hookFlashDuration: number;
 }
 
 // Global swing state
@@ -30,7 +34,20 @@ let swingState: GrappleState = {
   ropeLine: null,
   predictionMesh: null,
   attachTime: 0,
-  lastInputTime: 0
+  lastInputTime: 0,
+  hookFlashStartTime: 0,
+  hookFlashDuration: 300 // 300ms flash
+};
+
+// Rope smoothing state (like trail system)
+let ropeSmoothing = {
+  lastPlayerPosition: null as THREE.Vector3 | null,
+  smoothedPlayerPosition: null as THREE.Vector3 | null,
+  lastVelocity: new THREE.Vector3(),
+  lastUpdateTime: 0,
+  updateFrequency: 8, // Higher frequency for more responsive rope
+  smoothingFactor: 0.8, // Much more responsive - less lag
+  velocitySmoothing: 0.9 // Less velocity smoothing for immediate response
 };
 
 // Pressed keys tracking for air control
@@ -41,52 +58,69 @@ const tempVector1 = new THREE.Vector3();
 const tempVector2 = new THREE.Vector3();
 const tempVector3 = new THREE.Vector3();
 
-// Listen for forced grapple release (during respawn, etc.)
-window.addEventListener('forceReleaseGrapple', (event: Event) => {
-  const customEvent = event as CustomEvent;
-  const reason = customEvent.detail?.reason || 'forced';
-  
-  if (swingState.isSwinging) {
-    // Create a dummy context for cleanup - we only need scene for visual cleanup
-    const dummyContext = {
-      scene: swingState.hookMesh?.parent || swingState.ropeLine?.parent
-    } as any;
-    
-    if (dummyContext.scene) {
-      releaseSwing(reason, dummyContext);
-    } else {
-      // Manual cleanup if no scene reference - add prediction sphere cleanup
-      swingState.isSwinging = false;
-      swingState.anchorPoint = null;
-      swingState.ropeLength = 0;
-      swingState.attachTime = 0;
-      swingState.lastInputTime = 0;
-      
-      // MEMORY FIX: Clean up prediction sphere if it exists
-      if (swingState.predictionMesh && swingState.predictionMesh.parent) {
-        swingState.predictionMesh.parent.remove(swingState.predictionMesh);
-        swingState.predictionMesh.geometry.dispose();
-        if (swingState.predictionMesh.material instanceof THREE.Material) {
-          swingState.predictionMesh.material.dispose();
-        }
-        swingState.predictionMesh = null;
-      }
-      
-      notifySwingState(false);
-    }
-  }
-});
+// MEMORY FIX: Store event listener references for proper cleanup
+let forceReleaseListener: ((event: Event) => void) | null = null;
+let classChangeListener: ((event: Event) => void) | null = null;
 
-// Listen for class changes to hide prediction sphere when switching away from grapple
-window.addEventListener('playerClassChanged', (event: Event) => {
-  const customEvent = event as CustomEvent;
-  const newClass = customEvent.detail.className;
-  
-  // Hide prediction sphere immediately when switching away from grapple class
-  if (newClass !== 'grapple' && swingState.predictionMesh) {
-    swingState.predictionMesh.visible = false;
+// Initialize event listeners (call this once during setup)
+function initializeGrappleEventListeners(): void {
+  if (forceReleaseListener || classChangeListener) {
+    return; // Already initialized
   }
-});
+
+  // Listen for forced grapple release (during respawn, etc.)
+  forceReleaseListener = (event: Event) => {
+    const customEvent = event as CustomEvent;
+    const reason = customEvent.detail?.reason || 'forced';
+    
+    if (swingState.isSwinging) {
+      // Create a dummy context for cleanup - we only need scene for visual cleanup
+      const dummyContext = {
+        scene: swingState.hookMesh?.parent || swingState.ropeLine?.parent
+      } as any;
+      
+      if (dummyContext.scene) {
+        releaseSwing(reason, dummyContext);
+      } else {
+        // Manual cleanup if no scene reference - add prediction sphere cleanup
+        swingState.isSwinging = false;
+        swingState.anchorPoint = null;
+        swingState.ropeLength = 0;
+        swingState.attachTime = 0;
+        swingState.lastInputTime = 0;
+        
+        // MEMORY FIX: Clean up prediction sphere if it exists
+        if (swingState.predictionMesh && swingState.predictionMesh.parent) {
+          swingState.predictionMesh.parent.remove(swingState.predictionMesh);
+          swingState.predictionMesh.geometry.dispose();
+          if (swingState.predictionMesh.material instanceof THREE.Material) {
+            swingState.predictionMesh.material.dispose();
+          }
+          swingState.predictionMesh = null;
+        }
+        
+        notifySwingState(false);
+      }
+    }
+  };
+
+  // Listen for class changes to hide prediction sphere when switching away from grapple
+  classChangeListener = (event: Event) => {
+    const customEvent = event as CustomEvent;
+    const newClass = customEvent.detail.className;
+    
+    // Hide prediction sphere immediately when switching away from grapple class
+    if (newClass !== 'grapple' && swingState.predictionMesh) {
+      swingState.predictionMesh.visible = false;
+    }
+  };
+
+  window.addEventListener('forceReleaseGrapple', forceReleaseListener);
+  window.addEventListener('playerClassChanged', classChangeListener);
+}
+
+// Auto-initialize on first import
+initializeGrappleEventListeners();
 
 /**
  * TRUE PENDULUM SWING - Sphere constraint with momentum preservation
@@ -121,7 +155,7 @@ export function executeGrapple(context: GrappleAbilityContext): void {
     
     // Validate grapple target (must be above player) - reasonable validation
     if (anchorPoint.y <= playerPosition.y + 2.0) { // Must be at least 2m above player
-      console.log(`🚫 Grapple blocked: anchor too low Y=${anchorPoint.y.toFixed(1)} vs player Y=${playerPosition.y.toFixed(1)} (no cooldown applied)`);
+      // Grapple blocked: anchor too low
       // NO COOLDOWN - just block the attempt
       return;
     }
@@ -133,8 +167,25 @@ export function executeGrapple(context: GrappleAbilityContext): void {
     swingState.attachTime = Date.now();
     swingState.lastInputTime = Date.now();
     
+    // Reset rope smoothing for clean start
+    ropeSmoothing.lastPlayerPosition = playerPosition.clone();
+    ropeSmoothing.smoothedPlayerPosition = playerPosition.clone();
+    ropeSmoothing.lastVelocity.set(0, 0, 0);
+    ropeSmoothing.lastUpdateTime = 0;
+    
     // Create visuals
     createSwingVisuals(scene, anchorPoint, playerPosition);
+    
+    // Trigger hook flash animation
+    swingState.hookFlashStartTime = Date.now();
+    
+    // Trigger green latch ring effect
+    window.dispatchEvent(new CustomEvent('grappleLatch', {
+      detail: {
+        position: anchorPoint,
+        timestamp: Date.now()
+      }
+    }));
     
     // Hide prediction sphere
     if (swingState.predictionMesh) {
@@ -147,7 +198,7 @@ export function executeGrapple(context: GrappleAbilityContext): void {
     // Debug: Swing attached (silent for performance)
     
   } else {
-    console.log('🪝 Grapple missed - no valid target (no cooldown applied)');
+    // Grapple missed - no valid target
     // NO COOLDOWN - allow immediate retry
   }
 }
@@ -169,10 +220,7 @@ function performGrappleRaycast(world: RAPIER.World, origin: THREE.Vector3, direc
       distance: hit.timeOfImpact + 0.5 // Add back offset
     };
     
-    // Debug logging for target detection (rare, for performance)
-    if (Math.random() < 0.001) { // 0.1% chance to see what's being hit
-      console.log(`🎯 Raycast hit: Y=${result.point.y.toFixed(1)}, distance=${result.distance.toFixed(1)}m`);
-    }
+    // Target detection successful
     
     return result;
   }
@@ -272,7 +320,6 @@ function handleAirControl(context: GrappleAbilityContext, deltaTime: number): vo
   
   // Space - Pull in (shorten rope)
   if (pressedKeys.has('Space')) {
-    const oldLength = swingState.ropeLength;
     swingState.ropeLength = Math.max(swingState.ropeLength - SWING.shortenRate * deltaTime, SWING.minRope);
     
     // Apply inward pull force
@@ -284,22 +331,12 @@ function handleAirControl(context: GrappleAbilityContext, deltaTime: number): vo
     }
     
     hasInput = true;
-    // PERFORMANCE FIX: Reduced logging frequency from 10% to 1%
-    if (Math.random() < 0.01) {
-      console.log(`🪝 Reel in: ${oldLength.toFixed(1)}m -> ${swingState.ropeLength.toFixed(1)}m`);
-    }
   }
   
   // S - Let out (extend rope)
   if (pressedKeys.has('KeyS')) {
-    const oldLength = swingState.ropeLength;
     swingState.ropeLength = Math.min(swingState.ropeLength + SWING.extendRate * deltaTime, SWING.maxRope);
     hasInput = true;
-    
-    // PERFORMANCE FIX: Reduced logging frequency from 10% to 1%
-    if (Math.random() < 0.01) {
-      console.log(`🪝 Reel out: ${oldLength.toFixed(1)}m -> ${swingState.ropeLength.toFixed(1)}m`);
-    }
   }
   
   // Apply combined forces
@@ -370,6 +407,13 @@ function releaseSwing(reason: string, context: GrappleAbilityContext): void {
   swingState.ropeLength = 0;
   swingState.attachTime = 0;
   swingState.lastInputTime = 0;
+  swingState.hookFlashStartTime = 0;
+  
+  // Reset rope smoothing
+  ropeSmoothing.lastPlayerPosition = null;
+  ropeSmoothing.smoothedPlayerPosition = null;
+  ropeSmoothing.lastVelocity.set(0, 0, 0);
+  ropeSmoothing.lastUpdateTime = 0;
   
   // Capture current momentum before notifying controller
   const currentVel = context.playerBody.linvel();
@@ -414,9 +458,6 @@ function releaseSwing(reason: string, context: GrappleAbilityContext): void {
     // Set proper cooldown using the ability system
     kit.ability.lastUsed = Date.now();
     kit.ability.isReady = false;
-    console.log(`🪝 Grapple cooldown applied after swing release (${reason})`);
-  } else {
-    console.log(`🪝 Swing released during existing cooldown - no additional cooldown applied`);
   }
   
   // Debug: Swing released (silent for performance)
@@ -458,28 +499,18 @@ function updatePredictionSphere(context: GrappleAbilityContext): void {
   
   const hit = performGrappleRaycast(world, playerPosition, direction);
   
-  // Debug logging for prediction issues (occasional)
-  if (Math.random() < 0.01) { // 1% chance to reduce spam
-    if (hit) {
-              // Raycast hit detected
-      } else {
-        // Raycast miss
-    }
-  }
+    // Check for valid grapple target
   
   if (hit && hit.distance > 1.0 && hit.point.y > playerPosition.y + 2.0) { // Must be at least 2m above player
-    // Debug logging for prediction validation (very rare)
-    if (Math.random() < 0.001) { // 0.1% chance to see validation
-      console.log(`🟢 Valid grapple target! Y=${hit.point.y.toFixed(1)}, dist=${hit.distance.toFixed(1)}m, showing green dot`);
-    }
+    // Valid grapple target found
     
     // Create prediction sphere if needed
     if (!swingState.predictionMesh) {
       const geometry = new THREE.SphereGeometry(0.2, 8, 6);
       const material = new THREE.MeshBasicMaterial({ 
-        color: SWING.predictionColor, 
+        color: 0x90EE90, // Light green
         transparent: true, 
-        opacity: 0.9 
+        opacity: 0.7 
       });
       swingState.predictionMesh = new THREE.Mesh(geometry, material);
       scene.add(swingState.predictionMesh);
@@ -494,17 +525,7 @@ function updatePredictionSphere(context: GrappleAbilityContext): void {
     swingState.predictionMesh.visible = true;
     
   } else {
-    // Debug logging for failed prediction (very rare)
-    if (Math.random() < 0.001) { // 0.1% chance to see prediction failures
-      if (!hit) {
-        console.log(`❌ No raycast hit detected`);
-      } else if (hit.distance <= 1.0) {
-        console.log(`❌ Target too close: ${hit.distance.toFixed(1)}m`);
-      } else {
-        console.log(`❌ Target too low: Y=${hit.point.y.toFixed(1)} vs player Y=${playerPosition.y.toFixed(1)} (need +2m)`);
-      }
-    }
-    
+    // No valid target or target invalid
     if (swingState.predictionMesh) {
       swingState.predictionMesh.visible = false;
     }
@@ -512,41 +533,139 @@ function updatePredictionSphere(context: GrappleAbilityContext): void {
 }
 
 /**
+ * Create curved rope geometry using catenary curve for realistic sag
+ */
+function createCurvedRopeGeometry(playerPos: THREE.Vector3, anchorPoint: THREE.Vector3): THREE.TubeGeometry {
+  const ropeDistance = playerPos.distanceTo(anchorPoint);
+  const segments = Math.max(8, Math.floor(ropeDistance * 2)); // More segments for longer ropes
+  const sagAmount = Math.min(ropeDistance * 0.15, 3); // 15% sag, max 3 meters
+  
+  // Create curve points for catenary (rope sag under gravity)
+  const curvePoints: THREE.Vector3[] = [];
+  
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    
+    // Linear interpolation between player and anchor
+    const x = playerPos.x + (anchorPoint.x - playerPos.x) * t;
+    const z = playerPos.z + (anchorPoint.z - playerPos.z) * t;
+    
+    // Catenary curve for Y (simplified parabolic sag)
+    const baseY = playerPos.y + (anchorPoint.y - playerPos.y) * t;
+    const sagFactor = 4 * t * (1 - t); // Parabolic sag (0 at endpoints, max at middle)
+    const y = baseY - sagAmount * sagFactor;
+    
+    curvePoints.push(new THREE.Vector3(x, y, z));
+  }
+  
+  // Create smooth curve from points
+  const curve = new THREE.CatmullRomCurve3(curvePoints);
+  
+  // Create tube geometry following the curve
+  const tubeGeometry = new THREE.TubeGeometry(curve, segments, 0.02, 6, false);
+  
+  return tubeGeometry;
+}
+
+/**
  * Create visual elements (hook + rope)
  */
 function createSwingVisuals(scene: THREE.Scene, anchorPoint: THREE.Vector3, playerPos: THREE.Vector3): void {
-  // Hook sphere at anchor
+  // Hook sphere at anchor - enhanced with emissive glow
   const hookGeometry = new THREE.SphereGeometry(0.15, 8, 6);
-  const hookMaterial = new THREE.MeshBasicMaterial({ color: SWING.hookColor });
+  const hookMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x006600, // Dark green
+    emissive: 0x004400, // Dark green glow
+    emissiveIntensity: 0.6
+  });
   swingState.hookMesh = new THREE.Mesh(hookGeometry, hookMaterial);
   swingState.hookMesh.position.copy(anchorPoint);
   scene.add(swingState.hookMesh);
   
-  // Rope line
-  const ropeGeometry = new THREE.BufferGeometry().setFromPoints([playerPos, anchorPoint]);
-  const ropeMaterial = new THREE.LineBasicMaterial({ color: SWING.ropeColor, linewidth: 2 });
-  swingState.ropeLine = new THREE.Line(ropeGeometry, ropeMaterial);
+  // Curved rope using tube geometry with multiple segments
+  const ropeMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0xF4A460, // Sandy brown - much lighter and more visible
+    roughness: 0.6,
+    metalness: 0.05,
+    emissive: 0x332211, // Subtle warm glow for visibility
+    emissiveIntensity: 0.1
+  });
+  
+  // Create curved rope geometry
+  const ropeGeometry = createCurvedRopeGeometry(playerPos, anchorPoint);
+  swingState.ropeLine = new THREE.Mesh(ropeGeometry, ropeMaterial);
   scene.add(swingState.ropeLine);
 }
 
 /**
- * Update rope visual line - OPTIMIZED: Reuse geometry to prevent memory leaks
+ * Update rope visual tube - SMOOTHED: Uses position smoothing like trail system
  */
 function updateRopeVisual(context: GrappleAbilityContext): void {
   if (!swingState.isSwinging || !swingState.anchorPoint || !swingState.ropeLine) return;
   
   const { playerBody } = context;
   const playerPos = playerBody.translation();
-  const playerPosition = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
+  const currentPlayerPosition = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
+  const now = Date.now();
   
-  // MEMORY OPTIMIZATION: Update existing geometry instead of creating new one
-  const positions = new Float32Array([
-    playerPosition.x, playerPosition.y, playerPosition.z,
-    swingState.anchorPoint.x, swingState.anchorPoint.y, swingState.anchorPoint.z
-  ]);
+  // Performance optimization: limit geometry recreation to 30 FPS for better performance
+  if (now - ropeSmoothing.lastUpdateTime < 33) { // 33ms = 30 FPS
+    return;
+  }
+  ropeSmoothing.lastUpdateTime = now;
   
-  swingState.ropeLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  swingState.ropeLine.geometry.attributes.position.needsUpdate = true;
+  // Use real-time player position for zero lag (no smoothing)
+  const smoothedPlayerPos = currentPlayerPosition;
+  
+  // Only recreate geometry if player moved significantly (performance optimization)
+  const lastPos = ropeSmoothing.lastPlayerPosition;
+  if (lastPos && smoothedPlayerPos.distanceTo(lastPos) < 0.2) {
+    return; // Skip update if movement is too small
+  }
+  
+  // Recreate curved geometry with new player position
+  const newGeometry = createCurvedRopeGeometry(smoothedPlayerPos, swingState.anchorPoint);
+  
+  // Dispose old geometry safely and update with new curved geometry
+  if (swingState.ropeLine.geometry) {
+    swingState.ropeLine.geometry.dispose();
+  }
+  swingState.ropeLine.geometry = newGeometry;
+  
+  // Update last position for next frame
+  ropeSmoothing.lastPlayerPosition = currentPlayerPosition.clone();
+}
+
+/**
+ * Update hook flash animation
+ */
+function updateHookFlash(): void {
+  if (!swingState.isSwinging || !swingState.hookMesh || swingState.hookFlashStartTime === 0) return;
+  
+  const now = Date.now();
+  const elapsed = now - swingState.hookFlashStartTime;
+  
+  if (elapsed < swingState.hookFlashDuration) {
+    // Flash animation is active
+    const progress = elapsed / swingState.hookFlashDuration;
+    const intensity = 1 - progress; // Fade out over time
+    
+    // Scale pulse effect
+    const scalePulse = 1 + intensity * 0.3; // Scale up to 130% then back to 100%
+    swingState.hookMesh.scale.setScalar(scalePulse);
+    
+    // Brightness flash effect
+    const material = swingState.hookMesh.material as THREE.MeshStandardMaterial;
+    const baseEmissiveIntensity = 0.6;
+    const flashIntensity = baseEmissiveIntensity + intensity * 0.8; // Bright flash that fades
+    material.emissiveIntensity = flashIntensity;
+  } else {
+    // Flash animation complete - reset to normal
+    swingState.hookMesh.scale.setScalar(1);
+    const material = swingState.hookMesh.material as THREE.MeshStandardMaterial;
+    material.emissiveIntensity = 0.6; // Back to normal glow
+    swingState.hookFlashStartTime = 0; // Stop animation
+  }
 }
 
 // Helper functions
@@ -574,6 +693,7 @@ export function updateGrapple(context: GrappleAbilityContext, deltaTime: number 
     
     // Step 3: Update visuals
     updateRopeVisual(context);
+    updateHookFlash();
     
     // Step 4: Check auto-release conditions
     checkAutoRelease(context);
@@ -599,6 +719,16 @@ export function getGrappleState(): GrappleState {
  * Call this during scene cleanup or when switching levels
  */
 export function cleanupGrappleSystem(scene: THREE.Scene): void {
+  // MEMORY FIX: Remove event listeners
+  if (forceReleaseListener) {
+    window.removeEventListener('forceReleaseGrapple', forceReleaseListener);
+    forceReleaseListener = null;
+  }
+  if (classChangeListener) {
+    window.removeEventListener('playerClassChanged', classChangeListener);
+    classChangeListener = null;
+  }
+
   // Dispose of hook mesh
   if (swingState.hookMesh) {
     scene.remove(swingState.hookMesh);
@@ -643,55 +773,4 @@ export function isSwinging(): boolean {
   return swingState.isSwinging;
 }
 
-/**
- * STEP 5: Debug hooks for testing
- */
-function debugSwing(): void {
-  if (swingState.isSwinging && swingState.anchorPoint) {
-    const currentTime = Date.now();
-    const swingDuration = (currentTime - swingState.attachTime) / 1000;
-    const timeSinceInput = (currentTime - swingState.lastInputTime) / 1000;
-    
-    console.log(`
-🐛 SWING DEBUG STATUS:
-isSwinging: ${swingState.isSwinging}
-anchorPoint: (${swingState.anchorPoint.x.toFixed(1)}, ${swingState.anchorPoint.y.toFixed(1)}, ${swingState.anchorPoint.z.toFixed(1)})
-ropeLength: ${swingState.ropeLength.toFixed(1)}m (min: ${SWING.minRope}m, max: ${SWING.maxRope}m)
-swingDuration: ${swingDuration.toFixed(1)}s
-timeSinceInput: ${timeSinceInput.toFixed(1)}s (auto-release at ${SWING.maxSwingTime}s)
-config: maxDist=${SWING.maxDistance}m, lateralF=${SWING.lateralForce}N, pullF=${SWING.pullForce}N
-`);
-    
-    // Force release for testing
-    if (typeof window !== 'undefined' && window.confirm) {
-      if (window.confirm('Release swing for testing?')) {
-        // Need to pass context - this is a simplified version
-        console.log('🪝 Debug force release');
-        swingState.isSwinging = false;
-        swingState.anchorPoint = null;
-        swingState.ropeLength = 0;
-        notifySwingState(false);
-      }
-    } else {
-      console.log('🪝 Debug force release (no confirmation)');
-      swingState.isSwinging = false;
-      swingState.anchorPoint = null;
-      swingState.ropeLength = 0;
-      notifySwingState(false);
-    }
-    
-  } else {
-    console.log(`
-🐛 SWING DEBUG STATUS:
-isSwinging: false
-Ready to grapple - press E to test swing system
-config: maxDist=${SWING.maxDistance}m, lateralF=${SWING.lateralForce}N, pullF=${SWING.pullForce}N
-`);
-  }
-}
-
-// Expose debug function to window
-if (typeof window !== 'undefined') {
-  (window as any).debugSwing = debugSwing;
-  console.log('🧪 Debug hook enabled: Call window.debugSwing() for swing status & force release');
-} 
+// Debug function removed for production 
