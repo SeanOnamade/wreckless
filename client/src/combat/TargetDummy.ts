@@ -720,7 +720,7 @@ export class TargetDummy implements MeleeTarget {
   /**
    * Update magical glow pulsing animation
    */
-  private updateGlowPulse(deltaTime: number): void {
+  private updateGlowPulse(_deltaTime: number): void {
     const currentTime = Date.now();
     if (currentTime - this.lastGlowUpdate > this.GLOW_UPDATE_INTERVAL) {
       this.lastGlowUpdate = currentTime;
