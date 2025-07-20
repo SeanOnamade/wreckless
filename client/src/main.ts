@@ -26,13 +26,26 @@ import { ScoreHUD } from './hud/ScoreHUD';
 import { RoundStartUI } from './hud/RoundStartUI';
 import { RoundEndUI } from './hud/RoundEndUI';
 
-// Camera Effects System
+// Camera effects imports
 import { CameraEffects } from './effects/CameraEffectsManager';
 import { SpeedFovEffect } from './effects/SpeedFovEffect';
+import { WindStreakEffect } from './effects/WindStreakEffect';
+import { BlinkZoomEffect } from './effects/BlinkZoomEffect';
 import { BoostShakeEffect } from './effects/BoostShakeEffect';
 import { HitShakeEffect } from './effects/HitShakeEffect';
-import { BlinkZoomEffect } from './effects/BlinkZoomEffect';
-import { WindStreakEffect } from './effects/WindStreakEffect';
+import { CheckpointHitEffect } from './effects/CheckpointHitEffect';
+
+// Scene Backdrop System
+import { SceneBackdrop } from './visual/SceneBackdrop';
+
+// Trail System
+import { TrailSystem } from './visual/TrailSystem';
+
+// Boost Overlay System
+import { BoostOverlay } from './visual/BoostOverlay';
+
+// HUD Toggle System
+import { HUDToggleSystem } from './hud/HUDToggleSystem';
 
 // Day 6 Sprint: Game State Management
 import { gameStateManager } from './state/GameStateManager';
@@ -45,15 +58,18 @@ console.info("🗄️ Legacy swing archived:", ["grappleLegacy_v2.ts"]);
 
 // Scene setup
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x99D8F5); // Light sky blue (lighter than #87CEEB)
-// scene.fog = new THREE.Fog(0x99D8F5, 50, 180); // Fog removed for better visibility
+// Background and fog now handled by SceneBackdrop system
 
-// Camera setup
+// Initialize scene backdrop
+const sceneBackdrop = new SceneBackdrop(scene);
+sceneBackdrop.initialize();
+
+// Camera setup (increased far plane to prevent sky clipping)
 const camera = new THREE.PerspectiveCamera(
   90, 
   window.innerWidth / window.innerHeight, 
   0.1, 
-  1000
+  5000  // Increased from 1000 to prevent sky sphere clipping
 );
 camera.position.set(0, 2, 5);
 
@@ -64,6 +80,7 @@ const boostShakeEffect = new BoostShakeEffect();
 const hitShakeEffect = new HitShakeEffect();
 const blinkZoomEffect = new BlinkZoomEffect();
 const windStreakEffect = new WindStreakEffect();
+const checkpointHitEffect = new CheckpointHitEffect();
 
 // Register all camera effects
 CameraEffects.register(speedFovEffect);
@@ -71,8 +88,9 @@ CameraEffects.register(boostShakeEffect);
 CameraEffects.register(hitShakeEffect);
 CameraEffects.register(blinkZoomEffect);
 CameraEffects.register(windStreakEffect);
+CameraEffects.register(checkpointHitEffect);
 
-console.log('📹 Camera effects system initialized with 5 effects');
+console.log('📹 Camera effects system initialized with 6 effects');
 
 // Renderer setup
 const renderer = new THREE.WebGLRenderer({
@@ -122,15 +140,36 @@ const clock = new THREE.Clock();
 // Initialize multiplayer manager (only active if online)
 let multiplayerManager: MultiplayerManager | null = null;
 
-// Fixed timestep for physics
-const fixedTimeStep = 1 / 60; // 60 Hz physics
+// Adaptive physics timestep (performance optimization)
+const maxTimeStep = 1 / 30; // Minimum 30 Hz for stability
+const idealTimeStep = 1 / 60; // 60 Hz when performance allows
 let accumulator = 0;
+
+/**
+ * Add invisible sky plane for grapple targeting (performance-optimized)
+ */
+function addInvisibleSkyPlane(scene: THREE.Scene, world?: RAPIER.World): void {
+  const skyY = 30; // Lower for easier access, still above all track geometry  
+  const skySize = 600; // Optimized size - still covers full track area
+  
+  // Create physics collider only (no visual mesh)
+  if (world) {
+    const skyBody = world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(0, skyY, 0)
+    );
+    const skyCollider = RAPIER.ColliderDesc.cuboid(skySize / 2, 0.1, skySize / 2);
+    world.createCollider(skyCollider, skyBody);
+    
+    console.log(`🌌 Invisible sky plane added at Y=${skyY} (${skySize}x${skySize}) for grapple targeting`);
+    console.log(`🎯 Sky plane: Optimized size (${skySize}x${skySize}) for performance + reliable grapple targeting`);
+  }
+}
 
 /**
  * Add ceiling at Y=35 with grey-white checkerboard pattern for swing testing
  */
 function addSwingTestCeiling(scene: THREE.Scene, world?: RAPIER.World): void {
-  const ceilingY = 35;
+  const ceilingY = 45; // Optimal height: avoids Y=8-14 void-walking zone, perfect for grapple
   const ceilingSize = 600; // 600x600 units (expanded for grapple accommodation)
   
   // Create ceiling geometry
@@ -185,114 +224,7 @@ function addSwingTestCeiling(scene: THREE.Scene, world?: RAPIER.World): void {
   }
 }
 
-/**
- * Movement trail system for visual feedback with smooth fading
- */
-class MovementTrail {
-  private trailPoints: Array<{
-    mesh: THREE.Mesh;
-    spawnTime: number;
-    position: THREE.Vector3;
-  }> = [];
-  private scene: THREE.Scene;
-  private maxTrailLength = 30;
-  private trailSpacing = 0.3; // Minimum distance between trail points
-  private fadeTime = 2000; // Trail fades over 2 seconds
-  private lastPosition: THREE.Vector3 | null = null;
-  
-  constructor(scene: THREE.Scene) {
-    this.scene = scene;
-  }
-  
-  update(playerPosition: THREE.Vector3, activeKit: string): void {
-    const now = Date.now();
-    
-    // Only add trail point if player has moved enough
-    if (!this.lastPosition || playerPosition.distanceTo(this.lastPosition) > this.trailSpacing) {
-      this.addTrailPoint(playerPosition, activeKit, now);
-      this.lastPosition = playerPosition.clone();
-    }
-    
-    // Update existing trail points with smooth fading
-    const pointsToRemove: number[] = [];
-    
-    for (let i = 0; i < this.trailPoints.length; i++) {
-      const point = this.trailPoints[i];
-      const age = now - point.spawnTime;
-      
-      if (age > this.fadeTime) {
-        // Remove expired points
-        this.scene.remove(point.mesh);
-        point.mesh.geometry.dispose();
-        (point.mesh.material as THREE.Material).dispose();
-        pointsToRemove.push(i);
-      } else {
-        // Update opacity based on age
-        const fadeProgress = age / this.fadeTime;
-        const opacity = Math.max(0, (1 - fadeProgress) * 0.8);
-        const size = 0.08 + (1 - fadeProgress) * 0.12; // Start small, grow slightly, then fade
-        
-        // Update material opacity
-        const material = point.mesh.material as THREE.MeshBasicMaterial;
-        material.opacity = opacity;
-        
-        // Subtle size animation
-        const scale = size / 0.1; // Base size was 0.1
-        point.mesh.scale.setScalar(scale);
-      }
-    }
-    
-    // Remove expired points (reverse order to maintain indices)
-    for (let i = pointsToRemove.length - 1; i >= 0; i--) {
-      this.trailPoints.splice(pointsToRemove[i], 1);
-    }
-    
-    // Limit trail length
-    while (this.trailPoints.length > this.maxTrailLength) {
-      const point = this.trailPoints.shift()!;
-      this.scene.remove(point.mesh);
-      point.mesh.geometry.dispose();
-      (point.mesh.material as THREE.Material).dispose();
-    }
-  }
-  
-  private addTrailPoint(position: THREE.Vector3, activeKit: string, spawnTime: number): void {
-    const colors = {
-      blast: 0xff0000,   // Red
-      grapple: 0x00ff00, // Green
-      blink: 0x0088ff    // Blue
-    };
-    
-    const trailColor = colors[activeKit as keyof typeof colors] || 0xffffff;
-    
-    const geometry = new THREE.SphereGeometry(0.1, 6, 6);
-    const material = new THREE.MeshBasicMaterial({
-      color: trailColor,
-      transparent: true,
-      opacity: 0.8
-    });
-    
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.copy(position);
-    
-    this.scene.add(mesh);
-    this.trailPoints.push({
-      mesh,
-      spawnTime,
-      position: position.clone()
-    });
-  }
-  
-  clear(): void {
-    this.trailPoints.forEach(point => {
-      this.scene.remove(point.mesh);
-      point.mesh.geometry.dispose();
-      (point.mesh.material as THREE.Material).dispose();
-    });
-    this.trailPoints = [];
-    this.lastPosition = null;
-  }
-}
+// Old MovementTrail class removed - now using TrailSystem
 
 /**
  * Screen flash system for visual feedback
@@ -331,6 +263,15 @@ class ScreenFlash {
 // Initialize UI
 const debugUI = new DebugUI();
 
+// Initialize HUD toggle system
+const hudToggle = new HUDToggleSystem();
+
+// Register debug UI elements
+hudToggle.registerDebugElement(debugUI.getContainer());
+
+// Initialize boost overlay system
+const boostOverlay = new BoostOverlay();
+
 // Initialize PvP Player Health System
 new PlayerHealth();
 
@@ -342,7 +283,7 @@ const abilityManager = new AbilityManager();
 // AbilityHUD is self-initializing, no variable needed
 
 // Initialize movement trail
-let movementTrail: MovementTrail | null = null;
+let movementTrail: TrailSystem | null = null;
 
 // Initialize screen flash system
 const screenFlash = new ScreenFlash();
@@ -387,6 +328,13 @@ window.addEventListener('roundReset', () => {
 window.addEventListener('resetPlayerPosition', () => {
   if (physicsWorld) {
     physicsWorld.fpsController.reset();
+    
+    // Reset trail system to prevent jarring lines across the map
+    if (movementTrail) {
+      const newPosition = physicsWorld.devTools.getCurrentPosition();
+      movementTrail.resetToPosition(newPosition);
+    }
+    
     console.log('🔄 Player position reset to spawn');
   }
 });
@@ -395,6 +343,13 @@ window.addEventListener('resetPlayerPosition', () => {
 window.addEventListener('resetToSpawn', () => {
   if (physicsWorld) {
     physicsWorld.fpsController.resetToSpawn();
+    
+    // Reset trail system to prevent jarring lines across the map
+    if (movementTrail) {
+      const newPosition = physicsWorld.devTools.getCurrentPosition();
+      movementTrail.resetToPosition(newPosition);
+    }
+    
     console.log('🏠 Player reset to spawn position');
   }
 });
@@ -458,6 +413,13 @@ initPhysics(scene, camera).then((world) => {
     // Actually respawn the player
     if (physicsWorld) {
       physicsWorld.fpsController.reset();
+      
+      // Reset trail system to prevent jarring lines across the map
+      if (movementTrail) {
+        const newPosition = physicsWorld.devTools.getCurrentPosition();
+        movementTrail.resetToPosition(newPosition);
+      }
+      
       if (import.meta.env.DEV) {
         console.log(`✅ Player reset completed for reason: ${reason}`);
       }
@@ -574,11 +536,16 @@ initPhysics(scene, camera).then((world) => {
   // Initialize game HUD (main UI)
   gameHUD = new GameHUD(lapController);
   
+  // Connect checkpoint system to GameHUD for arrow functionality
+  if (gameHUD && checkpointSystem) {
+    gameHUD.setCheckpointSystem(checkpointSystem, scene, camera);
+  }
+  
   // Initialize health HUD (PvP combat)
   new HealthHUD();
   
   // Initialize testing help HUD (V key overlay)
-  new TestingHelpHUD();
+  new TestingHelpHUD(hudToggle);
   
   // Listen for round reset to reset game HUD checkpoints
   window.addEventListener('roundReset', () => {
@@ -607,14 +574,15 @@ initPhysics(scene, camera).then((world) => {
             gameHUD.startTimer();
           }
           console.log('🏁 Both timers started after countdown');
-        } else if (state === 'waiting') {
-          // Stop timers when round ends
+        } else if (state === 'waiting' || state === 'ended') {
+          // Stop timers when round ends (either waiting for next round or completely ended)
           if (lapController) {
             lapController.stop();
           }
           if (gameHUD) {
             gameHUD.stopTimer();
           }
+          console.log('⏱️ Lap timer stopped - round ended');
         }
       }
     });
@@ -763,7 +731,11 @@ initPhysics(scene, camera).then((world) => {
     }
     
     if (['Digit1', 'Digit2', 'Digit3'].includes(event.code)) {
-      console.log('🎯 Number key detected:', event.code);
+      // Debug logging (only in dev mode to reduce spam)
+      if (import.meta.env.DEV) {
+        console.log('🔍 ABILITY SWITCH: Digit key pressed:', event.code);
+      }
+      
       event.preventDefault();
       event.stopPropagation();
       
@@ -780,10 +752,13 @@ initPhysics(scene, camera).then((world) => {
     }
   };
   
-  // Add multiple listeners with priority
-  document.addEventListener('keydown', handleAbilitySwitching, true); // Capture phase
-  document.addEventListener('keydown', handleAbilitySwitching, false); // Bubble phase
-  window.addEventListener('keydown', handleAbilitySwitching, true);
+  // Add single optimized listener (capture phase for priority)
+  document.addEventListener('keydown', handleAbilitySwitching, true);
+  
+  // Store for cleanup
+  const abilityEventListeners = [
+    { element: document, handler: handleAbilitySwitching, options: true }
+  ];
   
   // Add a direct global test function
   (window as any).testAbilitySwitch = (className: string) => {
@@ -791,21 +766,23 @@ initPhysics(scene, camera).then((world) => {
     setPlayerClass(className as any);
   };
   
-  console.log('✅ Ability switching handlers installed');
+  console.log('✅ Ability switching handlers installed (single optimized listener)');
   console.log('🧪 Test manually with: window.testAbilitySwitch("grapple")');
   
-  // Add a simple global debug listener to catch ALL keys
-  document.addEventListener('keydown', (e) => {
-    if (['Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
-      console.log('🔍 GLOBAL CAPTURE: Digit key pressed:', e.code);
-    }
-  }, true); // Capture phase - should fire first
+  // Add cleanup function to window for proper resource management
+  (window as any).cleanupAbilityListeners = () => {
+    abilityEventListeners.forEach(({ element, handler, options }) => {
+      element.removeEventListener('keydown', handler, options);
+    });
+    console.log('🧹 Ability event listeners cleaned up');
+  };
   
   // Add ceiling for grapple testing
-  addSwingTestCeiling(scene, physicsWorld?.world);
+  // Add invisible sky plane for grapple targeting (performance-friendly)
+  addInvisibleSkyPlane(scene, physicsWorld?.world);
   
   // Initialize movement trail
-  movementTrail = new MovementTrail(scene);
+  movementTrail = new TrailSystem(scene);
   
   animate();
 });
@@ -813,6 +790,12 @@ initPhysics(scene, camera).then((world) => {
 // Add cleanup for round system components on page unload
 window.addEventListener('beforeunload', () => {
   try {
+    // Cleanup ability event listeners
+    if ((window as any).cleanupAbilityListeners) {
+      (window as any).cleanupAbilityListeners();
+    }
+    
+    // Cleanup other systems
     roundSystem?.destroy();
     _scoreHUD?.destroy();
     _roundStartUI?.destroy();
@@ -824,7 +807,8 @@ window.addEventListener('beforeunload', () => {
     classSelection?.destroy();
     lobbyScreen?.destroy();
     gameMenu?.destroy();
-    console.log('🧹 Round system components cleaned up on page unload');
+    
+    console.log('🧹 All systems cleaned up on page unload');
   } catch (error) {
     console.error('Error during cleanup:', error);
   }
@@ -920,101 +904,120 @@ function updateVisualFeedback(camera: THREE.Camera): void {
   }
 }
 
+// Initialize timing variables  
+let lastTime = performance.now();
+
 // Animation loop
 function animate() {
-  requestAnimationFrame(animate);
-  
-  const deltaTime = Math.min(clock.getDelta(), 0.1); // Cap delta time to prevent spiral of death
-  accumulator += deltaTime;
-  
-  // Fixed timestep physics
-  while (accumulator >= fixedTimeStep) {
+  try {
+    requestAnimationFrame(animate);
+    
+    const currentTime = performance.now();
+    const deltaTime = Math.min((currentTime - lastTime) / 1000, 0.05); // Cap at 50ms
+    lastTime = currentTime;
+    
+    // Update physics world
     if (physicsWorld) {
-      physicsWorld.step(fixedTimeStep);
+      physicsWorld.step(deltaTime);
     }
-    accumulator -= fixedTimeStep;
-  }
-  
-  // Update HitVolume system for pass-through damage
-  const hitVolumeSystem = getHitVolume();
-  if (hitVolumeSystem) {
-    hitVolumeSystem.update(deltaTime);
-  }
-  
-  // Update movement trail
-  if (physicsWorld && movementTrail) {
-    const position = physicsWorld.devTools.getCurrentPosition();
-    const currentKit = getCurrentPlayerKit(); // Get current player class
-    movementTrail.update(position, currentKit.className);
-  }
-  
-  // Update visual feedback effects
-  updateVisualFeedback(camera);
-  
-  // Update camera effects system
-  if (physicsWorld) {
-    // Feed current speed to speed-based effects
-    const currentSpeed = physicsWorld.fpsController.getCurrentSpeed();
-    speedFovEffect.updateSpeed(currentSpeed);
-    windStreakEffect.updateSpeed(currentSpeed);
-  }
-  CameraEffects.update(deltaTime);
-  
-  // Update UI and checkpoint system
-  if (physicsWorld) {
-    const velocity = physicsWorld.fpsController.getVelocity();
-    const grounded = physicsWorld.fpsController.getIsGrounded();
-    const sliding = physicsWorld.fpsController.getIsSliding();
-    const currentSpeed = physicsWorld.fpsController.getCurrentSpeed();
-    const isRocketJumping = physicsWorld.fpsController.getIsRocketJumping();
-    const rocketJumpSpeed = physicsWorld.fpsController.getRocketJumpSpeed();
-    const isBlinkMomentum = physicsWorld.fpsController.getIsBlinkMomentum();
-    const blinkMomentumSpeed = physicsWorld.fpsController.getBlinkMomentumSpeed();
-    const position = physicsWorld.devTools.getCurrentPosition();
-    debugUI.update(velocity, grounded, sliding, position, currentSpeed, isRocketJumping, rocketJumpSpeed, isBlinkMomentum, blinkMomentumSpeed);
     
-    // Update combat UI and range indicators
-    if (meleeCombat) {
-      const currentKit = getCurrentPlayerKit();
-      const meleeState = meleeCombat.getMeleeState();
-      const playerPosition = new THREE.Vector3(position.x, position.y, position.z);
-      const nearestTarget = meleeCombat.getNearestTargetInfo(playerPosition);
+    // Update HitVolume system for pass-through damage
+    try {
+      const hitVolumeSystem = getHitVolume();
+      if (hitVolumeSystem) {
+        hitVolumeSystem.update(deltaTime);
+      }
+    } catch (error) {
+      console.error('⚠️ HitVolume update error:', error);
+    }
+    
+    // Update sky position to follow camera (prevents clipping artifacts)
+    try {
+      if (physicsWorld) {
+        const cameraPos = camera.position.clone();
+        sceneBackdrop.updateSkyPosition(cameraPos);
+      }
+    } catch (error) {
+      console.error('⚠️ SceneBackdrop update error:', error);
+    }
+    
+    // Update movement trail
+    try {
+      if (physicsWorld && movementTrail) {
+        const position = physicsWorld.devTools.getCurrentPosition();
+        const currentSpeed = physicsWorld.fpsController.getCurrentSpeed();
+        const currentKit = getCurrentPlayerKit(); // Get current player class
+        movementTrail.update(position, currentSpeed, currentKit.className);
+      }
+    } catch (error) {
+      console.error('⚠️ Trail system update error:', error);
+    }
+    
+    // Update visual feedback effects
+    try {
+      updateVisualFeedback(camera);
+    } catch (error) {
+      console.error('⚠️ Visual feedback update error:', error);
+    }
+    
+    // Update camera effects system
+    try {
+      if (physicsWorld) {
+        // Feed current speed to speed-based effects
+        const currentSpeed = physicsWorld.fpsController.getCurrentSpeed();
+        speedFovEffect.updateSpeed(currentSpeed);
+        windStreakEffect.updateSpeed(currentSpeed);
+      }
+      CameraEffects.update(deltaTime);
+    } catch (error) {
+      console.error('⚠️ Camera effects update error:', error);
+    }
+
+    // Update UI and checkpoint system
+    if (physicsWorld) {
+      const velocity = physicsWorld.fpsController.getVelocity();
+      const grounded = physicsWorld.fpsController.getIsGrounded();
+      const sliding = physicsWorld.fpsController.getIsSliding();
+      const currentSpeed = physicsWorld.fpsController.getCurrentSpeed();
+      const isRocketJumping = physicsWorld.fpsController.getIsRocketJumping();
+      const rocketJumpSpeed = physicsWorld.fpsController.getRocketJumpSpeed();
+      const isBlinkMomentum = physicsWorld.fpsController.getIsBlinkMomentum();
+      const blinkMomentumSpeed = physicsWorld.fpsController.getBlinkMomentumSpeed();
+      const position = physicsWorld.devTools.getCurrentPosition();
+      debugUI.update(velocity, grounded, sliding, position, currentSpeed, isRocketJumping, rocketJumpSpeed, isBlinkMomentum, blinkMomentumSpeed);
       
-      // Get current melee range based on class
-      let meleeRange = 3.6; // Base doubled range
-      if (currentKit.className === 'blast') {
-        meleeRange *= 1.25; // +25% for blast
+      // Update combat UI and range indicators
+      if (meleeCombat) {
+        const currentKit = getCurrentPlayerKit();
+        const meleeState = meleeCombat.getMeleeState();
+        const playerPosition = new THREE.Vector3(position.x, position.y, position.z);
+        
+        // TODO: Add range indicator updates when methods are implemented
+        // meleeCombat.updateRangeIndicator(scene, playerPosition, currentKit.className);
+        
+        // Update game HUD if available
+        if (gameHUD) {
+          // TODO: Add combat state update when method is implemented  
+          // gameHUD.updateCombatState(meleeState, currentKit);
+        }
       }
       
-      // Update range indicators on all dummies
-      targetDummies.forEach(dummy => {
-        dummy.updateRangeIndicator?.(playerPosition, meleeRange);
-      });
-      
-      // Update placed dummies range indicators too
-      if (dummyPlacementManager) {
-        dummyPlacementManager.getPlacedDummies().forEach(dummy => {
-          dummy.updateRangeIndicator?.(playerPosition, meleeRange);
-        });
+      // Update checkpoint system
+      if (checkpointSystem) {
+        checkpointSystem.update(new THREE.Vector3(position.x, position.y, position.z), velocity);
       }
       
-      debugUI.updateCombat({
-        currentClass: currentKit.className,
-        meleeCooldown: meleeState.cooldownRemaining,
-        canMelee: meleeState.canMelee,
-        nearestTargetHealth: nearestTarget
-      });
+      // Update game HUD with player position for checkpoint arrow
+      if (gameHUD) {
+        const playerPosition = new THREE.Vector3(position.x, position.y, position.z);
+        gameHUD.update(playerPosition);
+      }
     }
     
-    // Update dummy placement manager
-    if (dummyPlacementManager) {
-      dummyPlacementManager.update();
-    }
-    
-    // Update checkpoint system
-    if (checkpointSystem) {
-      const playerPosition = new THREE.Vector3(position.x, position.y, position.z);
-      checkpointSystem.update(playerPosition);
+    // Update round system
+    if (roundSystem) {
+      // TODO: Add update method when implemented
+      // roundSystem.update();
     }
     
     // Update lap HUD (debug)
@@ -1022,11 +1025,12 @@ function animate() {
       lapHUD.update();
     }
     
-    // Update game HUD (main UI)
-    if (gameHUD) {
-      gameHUD.update();
-    }
+    // Final render
+    renderer.render(scene, camera);
+    
+  } catch (error) {
+    console.error('⚠️ Critical animation loop error:', error);
+    // Continue animation loop even if error occurs
+    requestAnimationFrame(animate);
   }
-  
-  renderer.render(scene, camera);
 }

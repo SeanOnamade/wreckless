@@ -376,6 +376,15 @@ function cleanupProjectile(projectile: ActiveProjectile): void {
     projectile.mesh.material.dispose();
   }
   
+  // MEMORY FIX: Remove all colliders before removing rigid body
+  const numColliders = projectile.body.numColliders();
+  for (let i = numColliders - 1; i >= 0; i--) {
+    const collider = projectile.body.collider(i);
+    if (collider) {
+      projectile.world.removeCollider(collider, false);
+    }
+  }
+  
   // Remove physics body
   projectile.world.removeRigidBody(projectile.body);
   

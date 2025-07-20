@@ -46,7 +46,10 @@ export class HitVolume {
   private lastBlinkTime = 0;
   private lastGrappleDetachTime = 0;
   private isSwingingState = false;
-  
+
+  // PERFORMANCE FIX: Cache test shapes to avoid repeated allocation
+  private cachedTestShapes: Map<number, RAPIER.Ball> = new Map();
+
   constructor(world: RAPIER.World, controller: FirstPersonController, meleeCombat: MeleeCombat) {
     this.world = world;
     this.controller = controller;
@@ -200,8 +203,14 @@ export class HitVolume {
     deltaTime: number,
     hitTargets: Set<string>
   ): void {
-    // Create a ball shape for intersection testing
-    const testShape = new RAPIER.Ball(radius);
+    // PERFORMANCE FIX: Use cached test shape instead of creating new one each frame
+    const radiusKey = Math.round(radius * 100); // Create key from radius (rounded to cm)
+    let testShape = this.cachedTestShapes.get(radiusKey);
+    if (!testShape) {
+      testShape = new RAPIER.Ball(radius);
+      this.cachedTestShapes.set(radiusKey, testShape);
+    }
+    
     const testPos = { x: position.x, y: position.y, z: position.z };
     const testRot = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
     
@@ -313,9 +322,11 @@ export class HitVolume {
     const playerPos = this.currentPosition;
     const hitDirection = targetPos.clone().sub(playerPos).normalize();
     
-    // Log BEFORE applying damage for debugging
+    // Debug damage application (reduced frequency for performance)
     const timeSinceLastHit = lastHitTime ? now - lastHitTime : 'never';
-    console.log(`🎯 HitVolume: Applying ${finalDamage} damage to ${targetId} (${hitType}) - Last hit: ${timeSinceLastHit}ms ago`);
+    if (Math.random() < 0.1) { // 10% chance to log damage for debugging
+      console.log(`🎯 HitVolume: Applying ${finalDamage} damage to ${targetId} (${hitType}) - Last hit: ${timeSinceLastHit}ms ago`);
+    }
     
     // Apply damage with error handling
     if (target.takeDamage) {
@@ -480,14 +491,14 @@ export class HitVolume {
       this.isSwingingState = customEvent.detail.isSwinging;
       if (!this.isSwingingState) {
         this.lastGrappleDetachTime = Date.now();
-        console.log('🪝 HitVolume: Grapple detach timestamp recorded for crit bonus');
+        // Debug: Grapple detach timestamp recorded (silent for performance)
       }
     });
     
     window.addEventListener('grappleDetached', (_event: Event) => {
       this.lastGrappleDetachTime = Date.now();
       this.isSwingingState = false;
-      console.log('🪝 HitVolume: Grapple detach timestamp recorded for crit bonus');
+      // Debug: Grapple detach timestamp recorded (silent for performance)
     });
   }
 

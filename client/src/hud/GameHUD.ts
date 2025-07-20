@@ -1,20 +1,40 @@
 import type { CheckpointId } from '../systems/LapController';
 import { LapController } from '../systems/LapController';
+import type { CheckpointSystem } from '../systems/CheckpointSystem';
+import * as THREE from 'three';
 
 export class GameHUD {
   private lapController: LapController;
+  private checkpointSystem: CheckpointSystem | null = null;
   private container!: HTMLDivElement;
   private checkpointBar!: HTMLDivElement;
   private lapTimerElement!: HTMLSpanElement;
   private checkpointElements: Map<CheckpointId, HTMLSpanElement> = new Map();
-  private currentCheckpointIndex = 0;
-  private pulseInterval: number | null = null;
+  
+  // 2D Checkpoint arrow system (HUD-based)
+  private arrowContainer!: HTMLDivElement;
+  private arrowElement!: HTMLDivElement;
+  private scene: THREE.Scene | null = null;
+  private camera: THREE.Camera | null = null;
+  private lastArrowUpdate = 0;
+  private readonly ARROW_UPDATE_INTERVAL = 100; // Back to 100ms for smoother 2D updates
+  
+  // Animation timeout tracking for proper cleanup
+  private activeTimeouts: Set<number> = new Set();
   private timerActive = false;
   
   constructor(lapController: LapController) {
     this.lapController = lapController;
-    
     this.createHUD();
+  }
+  
+  /**
+   * Set the checkpoint system reference and scene for 2D arrow calculations
+   */
+  setCheckpointSystem(checkpointSystem: CheckpointSystem, scene?: THREE.Scene, camera?: THREE.Camera): void {
+    this.checkpointSystem = checkpointSystem;
+    if (scene) this.scene = scene;
+    if (camera) this.camera = camera;
   }
   
   private createHUD(): void {
@@ -48,7 +68,7 @@ export class GameHUD {
       justify-content: center;
     `;
     
-    // Create checkpoint elements
+    // Create checkpoint elements (simplified)
     const checkpoints: { id: CheckpointId; label: string }[] = [
       { id: 'A', label: 'A' },
       { id: 'B', label: 'B' },
@@ -70,7 +90,7 @@ export class GameHUD {
         background: rgba(40, 40, 40, 0.8);
         color: #666;
         font-size: 16px;
-        transition: all 0.3s ease;
+        transition: all 0.2s ease;
       `;
       
       this.checkpointElements.set(checkpoint.id, element);
@@ -80,11 +100,7 @@ export class GameHUD {
       if (index < checkpoints.length - 1) {
         const arrow = document.createElement('span');
         arrow.textContent = '→';
-        arrow.style.cssText = `
-          color: #666;
-          font-size: 20px;
-          margin: 0 5px;
-        `;
+        arrow.style.cssText = `color: #666; font-size: 20px; margin: 0 5px;`;
         this.checkpointBar.appendChild(arrow);
       }
     });
@@ -97,156 +113,149 @@ export class GameHUD {
       color: #00ff00;
     `;
     lapTimerContainer.innerHTML = 'Lap Time: <span id="lapTimer">0.00s</span>';
-    this.lapTimerElement = lapTimerContainer.querySelector('#lapTimer')!
+    this.lapTimerElement = lapTimerContainer.querySelector('#lapTimer')!;
+    
+    // Create 2D checkpoint arrow
+    this.create2DArrow();
     
     // Assemble HUD
     this.container.appendChild(this.checkpointBar);
     this.container.appendChild(lapTimerContainer);
     document.body.appendChild(this.container);
+    document.body.appendChild(this.arrowContainer);
     
-    // Start current checkpoint pulse
-    this.startCurrentCheckpointPulse();
-  }
-  
-  private startCurrentCheckpointPulse(): void {
-    if (this.pulseInterval) {
-      clearInterval(this.pulseInterval);
-    }
-    
-    const checkpoints: CheckpointId[] = ['A', 'B', 'C', 'FINISH'];
-    const currentCheckpoint = checkpoints[this.currentCheckpointIndex];
-    const element = this.checkpointElements.get(currentCheckpoint);
-    
-    if (!element) return;
-    
-    let isHighlighted = false;
-    this.pulseInterval = setInterval(() => {
-      isHighlighted = !isHighlighted;
-      
-      if (isHighlighted) {
-        element.style.border = '2px solid #ffff00';
-        element.style.background = 'rgba(255, 255, 0, 0.2)';
-        element.style.color = '#ffff00';
-        element.style.transform = 'scale(1.1)';
-      } else {
-        element.style.border = '2px solid #666';
-        element.style.background = 'rgba(40, 40, 40, 0.8)';
-        element.style.color = '#666';
-        element.style.transform = 'scale(1.0)';
-      }
-    }, 800) as unknown as number;
+    // Initial update to sync with current state
+    this.updateCheckpointDisplay();
   }
   
   /**
-   * Called when a checkpoint is visited
+   * Create 2D arrow in a stylish container
    */
-  onCheckpointVisited(checkpointId: CheckpointId, isValid: boolean): void {
-    const element = this.checkpointElements.get(checkpointId);
-    if (!element) return;
-    
-    if (isValid) {
-      // Mark checkpoint as completed
-      element.style.border = '2px solid #00ff00';
-      element.style.background = 'rgba(0, 255, 0, 0.3)';
-      element.style.color = '#00ff00';
-      element.style.transform = 'scale(1.0)';
-      
-      // Update current checkpoint index
-      const checkpoints: CheckpointId[] = ['A', 'B', 'C', 'FINISH'];
-      this.currentCheckpointIndex = checkpoints.indexOf(checkpointId) + 1;
-      
-      // Flash effect
-      setTimeout(() => {
-        element.style.transform = 'scale(1.2)';
-        setTimeout(() => {
-          element.style.transform = 'scale(1.0)';
-        }, 150);
-      }, 50);
-      
-      // Update pulse for next checkpoint
-      if (checkpointId !== 'FINISH') {
-        this.startCurrentCheckpointPulse();
-      } else {
-        // Stop pulsing when lap is complete
-        if (this.pulseInterval) {
-          clearInterval(this.pulseInterval);
-          this.pulseInterval = null;
-        }
-      }
-    } else {
-      // Invalid checkpoint - flash red
-      const originalBorder = element.style.border;
-      const originalBackground = element.style.background;
-      const originalColor = element.style.color;
-      
-      element.style.border = '2px solid #ff0000';
-      element.style.background = 'rgba(255, 0, 0, 0.3)';
-      element.style.color = '#ff0000';
-      
-      setTimeout(() => {
-        element.style.border = originalBorder;
-        element.style.background = originalBackground;
-        element.style.color = originalColor;
-      }, 500);
-    }
-  }
-  
-  /**
-   * Called when a lap is completed
-   */
-  onLapComplete(lapTime: number, lapNumber: number): void {
-    // Show lap completion message
-    this.showLapCompleteMessage(lapTime, lapNumber);
-    
-    // Reset checkpoint progress
-    this.doResetCheckpointProgress();
-  }
-  
-  private showLapCompleteMessage(lapTime: number, lapNumber: number): void {
-    const timeSeconds = (lapTime / 1000).toFixed(2);
-    
-    // Create completion message overlay
-    const message = document.createElement('div');
-    message.style.cssText = `
+  private create2DArrow(): void {
+    // Create arrow container with stylish background (optimized size)
+    this.arrowContainer = document.createElement('div');
+    this.arrowContainer.style.cssText = `
       position: fixed;
+      top: 130px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1001;
+      pointer-events: none;
+      transition: transform 0.2s ease;
+      background: rgba(0, 0, 0, 0.8);
+      border: 2px solid rgba(255, 215, 0, 0.5);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      width: 75px;
+      height: 75px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `;
+    
+    // Create arrow element - smaller, well-proportioned triangle
+    this.arrowElement = document.createElement('div');
+    this.arrowElement.style.cssText = `
+      width: 0;
+      height: 0;
+      border-left: 12px solid transparent;
+      border-right: 12px solid transparent;
+      border-bottom: 45px solid #ffd700;
+      filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.8)) drop-shadow(0 0 3px rgba(255, 215, 0, 1));
+      transition: transform 0.2s ease;
+      margin: 0 auto;
+    `;
+    
+    // Add a subtle compass background pattern (proportional)
+    const compassBg = document.createElement('div');
+    compassBg.style.cssText = `
+      position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: rgba(0, 0, 0, 0.9);
-      color: #00ff00;
-      padding: 30px 50px;
-      border-radius: 15px;
-      font-family: 'Courier New', monospace;
-      font-size: 36px;
-      font-weight: bold;
-      text-align: center;
-      z-index: 9999;
-      pointer-events: none;
-      border: 3px solid #00ff00;
-      box-shadow: 0 0 30px rgba(0, 255, 0, 0.5);
+      width: 50px;
+      height: 50px;
+      border: 1px solid rgba(255, 215, 0, 0.2);
+      border-radius: 50%;
+      z-index: -1;
     `;
     
-    message.innerHTML = `
-      <div style="margin-bottom: 10px;">🏁 LAP ${lapNumber} COMPLETE! 🏁</div>
-      <div style="font-size: 28px; color: #ffffff;">${timeSeconds}s</div>
-    `;
+    this.arrowContainer.appendChild(compassBg);
+    this.arrowContainer.appendChild(this.arrowElement);
     
-    document.body.appendChild(message);
+    // Initially hidden
+    this.arrowContainer.style.display = 'none';
     
-    // Animate and remove message
-    setTimeout(() => {
-      message.style.opacity = '0';
-      message.style.transform = 'translate(-50%, -50%) scale(0.8)';
-      message.style.transition = 'all 0.5s ease';
-      
-      setTimeout(() => {
-        document.body.removeChild(message);
-      }, 500);
-    }, 2000);
+    if (import.meta.env.DEV) {
+      console.log('✨ 2D checkpoint arrow created with styled container');
+    }
   }
   
-  private doResetCheckpointProgress(): void {
-    // Reset all checkpoints to default state
+  /**
+   * Update 2D arrow to point toward the beacon - PERFORMANCE OPTIMIZED
+   */
+  private update2DArrow(playerPosition?: THREE.Vector3): void {
+    if (!this.camera || !this.checkpointSystem || !playerPosition) {
+      this.arrowContainer.style.display = 'none';
+      return;
+    }
+    
+    // OPTIMIZATION: Only update every 100ms
+    const now = Date.now();
+    if (now - this.lastArrowUpdate < this.ARROW_UPDATE_INTERVAL) {
+      return;
+    }
+    this.lastArrowUpdate = now;
+    
+    const nextCheckpointInfo = this.checkpointSystem.getNextCheckpointInfo();
+    if (!nextCheckpointInfo) {
+      // No next checkpoint (lap complete)
+      this.arrowContainer.style.display = 'none';
+      return;
+    }
+    
+    // Show arrow
+    this.arrowContainer.style.display = 'block';
+    
+    // OPTIMIZED: Cache camera calculations
+    const camera = this.camera as THREE.PerspectiveCamera;
+    const cameraDirection = new THREE.Vector3();
+    camera.getWorldDirection(cameraDirection);
+    
+    const cameraRight = new THREE.Vector3();
+    cameraRight.crossVectors(cameraDirection, camera.up).normalize();
+    
+    // OPTIMIZED: Single direction calculation
+    const directionToCheckpoint = new THREE.Vector3()
+      .subVectors(nextCheckpointInfo.position, playerPosition)
+      .normalize();
+    
+    // OPTIMIZED: Batch dot product calculations
+    const rightComponent = directionToCheckpoint.dot(cameraRight);
+    const forwardComponent = directionToCheckpoint.dot(cameraDirection);
+    
+    // Convert to screen angle - OPTIMIZED CALCULATION
+    // (0° = up/ahead, 90° = right, 180° = down/behind, 270° = left)
+    const angle = Math.atan2(rightComponent, forwardComponent) * 57.29577951308232; // Pre-calculated 180/Math.PI
+    
+    // Apply rotation to point toward checkpoint - OPTIMIZED TRANSFORM
+    this.arrowElement.style.transform = `rotate(${angle}deg)`;
+    
+    // OPTIMIZED: Distance check with early exit
+    const distanceSquared = playerPosition.distanceToSquared(nextCheckpointInfo.position);
+    this.arrowContainer.style.opacity = distanceSquared < 100 ? '0.3' : '1.0'; // 10^2 = 100
+  }
+  
+  /**
+   * Update checkpoint display based on LapController state (FIXED)
+   */
+  private updateCheckpointDisplay(): void {
+    const progress = this.lapController.getProgress();
+    const checkpoints: CheckpointId[] = ['A', 'B', 'C', 'FINISH'];
+    
+    // Reset all checkpoints to default first
     this.checkpointElements.forEach((element) => {
       element.style.border = '2px solid #666';
       element.style.background = 'rgba(40, 40, 40, 0.8)';
@@ -254,67 +263,174 @@ export class GameHUD {
       element.style.transform = 'scale(1.0)';
     });
     
-    // Reset to first checkpoint
-    this.currentCheckpointIndex = 0;
-    this.startCurrentCheckpointPulse();
-  }
-
-  /**
-   * Public method to reset checkpoint progress (called from main.ts on round reset)
-   */
-  resetCheckpointProgress(): void {
-    this.doResetCheckpointProgress();
+    // Mark completed checkpoints as green
+    progress.currentSequence.forEach(checkpointId => {
+      const element = this.checkpointElements.get(checkpointId);
+      if (element) {
+        element.style.border = '2px solid #00ff00';
+        element.style.background = 'rgba(0, 255, 0, 0.3)';
+        element.style.color = '#00ff00';
+      }
+    });
+    
+    // Highlight the NEXT expected checkpoint in yellow (if not finished)
+    const nextIndex = progress.currentSequence.length;
+    if (nextIndex < checkpoints.length) {
+      const nextCheckpointId = checkpoints[nextIndex];
+      const element = this.checkpointElements.get(nextCheckpointId);
+      if (element) {
+        element.style.border = '2px solid #ffff00';
+        element.style.background = 'rgba(255, 255, 0, 0.2)';
+        element.style.color = '#ffff00';
+      }
+    }
   }
   
   /**
-   * Start the lap timer (called when round starts after countdown)
+   * Called when a checkpoint is visited (FIXED)
+   */
+  onCheckpointVisited(checkpointId: CheckpointId, isValid: boolean): void {
+    const element = this.checkpointElements.get(checkpointId);
+    if (!element) return;
+    
+    if (isValid) {
+      // Simple flash effect (with proper cleanup)
+      const timeoutId = window.setTimeout(() => {
+        element.style.transform = 'scale(1.1)';
+        
+        const timeoutId2 = window.setTimeout(() => {
+          element.style.transform = 'scale(1.0)';
+          this.activeTimeouts.delete(timeoutId2);
+        }, 150);
+        this.activeTimeouts.add(timeoutId2);
+        
+        this.activeTimeouts.delete(timeoutId);
+      }, 50);
+      this.activeTimeouts.add(timeoutId);
+      
+      // Update display to reflect new state (AFTER the flash)
+      const timeoutId3 = window.setTimeout(() => {
+        this.updateCheckpointDisplay();
+        this.activeTimeouts.delete(timeoutId3);
+      }, 200);
+      this.activeTimeouts.add(timeoutId3);
+      
+    } else {
+      // Invalid checkpoint - simple flash red (with cleanup)
+      const original = {
+        border: element.style.border,
+        background: element.style.background,
+        color: element.style.color
+      };
+      
+      element.style.border = '2px solid #ff0000';
+      element.style.background = 'rgba(255, 0, 0, 0.3)';
+      element.style.color = '#ff0000';
+      
+      const timeoutId = window.setTimeout(() => {
+        element.style.border = original.border;
+        element.style.background = original.background;
+        element.style.color = original.color;
+        this.activeTimeouts.delete(timeoutId);
+      }, 400);
+      this.activeTimeouts.add(timeoutId);
+    }
+  }
+  
+  /**
+   * Called when a lap is completed
+   */
+  onLapComplete(_lapTime: number, totalLaps: number): void {
+    // Simple lap completion feedback
+    this.lapTimerElement.style.color = '#00ff00';
+    
+    const timeoutId = window.setTimeout(() => {
+      this.lapTimerElement.style.color = '#00ff00'; // Reset to default green
+      this.activeTimeouts.delete(timeoutId);
+    }, 1000);
+    this.activeTimeouts.add(timeoutId);
+    
+    // Update checkpoint display for new lap
+    this.updateCheckpointDisplay();
+    
+    if (import.meta.env.DEV) {
+      console.log(`🏁 GameHUD: Lap ${totalLaps} completed`);
+    }
+  }
+  
+  /**
+   * Start the timer display
    */
   startTimer(): void {
     this.timerActive = true;
   }
   
   /**
-   * Stop/reset the lap timer
+   * Stop the timer display
    */
   stopTimer(): void {
     this.timerActive = false;
-    this.lapTimerElement.textContent = '0.00s';
-    this.lapTimerElement.style.color = '#00ff00';
   }
   
   /**
-   * Update lap timer display
+   * Reset checkpoint progress display
    */
-  update(): void {
+  resetCheckpointProgress(): void {
+    // Clear any active timeouts
+    this.activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    this.activeTimeouts.clear();
+    
+    // Reset timer display
+    this.lapTimerElement.textContent = '0.00s';
+    this.lapTimerElement.style.color = '#00ff00';
+    
+    // Update display to reflect reset state
+    this.updateCheckpointDisplay();
+  }
+  
+  /**
+   * Update lap timer display and 3D checkpoint arrow (optimized)
+   */
+  update(playerPosition?: THREE.Vector3): void {
     if (!this.timerActive) return; // Only update if timer is active
     
     const progress = this.lapController.getProgress();
     const currentTime = progress.currentLapTime / 1000;
     this.lapTimerElement.textContent = currentTime.toFixed(2) + 's';
     
-    // Color code the timer
+    // Simple color coding
     if (progress.bestLapTime > 0) {
       const bestTime = progress.bestLapTime / 1000;
-      if (currentTime > bestTime && progress.totalLaps > 0) {
-        this.lapTimerElement.style.color = '#ff6666'; // Red if slower than best
-      } else {
-        this.lapTimerElement.style.color = '#66ff66'; // Green if faster or first lap
-      }
+      this.lapTimerElement.style.color = currentTime > bestTime ? '#ff6666' : '#66ff66';
     } else {
       this.lapTimerElement.style.color = '#00ff00'; // Default green
     }
+    
+    // Update 2D checkpoint arrow with player position (OPTIMIZED)
+    this.update2DArrow(playerPosition);
   }
   
   /**
    * Clean up resources
    */
-  dispose(): void {
-    if (this.pulseInterval) {
-      clearInterval(this.pulseInterval);
-    }
+  destroy(): void {
+    // Clear all active timeouts
+    this.activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    this.activeTimeouts.clear();
     
-    if (this.container.parentNode) {
+    // Remove 2D HUD elements from DOM
+    if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }
+    
+    if (this.arrowContainer && this.arrowContainer.parentNode) {
+      this.arrowContainer.parentNode.removeChild(this.arrowContainer);
+    }
+    
+    // Clear references
+    this.checkpointElements.clear();
+    this.scene = null;
+    this.camera = null;
+    this.checkpointSystem = null;
   }
 } 

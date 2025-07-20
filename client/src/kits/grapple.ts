@@ -77,6 +77,17 @@ window.addEventListener('forceReleaseGrapple', (event: Event) => {
   }
 });
 
+// Listen for class changes to hide prediction sphere when switching away from grapple
+window.addEventListener('playerClassChanged', (event: Event) => {
+  const customEvent = event as CustomEvent;
+  const newClass = customEvent.detail.className;
+  
+  // Hide prediction sphere immediately when switching away from grapple class
+  if (newClass !== 'grapple' && swingState.predictionMesh) {
+    swingState.predictionMesh.visible = false;
+  }
+});
+
 /**
  * TRUE PENDULUM SWING - Sphere constraint with momentum preservation
  */
@@ -108,9 +119,9 @@ export function executeGrapple(context: GrappleAbilityContext): void {
   if (hit) {
     const anchorPoint = new THREE.Vector3(hit.point.x, hit.point.y, hit.point.z);
     
-    // Validate grapple target (must be above player) - relaxed validation
-    if (anchorPoint.y <= playerPosition.y + 0.5) {
-      console.log(`🚫 Grapple blocked: anchor too low Y=${anchorPoint.y.toFixed(1)} (no cooldown applied)`);
+    // Validate grapple target (must be above player) - reasonable validation
+    if (anchorPoint.y <= playerPosition.y + 2.0) { // Must be at least 2m above player
+      console.log(`🚫 Grapple blocked: anchor too low Y=${anchorPoint.y.toFixed(1)} vs player Y=${playerPosition.y.toFixed(1)} (no cooldown applied)`);
       // NO COOLDOWN - just block the attempt
       return;
     }
@@ -133,7 +144,7 @@ export function executeGrapple(context: GrappleAbilityContext): void {
     // Notify controller of swing state
     notifySwingState(true);
     
-    console.log(`✅ Swing attached: dist=${hit.distance.toFixed(1)}m, rope=${swingState.ropeLength.toFixed(1)}m`);
+    // Debug: Swing attached (silent for performance)
     
   } else {
     console.log('🪝 Grapple missed - no valid target (no cooldown applied)');
@@ -153,10 +164,17 @@ function performGrappleRaycast(world: RAPIER.World, origin: THREE.Vector3, direc
   
   if (hit) {
     const hitPoint = ray.pointAt(hit.timeOfImpact);
-    return {
+    const result = {
       point: new THREE.Vector3(hitPoint.x, hitPoint.y, hitPoint.z),
       distance: hit.timeOfImpact + 0.5 // Add back offset
     };
+    
+    // Debug logging for target detection (rare, for performance)
+    if (Math.random() < 0.001) { // 0.1% chance to see what's being hit
+      console.log(`🎯 Raycast hit: Y=${result.point.y.toFixed(1)}, distance=${result.distance.toFixed(1)}m`);
+    }
+    
+    return result;
   }
   
   return null;
@@ -401,7 +419,7 @@ function releaseSwing(reason: string, context: GrappleAbilityContext): void {
     console.log(`🪝 Swing released during existing cooldown - no additional cooldown applied`);
   }
   
-  console.log(`🪝 Swing released (${reason})`);
+  // Debug: Swing released (silent for performance)
   
   // Dispatch grapple detach event for combat system
   window.dispatchEvent(new CustomEvent('grappleDetached', {
@@ -414,6 +432,15 @@ function releaseSwing(reason: string, context: GrappleAbilityContext): void {
  */
 function updatePredictionSphere(context: GrappleAbilityContext): void {
   const { world, camera, scene } = context;
+  
+  // Only show grapple prediction for grapple class players
+  const currentKit = getCurrentPlayerKit();
+  if (currentKit.className !== 'grapple') {
+    if (swingState.predictionMesh) {
+      swingState.predictionMesh.visible = false;
+    }
+    return;
+  }
   
   if (swingState.isSwinging) {
     if (swingState.predictionMesh) {
@@ -440,7 +467,12 @@ function updatePredictionSphere(context: GrappleAbilityContext): void {
     }
   }
   
-  if (hit && hit.distance > 1.0 && hit.point.y > playerPosition.y + 0.5) {
+  if (hit && hit.distance > 1.0 && hit.point.y > playerPosition.y + 2.0) { // Must be at least 2m above player
+    // Debug logging for prediction validation (very rare)
+    if (Math.random() < 0.001) { // 0.1% chance to see validation
+      console.log(`🟢 Valid grapple target! Y=${hit.point.y.toFixed(1)}, dist=${hit.distance.toFixed(1)}m, showing green dot`);
+    }
+    
     // Create prediction sphere if needed
     if (!swingState.predictionMesh) {
       const geometry = new THREE.SphereGeometry(0.2, 8, 6);
@@ -462,6 +494,17 @@ function updatePredictionSphere(context: GrappleAbilityContext): void {
     swingState.predictionMesh.visible = true;
     
   } else {
+    // Debug logging for failed prediction (very rare)
+    if (Math.random() < 0.001) { // 0.1% chance to see prediction failures
+      if (!hit) {
+        console.log(`❌ No raycast hit detected`);
+      } else if (hit.distance <= 1.0) {
+        console.log(`❌ Target too close: ${hit.distance.toFixed(1)}m`);
+      } else {
+        console.log(`❌ Target too low: Y=${hit.point.y.toFixed(1)} vs player Y=${playerPosition.y.toFixed(1)} (need +2m)`);
+      }
+    }
+    
     if (swingState.predictionMesh) {
       swingState.predictionMesh.visible = false;
     }

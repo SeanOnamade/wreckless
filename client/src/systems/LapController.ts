@@ -2,20 +2,24 @@ import * as THREE from 'three';
 
 export type CheckpointId = 'A' | 'B' | 'C' | 'FINISH';
 
-export interface CheckpointVisit {
-  id: CheckpointId;
-  timestamp: number;
-  position: THREE.Vector3;
-}
-
 export class LapController {
-  private state = { index: 0 }; // Simple index-based tracking
-  private expectedOrder: CheckpointId[] = ['A', 'B', 'C', 'FINISH'];
+  private checkpointIndex = 0; // Number of checkpoints completed in current lap
+  private readonly expectedOrder: CheckpointId[] = ['A', 'B', 'C', 'FINISH'];
   private lastCheckpoint: CheckpointId | null = null;
   private totalLaps = 0;
   private currentLapStartTime = 0;
   private bestLapTime = Infinity;
-  private isActive = false; // Track if timing is active
+  private isActive = false;
+  
+  // Cached progress object to avoid creating new objects every call
+  private cachedProgress = {
+    currentSequence: [] as CheckpointId[],
+    lastCheckpoint: null as CheckpointId | null,
+    totalLaps: 0,
+    bestLapTime: 0,
+    currentLapTime: 0
+  };
+  
   private onLapComplete?: (lapTime: number, totalLaps: number) => void;
   private onCheckpointVisit?: (checkpoint: CheckpointId, isValid: boolean) => void;
   
@@ -25,40 +29,46 @@ export class LapController {
   ) {
     this.onLapComplete = onLapComplete;
     this.onCheckpointVisit = onCheckpointVisit;
-    // Don't start timing yet - wait for explicit start
   }
   
   /**
    * Visit a checkpoint and validate if it's in the correct sequence
    */
   visit(checkpointId: CheckpointId): boolean {
-    const expected = this.expectedOrder[this.state.index];
+    const expected = this.expectedOrder[this.checkpointIndex];
     
     if (checkpointId !== expected) {
+      // Wrong sequence - trigger callback but don't advance state
       if (import.meta.env.DEV) {
-        // Checkpoint visited out of sequence (silenced to reduce spam)
+        console.log(`❌ Wrong checkpoint: got ${checkpointId}, expected ${expected}`);
       }
       this.onCheckpointVisit?.(checkpointId, false);
-      return false; // wrong order
+      return false;
     }
     
-    this.state.index++;
+    // Valid checkpoint - advance state
+    this.checkpointIndex++;
     this.lastCheckpoint = checkpointId;
+    
+    if (import.meta.env.DEV) {
+      console.log(`✓ Checkpoint ${checkpointId} completed (${this.checkpointIndex}/${this.expectedOrder.length})`);
+    }
+    
+    // Trigger callback BEFORE checking for lap completion
+    this.onCheckpointVisit?.(checkpointId, true);
     
     if (checkpointId === 'FINISH') {
       this.completeLap();
-      this.state.index = 0; // reset for next lap
-    } else {
-      if (import.meta.env.DEV) {
-      console.log(`✓ Checkpoint ${checkpointId} visited (${this.state.index - 1}/${this.expectedOrder.length - 1})`);
-    }
+      this.checkpointIndex = 0; // Reset for next lap
+      this.lastCheckpoint = null; // Clear last checkpoint for new lap
     }
     
-    this.onCheckpointVisit?.(checkpointId, true);
     return true;
   }
   
   private completeLap(): void {
+    if (!this.isActive) return; // Don't complete laps if timing isn't active
+    
     const lapTime = performance.now() - this.currentLapStartTime;
     this.totalLaps++;
     
@@ -66,62 +76,67 @@ export class LapController {
       this.bestLapTime = lapTime;
     }
     
-          if (import.meta.env.DEV) {
-        console.log(`🏁 Lap ${this.totalLaps} completed! Time: ${(lapTime / 1000).toFixed(2)}s`);
-      }
+    if (import.meta.env.DEV) {
+      console.log(`🏁 Lap ${this.totalLaps} completed! Time: ${(lapTime / 1000).toFixed(2)}s`);
+    }
     
     this.onLapComplete?.(lapTime, this.totalLaps);
     this.resetLap();
   }
   
   private resetLap(): void {
-    this.lastCheckpoint = null;
     if (this.isActive) {
       this.currentLapStartTime = performance.now();
     }
   }
   
   /**
-   * Get the current checkpoint progress
+   * Get the current checkpoint progress (optimized to reuse object)
    */
-  getProgress(): {
-    currentSequence: CheckpointId[];
-    lastCheckpoint: CheckpointId | null;
-    totalLaps: number;
-    bestLapTime: number;
-    currentLapTime: number;
-  } {
-    // Build current sequence from state index
-    const currentSequence = this.expectedOrder.slice(0, this.state.index);
+  getProgress(): typeof this.cachedProgress {
+    // Update cached progress object instead of creating new one
+    this.cachedProgress.currentSequence = this.expectedOrder.slice(0, this.checkpointIndex);
+    this.cachedProgress.lastCheckpoint = this.lastCheckpoint;
+    this.cachedProgress.totalLaps = this.totalLaps;
+    this.cachedProgress.bestLapTime = this.bestLapTime === Infinity ? 0 : this.bestLapTime;
+    this.cachedProgress.currentLapTime = this.isActive ? performance.now() - this.currentLapStartTime : 0;
     
-    return {
-      currentSequence,
-      lastCheckpoint: this.lastCheckpoint,
-      totalLaps: this.totalLaps,
-      bestLapTime: this.bestLapTime === Infinity ? 0 : this.bestLapTime,
-      currentLapTime: this.isActive ? performance.now() - this.currentLapStartTime : 0
-    };
+    return this.cachedProgress;
   }
   
   /**
-   * Reset all lap data (but don't start timing yet)
+   * Reset all lap data
    */
   reset(): void {
-    this.state.index = 0;
+    this.checkpointIndex = 0;
     this.lastCheckpoint = null;
     this.totalLaps = 0;
     this.bestLapTime = Infinity;
     this.isActive = false;
     this.currentLapStartTime = 0;
+    
+    // Reset cached progress
+    this.cachedProgress.currentSequence = [];
+    this.cachedProgress.lastCheckpoint = null;
+    this.cachedProgress.totalLaps = 0;
+    this.cachedProgress.bestLapTime = 0;
+    this.cachedProgress.currentLapTime = 0;
+    
+    if (import.meta.env.DEV) {
+      console.log('🔄 Lap controller reset');
+    }
   }
   
   /**
-   * Start the lap timing (called when round actually begins)
+   * Start the lap timing
    */
   start(): void {
     this.isActive = true;
     this.currentLapStartTime = performance.now();
-    console.log('🏁 Lap controller timing started');
+    
+    if (import.meta.env.DEV) {
+      console.log('🏁 Lap controller timing started');
+    }
   }
   
   /**
@@ -129,5 +144,9 @@ export class LapController {
    */
   stop(): void {
     this.isActive = false;
+    
+    if (import.meta.env.DEV) {
+      console.log('⏹️ Lap controller timing stopped');
+    }
   }
 } 

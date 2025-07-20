@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import * as RAPIER from '@dimforge/rapier3d-compat';
+import { CollisionClipper } from './CollisionClipper';
 
-export const SPAWN_POS = new THREE.Vector3(0, 2.0, 0); // 2m above ground to clear road surface
+export const SPAWN_POS = new THREE.Vector3(0, 4.0, 0); // 2m above ground to clear road surface
 
 export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World): Promise<void> {
   try {
@@ -21,7 +22,7 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
     
     // Scale and position the track
     track.scale.setScalar(2);          // enlarge to match capsule scale
-    track.position.y = 0;              // road sits on ground plane
+    track.position.y = 2;              // raised track for floating effect
     
     // Collect all meshes for collision (since GLB uses generic names like Object_XXX)
     const allMeshes: THREE.Mesh[] = [];
@@ -40,10 +41,12 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
         child.castShadow = true;
         child.receiveShadow = true;
         
-        // Add all meshes to collision (GLB uses generic Object_XXX names)
+        // Apply world matrix to get transformed geometry
         child.updateWorldMatrix(true, false);
         const geometry = child.geometry.clone();
         geometry.applyMatrix4(child.matrixWorld);
+        
+        // Always add geometry for clipping (will be processed later)
         collisionGeometries.push(geometry);
       }
     });
@@ -62,11 +65,28 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
       world.createCollider(collider, body);
     } else {
       if (import.meta.env.DEV) {
-      console.log(`🔗 Merging ${collisionGeometries.length} geometries for collision...`);
-    }
+        console.log(`🔗 Processing ${collisionGeometries.length} geometries for collision...`);
+        console.log(`🔧 Clipping geometry below Y=2.5 to prevent void-walking...`);
+      }
       
-      // Merge all geometries into a single collision mesh
-      const mergedGeometry = BufferGeometryUtils.mergeGeometries(collisionGeometries);
+      // OPTIMIZED COLLISION CLIPPING: Keep essential track surfaces (Y=2.5 to Y=20.0)
+      // Includes bridges/ramps, excludes ground void and high structures for performance
+      const clippedGeometries = CollisionClipper.clipCollisionGeometriesRange(collisionGeometries, 2.5, 20.0);
+      
+      if (clippedGeometries.length === 0) {
+        console.error('❌ No collision geometry remains after clipping!');
+        const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+        const collider = RAPIER.ColliderDesc.cuboid(50, 0.1, 50);
+        world.createCollider(collider, body);
+        return;
+      }
+      
+      if (import.meta.env.DEV) {
+        console.log(`🔗 Merging ${clippedGeometries.length} clipped geometries for collision...`);
+      }
+      
+      // Merge clipped geometries into a single collision mesh
+      const mergedGeometry = BufferGeometryUtils.mergeGeometries(clippedGeometries);
       
       if (mergedGeometry) {
         // Generate trimesh collider from merged geometry
@@ -86,31 +106,31 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
       console.log(`✅ Trimesh collider created with ${vertices.length / 3} vertices and ${indices.length / 3} triangles`);
     }
            
-           // Add invisible safety rail around track perimeter
-           const bb = new THREE.Box3().setFromBufferAttribute(positionAttribute as THREE.BufferAttribute);
-           const curbH = 0.1; // 10cm high
-           const curbPad = 0.5; // 50cm padding around track
-           
-           const curbBody = world.createRigidBody(
-             RAPIER.RigidBodyDesc.fixed()
-               .setTranslation(
-                 (bb.min.x + bb.max.x) / 2,
-                 bb.min.y + curbH / 2,
-                 (bb.min.z + bb.max.z) / 2
-               )
-           );
-           
-           world.createCollider(
-             RAPIER.ColliderDesc.cuboid(
-               (bb.max.x - bb.min.x + curbPad * 2) / 2,
-               curbH / 2,
-               (bb.max.z - bb.min.z + curbPad * 2) / 2
-             ),
-             curbBody
-           );
+           // DISABLED: Safety rail collision causes void-walking
+           // const bb = new THREE.Box3().setFromBufferAttribute(positionAttribute as THREE.BufferAttribute);
+           // const curbH = 0.1; // 10cm high
+           // const curbPad = 0.5; // 50cm padding around track
+           // 
+           // const curbBody = world.createRigidBody(
+           //   RAPIER.RigidBodyDesc.fixed()
+           //     .setTranslation(
+           //       (bb.min.x + bb.max.x) / 2,
+           //       bb.min.y + curbH / 2,
+           //       (bb.min.z + bb.max.z) / 2
+           //     )
+           // );
+           // 
+           // world.createCollider(
+           //   RAPIER.ColliderDesc.cuboid(
+           //     (bb.max.x - bb.min.x + curbPad * 2) / 2,
+           //     curbH / 2,
+           //     (bb.max.z - bb.min.z + curbPad * 2) / 2
+           //   ),
+           //   curbBody
+           // );
            
            if (import.meta.env.DEV) {
-      console.log(`🛡️  Safety rail added around track perimeter`);
+      console.log(`🚫 Safety rail DISABLED to prevent void-walking`);
     }
            
          } else {
@@ -118,7 +138,7 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
          }
         
                  // Clean up temporary geometries
-         collisionGeometries.forEach((geo: THREE.BufferGeometry) => geo.dispose());
+         clippedGeometries.forEach((geo: THREE.BufferGeometry) => geo.dispose());
         mergedGeometry.dispose();
       } else {
         console.error('❌ Failed to merge road geometries');
@@ -139,7 +159,7 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
     const trackGeometry = new THREE.BoxGeometry(50, 0.4, 10);
     const trackMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
     const track = new THREE.Mesh(trackGeometry, trackMaterial);
-    track.position.y = 0.4;
+    track.position.y = 2.4; // Raised to match main track
     scene.add(track);
 
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());

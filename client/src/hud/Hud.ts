@@ -9,7 +9,9 @@ export class LapHUD {
   private currentLapTimeElement!: HTMLSpanElement;
   private bestLapTimeElement!: HTMLSpanElement;
   private checkpointProgressElement!: HTMLSpanElement;
-  // Removed isDevelopment - no longer needed after respawn hint removal
+  
+  // Timeout tracking for proper cleanup
+  private activeTimeouts: Set<number> = new Set();
   
   constructor(lapController: LapController, parentContainer: HTMLDivElement) {
     this.lapController = lapController;
@@ -47,9 +49,9 @@ export class LapHUD {
     bestLapTimeDiv.innerHTML = 'Best: <span id="bestLapTime">--:--</span>';
     this.bestLapTimeElement = bestLapTimeDiv.querySelector('#bestLapTime')!;
     
-    // Checkpoint progress
+    // Checkpoint progress (FIXED to show completed/total)
     const checkpointProgressDiv = document.createElement('div');
-    checkpointProgressDiv.innerHTML = 'Progress: <span id="checkpointProgress">0/3</span>';
+    checkpointProgressDiv.innerHTML = 'Progress: <span id="checkpointProgress">0/4</span>';
     this.checkpointProgressElement = checkpointProgressDiv.querySelector('#checkpointProgress')!;
     
     // Add elements to container
@@ -58,12 +60,10 @@ export class LapHUD {
     this.container.appendChild(currentLapTimeDiv);
     this.container.appendChild(bestLapTimeDiv);
     this.container.appendChild(checkpointProgressDiv);
-    
-    // Respawn hint removed per user request
   }
   
   /**
-   * Update the HUD with current lap progress
+   * Update the HUD with current lap progress (FIXED)
    */
   update(): void {
     const progress = this.lapController.getProgress();
@@ -97,14 +97,16 @@ export class LapHUD {
       this.currentLapTimeElement.style.color = '#ffffff';
     }
     
-    // Update checkpoint progress
-    const progressText = `${progress.currentSequence.length}/3`;
+    // Update checkpoint progress (FIXED: show completed/total including finish)
+    const completedCount = progress.currentSequence.length;
+    const totalCount = 4; // A, B, C, FINISH
+    const progressText = `${completedCount}/${totalCount}`;
     this.checkpointProgressElement.textContent = progressText;
     
-    // Color code progress
-    if (progress.currentSequence.length === 3) {
-      this.checkpointProgressElement.style.color = '#00ff00'; // Green when all checkpoints hit
-    } else if (progress.currentSequence.length > 0) {
+    // Color code progress (FIXED logic)
+    if (completedCount === totalCount) {
+      this.checkpointProgressElement.style.color = '#00ff00'; // Green when lap complete
+    } else if (completedCount > 0) {
       this.checkpointProgressElement.style.color = '#ffff00'; // Yellow when some checkpoints hit
     } else {
       this.checkpointProgressElement.style.color = '#ffffff'; // White when no checkpoints hit
@@ -112,48 +114,71 @@ export class LapHUD {
   }
   
   /**
-   * Flash the HUD when a checkpoint is visited
+   * Flash the HUD when a checkpoint is visited (simplified with cleanup)
    */
-  flashCheckpoint(_checkpointId: CheckpointId, isValid: boolean): void {
+  flashCheckpoint(checkpointId: CheckpointId, isValid: boolean): void {
     const color = isValid ? '#00ff00' : '#ff0000';
     
     // Flash the checkpoint progress element
     const originalColor = this.checkpointProgressElement.style.color;
+    const originalWeight = this.checkpointProgressElement.style.fontWeight;
+    
     this.checkpointProgressElement.style.color = color;
     this.checkpointProgressElement.style.fontWeight = 'bold';
     
-    setTimeout(() => {
+    // Clear any existing timeout for this element
+    this.activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    this.activeTimeouts.clear();
+    
+    const timeoutId = window.setTimeout(() => {
       this.checkpointProgressElement.style.color = originalColor;
-      this.checkpointProgressElement.style.fontWeight = 'normal';
-    }, 500);
+      this.checkpointProgressElement.style.fontWeight = originalWeight;
+      this.activeTimeouts.delete(timeoutId);
+    }, 400);
+    this.activeTimeouts.add(timeoutId);
+    
+    if (import.meta.env.DEV) {
+      console.log(`🎯 LapHUD: Checkpoint ${checkpointId} ${isValid ? 'valid' : 'invalid'}`);
+    }
   }
   
   /**
-   * Flash the HUD when a lap is completed
+   * Flash when lap is completed (simplified)
    */
-  flashLapComplete(_lapTime: number): void {
-    // Flash the total laps element
-    const originalColor = this.totalLapsElement.style.color;
-    this.totalLapsElement.style.color = '#00ff00';
-    this.totalLapsElement.style.fontWeight = 'bold';
+  flashLapComplete(lapTime: number): void {
+    const timeSeconds = (lapTime / 1000).toFixed(2);
     
-    setTimeout(() => {
-      this.totalLapsElement.style.color = originalColor;
-      this.totalLapsElement.style.fontWeight = 'normal';
-    }, 1000);
+    // Clear any existing timeouts
+    this.activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    this.activeTimeouts.clear();
     
-    // Removed lap time notification to avoid duplicate with GameHUD
-    // this.showLapTimeNotification(lapTime);
+    // Flash the best lap time element green
+    const originalColor = this.bestLapTimeElement.style.color;
+    this.bestLapTimeElement.style.color = '#00ff00';
+    this.bestLapTimeElement.style.fontWeight = 'bold';
+    
+    const timeoutId = window.setTimeout(() => {
+      this.bestLapTimeElement.style.color = originalColor;
+      this.bestLapTimeElement.style.fontWeight = 'normal';
+      this.activeTimeouts.delete(timeoutId);
+    }, 800);
+    this.activeTimeouts.add(timeoutId);
+    
+    if (import.meta.env.DEV) {
+      console.log(`🏁 LapHUD: Lap completed in ${timeSeconds}s`);
+    }
   }
   
-  // Removed to avoid duplicate lap complete notifications with GameHUD
-  // private showLapTimeNotification(lapTime: number): void { ... }
-  
   /**
-   * Clean up HUD resources
+   * Clean up resources
    */
-  dispose(): void {
-    if (this.container.parentNode) {
+  destroy(): void {
+    // Clear all active timeouts
+    this.activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    this.activeTimeouts.clear();
+    
+    // Remove from DOM if still attached
+    if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }
   }

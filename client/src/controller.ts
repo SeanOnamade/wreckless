@@ -147,7 +147,7 @@ export class FirstPersonController {
     this.boundSwingStateHandler = (event: Event) => {
       const customEvent = event as CustomEvent;
       this.isSwinging = customEvent.detail.isSwinging;
-      console.log(`🎯 CONTROLLER: Swing state changed - isSwinging: ${this.isSwinging}`);
+      // Debug: Swing state changed (silent for performance)
     };
     this.boundSwingReleaseHandler = (event: Event) => {
       const customEvent = event as CustomEvent;
@@ -999,6 +999,7 @@ export class FirstPersonController {
   
   /**
    * Check multiple killzone conditions for robust detection
+   * Updated thresholds for raised track (track now at Y=2+)
    */
   private checkKillzoneConditions(translation: RAPIER.Vector3): boolean {
     // Condition 1: Immediate respawn if fallen very far
@@ -1006,20 +1007,20 @@ export class FirstPersonController {
       return true;
     }
     
-    // Condition 2: FIXED - Direct void detection (below reasonable track level)
-    // If Y is below 1.5 and we've been there for more than 1 second, respawn
-    if (translation.y < 1.5 && this.timeInVoid > 1.0) {
+    // Condition 2: Void detection for raised track (below safe track level)
+    // Track is now at Y=2+, so anything below Y=0 for >1s is void
+    if (translation.y < 0.0 && this.timeInVoid > 1.0) {
       return true;
     }
     
-    // Condition 3: Emergency respawn if very low regardless of time
-    if (translation.y < 0.8) {
+    // Condition 3: Emergency respawn if fallen well below track level
+    if (translation.y < -2.0) {
       return true;
     }
     
-    // Condition 4: Distance-based check (far from track center)
+    // Condition 4: Distance-based check (far from track center) - adjusted for raised track
     const distanceFromCenter = Math.sqrt(translation.x * translation.x + translation.z * translation.z);
-    if (distanceFromCenter > 200 && translation.y < 2.0) {
+    if (distanceFromCenter > 200 && translation.y < 1.0) {
       return true;
     }
     
@@ -1028,20 +1029,21 @@ export class FirstPersonController {
   
   /**
    * Update killzone tracking timers
+   * Updated for raised track (track now at Y=2+)
    */
   private updateKillzoneTracking(deltaTime: number): void {
     const translation = this.playerBody.translation();
     
-    // FIXED: Accumulate void time if Y is suspiciously low, regardless of grounded state
-    // This handles cases where physics detects "grounded" in the void
-    if (translation.y < 1.8 || !this.isGrounded) {
+    // Accumulate void time if Y is below safe level or not grounded
+    // Track is now at Y=2+, so Y < 0.5 is suspicious for void detection
+    if (translation.y < 0.5 || !this.isGrounded) {
       this.timeInVoid += deltaTime;
     } else {
       this.timeInVoid = 0;
     }
     
-    // Debug logging (very occasional)
-    if (import.meta.env.DEV && this.timeInVoid > 0.5 && Math.random() < 0.02) {
+    // Debug logging (extremely rare for performance)
+    if (import.meta.env.DEV && this.timeInVoid > 2.0 && Math.random() < 0.001) {
       console.log(`🕳️ Void tracking - Y: ${translation.y.toFixed(2)}, Time: ${this.timeInVoid.toFixed(1)}s, Grounded: ${this.isGrounded}`);
     }
   }

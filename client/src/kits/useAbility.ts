@@ -47,6 +47,8 @@ export class AbilityManager {
   private context: AbilityContext | null = null;
   private cooldownState: AbilityCooldownState;
   private keyDownHandler: (event: KeyboardEvent) => void;
+  private keyUpHandler: (event: KeyboardEvent) => void; // Store bound reference
+  private classChangeHandler: (event: CustomEvent) => void; // Store bound reference
   private updateInterval: number | null = null;
   private animationFrame: number | null = null;
   private pressedKeys: Set<string> = new Set(); // Track currently pressed keys
@@ -61,6 +63,8 @@ export class AbilityManager {
     };
 
     this.keyDownHandler = this.handleKeyDown.bind(this);
+    this.keyUpHandler = this.handleKeyUp.bind(this); // Store bound reference
+    this.classChangeHandler = this.handleClassChange.bind(this); // Store bound reference
     this.setupEventListeners();
   }
 
@@ -78,8 +82,8 @@ export class AbilityManager {
   destroy(): void {
     try {
       window.removeEventListener('keydown', this.keyDownHandler);
-      window.removeEventListener('keyup', this.handleKeyUp.bind(this));
-      window.removeEventListener('playerClassChanged', this.handleClassChange as EventListener);
+      window.removeEventListener('keyup', this.keyUpHandler); // Use stored reference
+      window.removeEventListener('playerClassChanged', this.classChangeHandler as EventListener); // Use stored reference
       
       if (this.updateInterval) {
         clearInterval(this.updateInterval);
@@ -187,7 +191,7 @@ export class AbilityManager {
         }
       }));
       
-      console.log(`✨ ${kit.className.toUpperCase()} ability activated`);
+      // Debug: Ability activated (silent for performance)
       return true;
       
     } catch (error) {
@@ -247,8 +251,8 @@ export class AbilityManager {
    */
   private setupEventListeners(): void {
     window.addEventListener('keydown', this.keyDownHandler);
-    window.addEventListener('keyup', this.handleKeyUp.bind(this));
-    window.addEventListener('playerClassChanged', this.handleClassChange as EventListener);
+    window.addEventListener('keyup', this.keyUpHandler);
+    window.addEventListener('playerClassChanged', this.classChangeHandler as EventListener);
   }
 
   /**

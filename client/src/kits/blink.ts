@@ -49,9 +49,9 @@ export function executeBlink(context: BlinkAbilityContext): void {
   const forwardImpulseStrength = 3.0; // Forward momentum after blink
   
   // Killzone boundaries (from controller logic)
-  const CRITICAL_KILLZONE = 0.8; // Immediate respawn
-  const VOID_THRESHOLD = 1.5; // Void detection threshold
-  const SAFE_MIN_HEIGHT = 2.0; // Minimum safe height
+  const CRITICAL_KILLZONE = -2.0; // Immediate respawn (updated for raised track)
+const VOID_THRESHOLD = 0.0; // Void detection threshold (updated for raised track) 
+const SAFE_MIN_HEIGHT = 2.5; // Minimum safe height (updated for raised track)
   
   // Apply vertical boost if Space is held
   const blinkDirection = direction.clone();

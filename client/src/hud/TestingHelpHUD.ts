@@ -1,3 +1,5 @@
+import type { HUDToggleSystem } from './HUDToggleSystem';
+
 /**
  * Testing Help HUD - On-screen overlay for V key testing commands
  * Positioned on far left, center height, toggleable with V key
@@ -6,10 +8,18 @@
 export class TestingHelpHUD {
   private container!: HTMLDivElement;
   private isVisible = false;
+  private hudToggleSystem?: HUDToggleSystem;
   
-  constructor() {
+  constructor(hudToggleSystem?: HUDToggleSystem) {
+    this.hudToggleSystem = hudToggleSystem;
     this.createHUD();
     this.setupEventListeners();
+    
+    // Register with HUD toggle system
+    if (this.hudToggleSystem) {
+      this.hudToggleSystem.registerDebugElement(this.container);
+    }
+    
     console.log('🧪 Testing Help HUD initialized (press V to toggle)');
   }
 
@@ -332,6 +342,10 @@ export class TestingHelpHUD {
    * Cleanup when destroying
    */
   destroy(): void {
+    if (this.hudToggleSystem && this.container) {
+      this.hudToggleSystem.unregisterDebugElement(this.container);
+    }
+    
     if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }
