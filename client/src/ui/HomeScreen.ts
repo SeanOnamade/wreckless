@@ -61,6 +61,34 @@ export class HomeScreen {
   }
   
   /**
+   * Get character animations enabled preference from localStorage
+   */
+  private getCharacterAnimationsEnabled(): boolean {
+    const stored = localStorage.getItem('wreckless-character-animations');
+    return stored !== null ? JSON.parse(stored) : true; // Default to enabled
+  }
+  
+  /**
+   * Set character animations enabled preference in localStorage
+   */
+  private setCharacterAnimationsEnabled(enabled: boolean): void {
+    localStorage.setItem('wreckless-character-animations', JSON.stringify(enabled));
+    
+    // Dispatch event so other parts of the game can react
+    window.dispatchEvent(new CustomEvent('characterAnimationsSettingChanged', {
+      detail: { enabled }
+    }));
+  }
+
+  /**
+   * Public method to get current character animations setting
+   */
+  public static getCharacterAnimationsEnabled(): boolean {
+    const stored = localStorage.getItem('wreckless-character-animations');
+    return stored !== null ? JSON.parse(stored) : true; // Default to enabled
+  }
+  
+  /**
    * Create the homescreen UI
    */
   private createUI(): HTMLDivElement {
@@ -143,10 +171,73 @@ export class HomeScreen {
       this.handleMultiplayerClick();
     });
     
+    // Settings container
+    const settingsContainer = document.createElement('div');
+    settingsContainer.style.cssText = `
+      margin-top: 25px;
+      padding: 15px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.2);
+    `;
+    
+    // Settings title
+    const settingsTitle = document.createElement('div');
+    settingsTitle.style.cssText = `
+      margin-bottom: 12px;
+      color: #00E6FF;
+      font-weight: bold;
+      font-size: 14px;
+    `;
+    settingsTitle.textContent = 'SETTINGS';
+    
+    // Character animations checkbox
+    const animCheckboxContainer = document.createElement('div');
+    animCheckboxContainer.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    `;
+    
+    const animCheckbox = document.createElement('input');
+    animCheckbox.type = 'checkbox';
+    animCheckbox.id = 'character-animations-enabled';
+    animCheckbox.checked = this.getCharacterAnimationsEnabled();
+    animCheckbox.style.cssText = `
+      width: 16px;
+      height: 16px;
+      accent-color: #00E6FF;
+      cursor: pointer;
+    `;
+    
+    const animLabel = document.createElement('label');
+    animLabel.htmlFor = 'character-animations-enabled';
+    animLabel.style.cssText = `
+      color: #cccccc;
+      font-size: 14px;
+      cursor: pointer;
+      user-select: none;
+    `;
+    animLabel.textContent = '🎭 Enable Character Animations';
+    
+    // Add event listener for checkbox
+    animCheckbox.addEventListener('change', (e) => {
+      const enabled = (e.target as HTMLInputElement).checked;
+      this.setCharacterAnimationsEnabled(enabled);
+      console.log(`🎭 Character animations ${enabled ? 'ENABLED' : 'DISABLED'}`);
+    });
+    
+    animCheckboxContainer.appendChild(animCheckbox);
+    animCheckboxContainer.appendChild(animLabel);
+    
+    settingsContainer.appendChild(settingsTitle);
+    settingsContainer.appendChild(animCheckboxContainer);
+    
     // Controls info
     const controlsInfo = document.createElement('div');
     controlsInfo.style.cssText = `
-      margin-top: 30px;
+      margin-top: 20px;
       padding-top: 20px;
       border-top: 1px solid rgba(255, 255, 255, 0.2);
       font-size: 14px;
@@ -189,6 +280,7 @@ export class HomeScreen {
     content.appendChild(title);
     content.appendChild(subtitle);
     content.appendChild(buttonContainer);
+    content.appendChild(settingsContainer);
     content.appendChild(controlsInfo);
     content.appendChild(versionInfo);
     

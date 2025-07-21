@@ -98,8 +98,6 @@ export class CheckpointHitEffect implements CameraEffect {
     if (this.flashOverlay) {
       this.flashOverlay.style.opacity = '0.8';
     }
-    
-    console.log(`📹 CheckpointHit: ${checkpointId} triggered (speed=${playerSpeed.toFixed(1)} m/s, intensity=${finalShakeIntensity.toFixed(3)})`);
   }
 
   update(camera: THREE.Camera, deltaTime: number): void {

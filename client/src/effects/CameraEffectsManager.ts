@@ -52,7 +52,6 @@ export class CameraEffectsManager {
    */
   setCamera(camera: THREE.Camera): void {
     this.camera = camera;
-    console.log('📹 CameraEffectsManager: Camera reference set');
   }
 
   /**
@@ -69,8 +68,6 @@ export class CameraEffectsManager {
     if (effect.initialize) {
       effect.initialize();
     }
-    
-    console.log(`📹 CameraEffect registered: ${effect.name}`);
   }
 
   /**

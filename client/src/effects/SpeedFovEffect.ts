@@ -38,7 +38,6 @@ export class SpeedFovEffect implements CameraEffect {
   initialize(): void {
     // Listen for speed updates from the controller
     // We'll set up the speed access in the integration step
-    console.log('📹 SpeedFovEffect: Initialized with FOV range', this.baseFov, '→', this.maxFov);
   }
 
   /**

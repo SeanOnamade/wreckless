@@ -95,7 +95,7 @@ export function blastJump(
   
   activeProjectiles.add(projectile);
   
-  console.log(`🚀 TF2 Rocket launched from head position: ${muzzle.x.toFixed(1)}, ${muzzle.y.toFixed(1)}, ${muzzle.z.toFixed(1)}`);
+  // Rocket launched
 }
 
 /**
@@ -124,7 +124,6 @@ export function updateBlast(): void {
     // Check fuse timeout (1.2s)
     const age = (now - projectile.spawnTime) / 1000;
     if (age >= 1.2) {
-      console.log(`🧨 TF2 Rocket fuse expired after ${age.toFixed(2)}s`);
       explodeProjectile(projectile);
       projectilesToRemove.push(projectile);
       continue;
@@ -172,7 +171,6 @@ export function updateBlast(): void {
     }
     
     if (shouldExplode) {
-      console.log(`💥 TF2 Rocket collision detected: ${explodeReason}`);
       explodeProjectile(projectile);
       projectilesToRemove.push(projectile);
       continue;
@@ -201,7 +199,7 @@ function explodeProjectile(projectile: ActiveProjectile): void {
   const explosionCenter = projectile.body.translation();
   const explosionPos = new THREE.Vector3(explosionCenter.x, explosionCenter.y, explosionCenter.z);
   
-  console.log(`💥 TF2 EXPLOSION at position: ${explosionPos.x.toFixed(1)}, ${explosionPos.y.toFixed(1)}, ${explosionPos.z.toFixed(1)}`);
+  // Explosion triggered
   
   // Find all bodies within blast radius
   const affectedBodies = findBodiesInExplosionRadius(projectile.world, explosionPos, ROCKET.radius);
@@ -259,14 +257,6 @@ function explodeProjectile(projectile: ActiveProjectile): void {
     
     if (isLocalPlayer) {
       // KINEMATIC PLAYER - Send event to controller
-      console.log(`🚀 TF2 KINEMATIC PLAYER: Sending impulse event`);
-      console.log('🚀', { 
-        pre: preVel, 
-        impulseVec: { x: impulseVec.x, y: impulseVec.y, z: impulseVec.z },
-        falloff: falloff,
-        grounded: grounded,
-        airborneBonus: !grounded ? ROCKET.airborneBonus : 1
-      });
       
       window.dispatchEvent(new CustomEvent('blastSelfImpulse', {
         detail: { 
@@ -285,18 +275,13 @@ function explodeProjectile(projectile: ActiveProjectile): void {
         z: impulseVec.z
       }, true);
       
-      const postVel = body.linvel();
-      console.log('🚀', { 
-        pre: preVel, 
-        post: { x: postVel.x, y: postVel.y, z: postVel.z }, 
-        impulseVec: { x: impulseVec.x, y: impulseVec.y, z: impulseVec.z }
-      });
+      // Impulse applied to dynamic body
     }
     
     affectedCount++;
   }
   
-  console.log(`💥 TF2 Rocket explosion affected ${affectedCount} bodies within ${ROCKET.radius}m radius`);
+  // Explosion complete
   
   // Safety check - if player falls into kill zone, respawn
   setTimeout(() => {
@@ -353,11 +338,9 @@ function findBodiesInExplosionRadius(
     
     if (distance <= radius) {
       bodiesInRadius.push({ body, distance });
-      console.log(`🎯 Found body in explosion radius: ${body.bodyType()}, distance: ${distance.toFixed(2)}m`);
     }
   });
   
-  console.log(`💥 Explosion found ${bodiesInRadius.length} bodies within ${radius}m radius`);
   return bodiesInRadius;
 }
 
@@ -387,8 +370,6 @@ function cleanupProjectile(projectile: ActiveProjectile): void {
   
   // Remove physics body
   projectile.world.removeRigidBody(projectile.body);
-  
-  console.log('🧹 Cleaned up TF2 rocket projectile');
 }
 
 /**
@@ -407,7 +388,6 @@ export function resetBlastState(): void {
     cleanupProjectile(projectile);
   }
   activeProjectiles.clear();
-  console.log('🧹 Reset TF2 blast state - cleaned up all projectiles');
 }
 
 /**

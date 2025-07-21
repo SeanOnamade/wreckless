@@ -54,7 +54,6 @@ export class BoostShakeEffect implements CameraEffect {
     };
     
     window.addEventListener('speedBoostGranted', this.eventListener);
-    console.log('📹 BoostShakeEffect: Listening for speedBoostGranted events');
   }
 
   /**
@@ -73,8 +72,6 @@ export class BoostShakeEffect implements CameraEffect {
     this.fovBurstEndTime = now + this.fovBurstDuration;
     this.fovBurstTime = 0;
     this.fovCaptured = false; // Reset FOV capture flag
-    
-    console.log(`📹 BoostShake: Wind effect triggered! Speed ${boostData.fromVelocity}→${boostData.toVelocity} m/s`);
   }
 
   update(camera: THREE.Camera, deltaTime: number): void {

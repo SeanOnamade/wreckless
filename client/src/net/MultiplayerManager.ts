@@ -6,6 +6,10 @@ export class MultiplayerManager {
   private otherPlayers: Map<string, THREE.Mesh> = new Map();
   private mySocketId: string | null = null;
   private updateInterval: number | null = null;
+  private notificationTimeouts: Set<number> = new Set();
+  private remoteAbilityHandler?: (event: Event) => void;
+  private playerColorCache: Map<string, number> = new Map();
+  private isDestroyed = false;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -19,12 +23,14 @@ export class MultiplayerManager {
   private startUpdateLoop(): void {
     // Update other players at 20Hz (lighter than server rate)
     this.updateInterval = setInterval(() => {
-      this.updateOtherPlayers();
+      if (!this.isDestroyed) {
+        this.updateOtherPlayers();
+      }
     }, 1000 / 20);
   }
 
   private updateOtherPlayers(): void {
-    if (!Network.isNetworkingEnabled()) return;
+    if (this.isDestroyed || !Network.isNetworkingEnabled()) return;
 
     const debugInfo = Network.getDebugInfo() as any;
     if (!debugInfo.lastServerState?.players) return;
@@ -84,8 +90,11 @@ export class MultiplayerManager {
     // Remove disconnected players
     for (const [playerId, mesh] of this.otherPlayers.entries()) {
       if (!serverPlayers[playerId]) {
+        // Properly dispose of player mesh resources
+        this.disposePlayerMesh(mesh);
         this.scene.remove(mesh);
         this.otherPlayers.delete(playerId);
+        this.playerColorCache.delete(playerId); // Clear color cache
         console.log('🚪 Player disconnected:', playerId);
         this.showDisconnectNotification(playerId);
       }
@@ -137,6 +146,11 @@ export class MultiplayerManager {
   }
 
   private getPlayerColor(playerId: string): number {
+    // Check cache first for performance
+    if (this.playerColorCache.has(playerId)) {
+      return this.playerColorCache.get(playerId)!;
+    }
+    
     // Generate consistent color based on player ID
     let hash = 0;
     for (let i = 0; i < playerId.length; i++) {
@@ -145,7 +159,50 @@ export class MultiplayerManager {
     
     // Convert to bright, saturated color
     const hue = Math.abs(hash) % 360;
-    return new THREE.Color().setHSL(hue / 360, 0.8, 0.6).getHex();
+    const color = new THREE.Color().setHSL(hue / 360, 0.8, 0.6).getHex();
+    
+    // Cache for future use
+    this.playerColorCache.set(playerId, color);
+    return color;
+  }
+
+  private disposePlayerMesh(mesh: THREE.Mesh): void {
+    // Dispose of player mesh geometry and materials
+    if (mesh.geometry) {
+      mesh.geometry.dispose();
+    }
+    
+    if (mesh.material) {
+      if (Array.isArray(mesh.material)) {
+        mesh.material.forEach(material => material.dispose());
+      } else {
+        mesh.material.dispose();
+      }
+    }
+    
+    // Dispose of nametag resources
+    mesh.children.forEach(child => {
+      if (child instanceof THREE.Mesh) {
+        if (child.geometry) {
+          child.geometry.dispose();
+        }
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(material => {
+              if (material.map) {
+                material.map.dispose();
+              }
+              material.dispose();
+            });
+          } else {
+            if (child.material.map) {
+              child.material.map.dispose();
+            }
+            child.material.dispose();
+          }
+        }
+      }
+    });
   }
 
   private showJoinNotification(playerId: string, color: number): void {
@@ -202,15 +259,21 @@ export class MultiplayerManager {
     
     document.body.appendChild(notification);
     
-    // Auto-remove after 3 seconds
-    setTimeout(() => {
+    // Auto-remove after 3 seconds with timeout tracking
+    const fadeTimeout = setTimeout(() => {
+      if (this.isDestroyed) return;
+      
       notification.style.animation = 'slideOut 0.3s ease-in';
-      setTimeout(() => {
+      const removeTimeout = setTimeout(() => {
         if (notification.parentNode) {
           notification.parentNode.removeChild(notification);
         }
+        this.notificationTimeouts.delete(removeTimeout);
       }, 300);
-         }, 3000);
+      this.notificationTimeouts.add(removeTimeout);
+      this.notificationTimeouts.delete(fadeTimeout);
+    }, 3000);
+    this.notificationTimeouts.add(fadeTimeout);
    }
 
   private showDisconnectNotification(playerId: string): void {
@@ -249,28 +312,60 @@ export class MultiplayerManager {
     
     document.body.appendChild(notification);
     
-    // Auto-remove after 3 seconds
-    setTimeout(() => {
+    // Auto-remove after 3 seconds with timeout tracking
+    const fadeTimeout = setTimeout(() => {
+      if (this.isDestroyed) return;
+      
       notification.style.animation = 'slideOut 0.3s ease-in';
-      setTimeout(() => {
+      const removeTimeout = setTimeout(() => {
         if (notification.parentNode) {
           notification.parentNode.removeChild(notification);
         }
+        this.notificationTimeouts.delete(removeTimeout);
       }, 300);
+      this.notificationTimeouts.add(removeTimeout);
+      this.notificationTimeouts.delete(fadeTimeout);
     }, 3000);
+    this.notificationTimeouts.add(fadeTimeout);
   }
 
   public destroy(): void {
+    // Mark as destroyed to prevent further operations
+    this.isDestroyed = true;
+    
+    // Clear update interval
     if (this.updateInterval) {
       clearInterval(this.updateInterval);
       this.updateInterval = null;
     }
 
-    // Remove all player meshes
+    // Clear all notification timeouts
+    this.notificationTimeouts.forEach(timeoutId => {
+      clearTimeout(timeoutId);
+    });
+    this.notificationTimeouts.clear();
+
+    // Remove event listener
+    if (this.remoteAbilityHandler) {
+      window.removeEventListener('remoteAbilityActivation', this.remoteAbilityHandler);
+      this.remoteAbilityHandler = undefined;
+    }
+
+    // Properly dispose of all player meshes
     for (const [_, mesh] of this.otherPlayers.entries()) {
+      this.disposePlayerMesh(mesh);
       this.scene.remove(mesh);
     }
     this.otherPlayers.clear();
+    this.playerColorCache.clear();
+
+    // Clean up any remaining notification elements
+    const notifications = document.querySelectorAll('[data-multiplayer-notification]');
+    notifications.forEach(notification => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    });
   }
 
   private updatePlayerAbilityVisuals(mesh: THREE.Mesh, player: any): void {
@@ -319,9 +414,13 @@ export class MultiplayerManager {
 
   private setupRemoteAbilityHandling(): void {
     // For now, just log ability events - positions will be synced through server state
-    window.addEventListener('remoteAbilityActivation', (event: Event) => {
+    this.remoteAbilityHandler = (event: Event) => {
+      if (this.isDestroyed) return; // Guard against events after destruction
+      
       const abilityEvent = (event as CustomEvent).detail;
       console.log(`🎮 Remote ability: ${abilityEvent.abilityType} from ${abilityEvent.fromPlayerId} - position will be synced via server`);
-    });
+    };
+    
+    window.addEventListener('remoteAbilityActivation', this.remoteAbilityHandler);
   }
 } 

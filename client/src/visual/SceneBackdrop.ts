@@ -15,12 +15,9 @@ export class SceneBackdrop {
 
   initialize(): void {
     this.createGradientSky();
-    console.log('🌌 SceneBackdrop: Initialized with gradient sky');
   }
 
   private createGradientSky(): void {
-    console.log('🌌 Creating sky gradient...');
-    
     // Create large inverted sphere for sky backdrop (massive size to prevent clipping)
     const skyGeometry = new THREE.SphereGeometry(2000, 32, 32);
     
@@ -65,8 +62,6 @@ export class SceneBackdrop {
     this.skyGradient = new THREE.Mesh(skyGeometry, skyMaterial);
     this.skyGradient.renderOrder = -1000; // Render behind everything (lower = earlier)
     this.scene.add(this.skyGradient);
-    
-    console.log('🌌 Natural sky gradient: deep blue overhead to light horizon');
   }
 
   /**

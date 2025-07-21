@@ -51,6 +51,8 @@ import { TrailSystem } from './visual/TrailSystem';
 // Boost Overlay System
 import { BoostOverlay } from './visual/BoostOverlay';
 
+
+
 // HUD Toggle System
 import { HUDToggleSystem } from './hud/HUDToggleSystem';
 
@@ -61,11 +63,16 @@ import { ClassSelection } from './ui/ClassSelection';
 import { LobbyScreen } from './ui/LobbyScreen';
 import { GameMenu } from './menu';
 
+// Character Animation System
+import { AutoCharacterLoader } from './player/AutoCharacterLoader';
+
 console.info("🗄️ Legacy swing archived:", ["grappleLegacy_v2.ts"]);
 
 // Scene setup
 const scene = new THREE.Scene();
 // Background and fog now handled by SceneBackdrop system
+
+
 
 // Initialize scene backdrop
 const sceneBackdrop = new SceneBackdrop(scene);
@@ -79,6 +86,8 @@ const camera = new THREE.PerspectiveCamera(
   5000  // Increased from 1000 to prevent sky sphere clipping
 );
 camera.position.set(0, 2, 5);
+
+
 
 // Initialize camera effects system
 CameraEffects.setCamera(camera);
@@ -98,8 +107,6 @@ CameraEffects.register(blastShakeEffect);
 CameraEffects.register(blinkZoomEffect);
 CameraEffects.register(windStreakEffect);
 CameraEffects.register(checkpointHitEffect);
-
-console.log('📹 Camera effects system initialized with 7 effects');
 
 // Initialize ability visual effects
 const blinkScreenFlash = new BlinkScreenFlash();
@@ -176,9 +183,7 @@ function addInvisibleSkyPlane(_scene: THREE.Scene, world?: RAPIER.World): void {
     );
     const skyCollider = RAPIER.ColliderDesc.cuboid(skySize / 2, 0.1, skySize / 2);
     world.createCollider(skyCollider, skyBody);
-    
-    console.log(`🌌 Invisible sky plane added at Y=${skyY} (${skySize}x${skySize}) for grapple targeting`);
-    console.log(`🎯 Sky plane: Optimized size (${skySize}x${skySize}) for performance + reliable grapple targeting`);
+
   }
 }
 
@@ -246,6 +251,8 @@ const abilityManager = new AbilityManager();
 
 // Initialize movement trail
 let movementTrail: TrailSystem | null = null;
+
+
 
 // Initialize screen flash system
 const screenFlash = new ScreenFlash();
@@ -340,7 +347,7 @@ window.addEventListener('resetAllDummies', () => {
     });
   }
   
-  console.log('🔄 All dummies reset to full health');
+  // All dummies reset
 });
 
 // Initialize physics and checkpoint system
@@ -363,6 +370,9 @@ let _roundEndUI: RoundEndUI | null = null;
 let homeScreen: HomeScreen | null = null;
 let classSelection: ClassSelection | null = null;
 let lobbyScreen: LobbyScreen | null = null;
+
+// Character Animation System
+let autoCharacterLoader: AutoCharacterLoader | null = null;
 
 initPhysics(scene, camera).then((world) => {
   physicsWorld = world;
@@ -400,6 +410,190 @@ initPhysics(scene, camera).then((world) => {
   
   // Initialize ability HUD
   new AbilityHUD(abilityManager); // Self-initializing UI component
+  
+  // Initialize automatic character loader (main system)
+  autoCharacterLoader = new AutoCharacterLoader(scene, camera as THREE.PerspectiveCamera);
+  
+  // Preload all character animations on startup for instant access
+  console.log('🎭 Starting animation preload for all characters...');
+  autoCharacterLoader.preloadAllCharacterAnimations();
+  
+  // Legacy systems DISABLED to prevent conflicts
+  // characterSystem = new CharacterSystem(scene, camera as THREE.PerspectiveCamera);
+  // simpleTest = new SimpleCharacterTest(scene, camera as THREE.PerspectiveCamera);
+  console.log('🚫 Legacy character systems disabled - only auto-loader active');
+  
+  // Connect auto-loader to class selection events  
+  window.addEventListener('characterClassSelected', async (event: Event) => {
+    const customEvent = event as CustomEvent<{ playerClass: string }>;
+    const { playerClass } = customEvent.detail;
+    
+    if (autoCharacterLoader) {
+      console.log(`🎭 Auto-loading character for: ${playerClass} (legacy system disabled)`);
+      
+      // Legacy systems already disabled at initialization
+      
+      await autoCharacterLoader.loadCharacterForClass(playerClass);
+    }
+  });
+
+  // Track animation loading state for race start blocking
+  let animationsLoaded = false;
+  let pendingRaceStart: (() => void) | null = null;
+
+  // Listen for animation loading progress
+  window.addEventListener('animationLoadingProgress', (event: Event) => {
+    const customEvent = event as CustomEvent<{ loaded: number, total: number, isComplete: boolean }>;
+    const { isComplete } = customEvent.detail;
+    
+    animationsLoaded = isComplete;
+    
+    if (isComplete && pendingRaceStart) {
+      console.log('🎭 Animations loaded! Starting pending race...');
+      pendingRaceStart();
+      pendingRaceStart = null;
+    }
+  });
+
+  // Block race start until animations are loaded (unless animations are disabled)
+  window.addEventListener('raceStartRequest', (event: Event) => {
+    const customEvent = event as CustomEvent<{ callback: () => void }>;
+    const { callback } = customEvent.detail;
+    
+    // Check if character animations are disabled - if so, start immediately
+    const animationsEnabled = autoCharacterLoader?.isCharacterSystemActive() ?? true;
+    
+    if (animationsLoaded || !animationsEnabled) {
+      console.log(animationsEnabled ? 
+        '🎭 Animations already loaded - starting race immediately' : 
+        '🚫 Animations disabled - starting race immediately');
+      callback();
+    } else {
+      console.log('🎭 Animations still loading - race will start when complete');
+      pendingRaceStart = callback;
+    }
+  });
+
+  // Preload animations when class is selected (even before race starts)
+  window.addEventListener('characterClassSelected', async (event: Event) => {
+    const customEvent = event as CustomEvent<{ playerClass: string }>;
+    const { playerClass } = customEvent.detail;
+    
+    // Check if animations are enabled
+    const animationsEnabled = autoCharacterLoader?.isCharacterSystemActive() ?? true;
+    
+    if (!animationsEnabled) {
+      // If animations are disabled, immediately mark as loaded
+      animationsLoaded = true;
+      console.log(`🚫 Animations disabled - skipping preload for ${playerClass}`);
+    } else {
+      // Reset animation loaded state when new class is selected
+      animationsLoaded = false;
+      
+      if (autoCharacterLoader) {
+        // Start preloading animations immediately when class is selected
+        autoCharacterLoader.preloadAnimationsForClass(playerClass);
+        console.log(`📦 Started preloading animations for ${playerClass} in background`);
+      }
+    }
+  });
+  
+  // Auto-character debug commands
+  (window as any).__autoChar = {
+    status: () => {
+      const status = autoCharacterLoader?.getStatus();
+      const loadingComplete = autoCharacterLoader?.isLoadingComplete() || false;
+      console.log('🎭 Auto Character Status:', status);
+      console.log(`🎭 Animations Loaded: ${animationsLoaded ? 'Yes' : 'No'}`);
+      console.log(`🎭 Loading Complete: ${loadingComplete ? 'Yes' : 'No'}`);
+      return { ...status, animationsLoaded, loadingComplete };
+    },
+    load: (className: string) => autoCharacterLoader?.loadCharacterForClass(className),
+    testVelocity: () => {
+      console.log('🧪 Animation velocity thresholds:');
+      console.log('  Running: speed > 1 (total velocity magnitude)');
+      console.log('  Jumping: velocity.y > 1 (upward velocity)'); 
+      console.log('  Falling: velocity.y < -1 (downward velocity)');
+      console.log('  Idle: everything else');
+      console.log('💡 Try running around, jumping, or falling to see animations change!');
+      console.log('🎯 Animation logs will show EVERY frame when character is loaded');
+    },
+    forceAnim: (animName: string) => {
+      if (autoCharacterLoader) {
+        const character = (autoCharacterLoader as any).character;
+        if (character && character.animations.has(animName)) {
+          const action = character.animations.get(animName);
+          if (character.currentAnimation) character.currentAnimation.fadeOut(0.2);
+          character.currentAnimation = action;
+          action.reset().fadeIn(0.2).play();
+          console.log(`🎭 Forced animation: ${animName}`);
+                 } else {
+           console.log(`🚫 Animation ${animName} not found or no character loaded`);
+         }
+       }
+         },
+    toggleDebug: () => {
+      if (autoCharacterLoader) {
+        (autoCharacterLoader as any).debugMode = !(autoCharacterLoader as any).debugMode;
+        const state = (autoCharacterLoader as any).debugMode ? 'ENABLED' : 'DISABLED';
+        console.log(`🐛 Animation debug logging: ${state}`);
+      }
+    },
+    makeVisible: () => {
+      if (autoCharacterLoader) {
+        const character = (autoCharacterLoader as any).character;
+        if (character && character.model) {
+          // Force character to a very visible position (in front of camera)
+          character.model.position.set(0, 0, -5);
+          character.model.scale.setScalar(2.0);
+          character.model.rotation.y = Math.PI;
+          console.log('🎯 Character forced to visible position: (0, 0, -5) scale: 2.0');
+        } else {
+          console.log('🚫 No character loaded to make visible');
+        }
+      }
+    },
+    getPosition: () => {
+      if (autoCharacterLoader) {
+        const character = (autoCharacterLoader as any).character;
+        if (character && character.model) {
+          const pos = character.model.position;
+          console.log(`🎯 Character position: (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})`);
+          console.log(`📏 Character scale: ${character.model.scale.x.toFixed(1)}`);
+          return { position: pos, scale: character.model.scale.x };
+        }
+      }
+      console.log('🚫 No character loaded');
+      return null;
+    },
+    preload: (className: string = 'grapple') => {
+      if (autoCharacterLoader) {
+        autoCharacterLoader.preloadAnimationsForClass(className);
+        console.log(`🎭 Starting preload for ${className} - animations will load in background`);
+      }
+    },
+    testLoadingUI: () => {
+      if (autoCharacterLoader) {
+        console.log('🎭 Testing loading UI with full load sequence...');
+        autoCharacterLoader.loadCharacterForClass('grapple');
+      }
+    },
+    togglePortrait: () => {
+      if (autoCharacterLoader) {
+        autoCharacterLoader.togglePortraitVisibility();
+      }
+    },
+    testAnim: (animName: string) => {
+      if (autoCharacterLoader) {
+        autoCharacterLoader.testAnimation(animName);
+      } else {
+        console.log('🚫 No character loader available');
+      }
+    }
+  };
+  console.log('🎮 Auto character system ready!');
+  console.log('🔧 Commands: __autoChar.status(), .testLoadingUI(), .getPosition(), .preload("grapple")');
+  console.log('🖼️ Portrait: __autoChar.togglePortrait(), .testAnim("falling")');
   
   // Initialize round system first
   roundSystem = new RaceRoundSystem({
@@ -576,7 +770,6 @@ initPhysics(scene, camera).then((world) => {
   
   // Initialize HitVolume system for pass-through damage
   registerHitVolumes(world.world, world.fpsController, meleeCombat);
-  console.log('🎯 HitVolume system integrated into game loop');
   
   // Initialize dummy placement manager for level design
   dummyPlacementManager = new DummyPlacementManager(scene, world.world, camera, meleeCombat);
@@ -590,13 +783,11 @@ initPhysics(scene, camera).then((world) => {
   // Load racing dummies from saved positions
   if (dummyLoader) {
     dummyLoader.loadDummies().then((loadedDummies) => {
-      console.log(`🏎️ Loaded ${loadedDummies.length} racing dummies with speed boost mechanics`);
       targetDummies = loadedDummies;
       
       // Pass loaded dummies to placement manager for editing
       if (dummyPlacementManager) {
         dummyPlacementManager.setLoadedDummies(loadedDummies);
-        console.log(`🔧 Edit mode ready! Use Ctrl+Alt+F to toggle editing of JSON dummies`);
       }
     });
   }
@@ -888,6 +1079,21 @@ function animate() {
     // Update physics world
     if (physicsWorld) {
       physicsWorld.step(deltaTime);
+      
+      // Get movement data from controller (same source as debug UI)
+      const velocity = physicsWorld.fpsController.getVelocity();
+      const grounded = physicsWorld.fpsController.getIsGrounded();
+      const position = physicsWorld.devTools.getCurrentPosition();
+      const playerPosition = new THREE.Vector3(position.x, position.y, position.z);
+      const playerVelocity = new THREE.Vector3(velocity.x, velocity.y, velocity.z);
+      const horizontalSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+      
+      // Update auto character loader (main system)
+      if (autoCharacterLoader) {
+        autoCharacterLoader.update(deltaTime, playerPosition, playerVelocity, camera, grounded, horizontalSpeed);
+      }
+      
+      // Legacy systems disabled - only auto-loader active
     }
     
     // Update HitVolume system for pass-through damage
@@ -962,7 +1168,8 @@ function animate() {
         });
       }
     } catch (error) {
-      console.error('⚠️ Dummy animation update error:', error);
+      // Suppress spammy dummy animation errors
+      // console.error('⚠️ Dummy animation update error:', error);
     }
 
     // Update UI and checkpoint system

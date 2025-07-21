@@ -40,6 +40,11 @@ export class TargetDummy implements MeleeTarget {
   private lastGlowUpdate = 0;
   private readonly GLOW_UPDATE_INTERVAL = 50; // Update every 50ms instead of every frame
   
+  // MEMORY LEAK FIX: Track animation frames for cleanup
+  private activeAnimationFrames: Set<number> = new Set();
+  private isDestroyed = false;
+  private isInitialized = false;
+  
   // Note: Scale values finalized - stopwatch: 1.8x, hourglass: 0.4x, chronoshard: 5.6x
 
   constructor(
@@ -67,20 +72,36 @@ export class TargetDummy implements MeleeTarget {
     this.floatSpeed = 2.5 + (Math.random() - 0.5) * 1.0; // 2.0 to 3.0 speed variance (much faster bobbing)
     // Note: basePosition will be set during mesh creation
     
-    this.initializeDummy();
+    // ASYNC FIX: Handle initialization properly with error handling
+    this.initializeDummy().catch(error => {
+      console.error(`❌ Failed to initialize dummy ${this.id}:`, error);
+      // Create fallback mesh to ensure dummy is functional
+      this.createFallbackMesh();
+      this.createPhysicsBody();
+      this.createFXElements();
+      this.isInitialized = true;
+    });
   }
-
-
 
   /**
    * Initialize the dummy with async model loading
    */
   private async initializeDummy(): Promise<void> {
-    await this.createVisualMesh();
-    this.createPhysicsBody();
-    this.createFXElements();
+    if (this.isDestroyed) return; // Guard against destruction during initialization
     
-    // Target dummy created silently
+    try {
+      await this.createVisualMesh();
+      if (this.isDestroyed) return; // Check again after async operation
+      
+      this.createPhysicsBody();
+      this.createFXElements();
+      this.isInitialized = true;
+      
+      // Target dummy created silently
+    } catch (error) {
+      console.error(`❌ Error during dummy ${this.id} initialization:`, error);
+      throw error; // Re-throw to be handled by constructor
+    }
   }
 
   private async createVisualMesh(): Promise<void> {
@@ -151,7 +172,7 @@ export class TargetDummy implements MeleeTarget {
       
       this.scene.add(this.mesh);
       
-      console.log(`✨ Loaded ${this.modelType} model for dummy ${this.id}`);
+              // console.log(`✨ Loaded ${this.modelType} model for dummy ${this.id}`); // Suppressed spam
       
     } catch (error) {
       console.error(`❌ Failed to load ${this.modelType} model for dummy ${this.id}:`, error);
@@ -298,9 +319,11 @@ export class TargetDummy implements MeleeTarget {
    * Handle taking damage from melee attacks
    */
   takeDamage(damage: number, _direction: THREE.Vector3): void {
+    // Don't take damage if destroyed or not initialized
+    if (this.isDestroyed || !this.isInitialized) return;
+    
     // Don't take damage if already KO'd
     if (this.currentHealth <= 0) {
-      console.log(`🎯 Dummy ${this.id} rejected damage (already KO'd) - ${this.currentHealth}/${this.maxHealth} HP`);
       return; // Silently reject damage for KO'd dummies
     }
     
@@ -308,9 +331,6 @@ export class TargetDummy implements MeleeTarget {
     const hpBefore = this.currentHealth;
     
     this.currentHealth -= damage;
-    
-    // Enhanced combat log showing before/after HP
-    console.log(`🎯 Dummy ${this.id}: ${hpBefore}/${this.maxHealth} HP → took ${damage} damage → ${this.currentHealth}/${this.maxHealth} HP remaining`);
     
     // Add to combat log with clear HP status
     window.dispatchEvent(new CustomEvent('combatLogMessage', {
@@ -335,21 +355,23 @@ export class TargetDummy implements MeleeTarget {
    */
   private triggerHitFX(): void {
     // Keep hit ring effect but no color/scale changes to the dummy itself
-    if (this.hitRing) {
+    if (this.hitRing && !this.isDestroyed) {
       this.hitRing.visible = true;
       this.hitRing.scale.set(0.1, 0.1, 0.1);
       const ringMaterial = this.hitRing.material as THREE.MeshStandardMaterial;
       ringMaterial.opacity = 0.8;
       ringMaterial.emissiveIntensity = 1.0;
       
-      // Animate ring expansion
+      // Animate ring expansion with frame tracking
       const startTime = Date.now();
       const animateHitRing = () => {
+        if (this.isDestroyed || !this.hitRing) return; // Guard against destruction
+        
         const elapsed = Date.now() - startTime;
         const progress = Math.min(elapsed / 300, 1); // 300ms animation
         
         const scale = 0.1 + (2.0 * progress); // Expand from 0.1 to 2.1
-        this.hitRing!.scale.set(scale, scale, scale);
+        this.hitRing.scale.set(scale, scale, scale);
         
         const opacity = 0.8 * (1 - progress); // Fade out
         const intensity = 1.0 * (1 - progress);
@@ -357,12 +379,14 @@ export class TargetDummy implements MeleeTarget {
         ringMaterial.emissiveIntensity = intensity;
         
         if (progress < 1) {
-          requestAnimationFrame(animateHitRing);
+          const frameId = requestAnimationFrame(animateHitRing);
+          this.activeAnimationFrames.add(frameId);
         } else {
-          this.hitRing!.visible = false;
+          this.hitRing.visible = false;
         }
       };
-      requestAnimationFrame(animateHitRing);
+      const frameId = requestAnimationFrame(animateHitRing);
+      this.activeAnimationFrames.add(frameId);
     }
 
     // Keep sparkle particles effect
@@ -375,7 +399,11 @@ export class TargetDummy implements MeleeTarget {
    * Sparkle particle effect around the dummy
    */
   private triggerSparkles(): void {
+    if (this.isDestroyed) return; // Guard against destruction
+    
     this.sparkles.forEach((sparkle, index) => {
+      if (this.isDestroyed) return; // Check for each sparkle
+      
       sparkle.visible = true;
       
       // Random position around larger dummy
@@ -392,9 +420,11 @@ export class TargetDummy implements MeleeTarget {
       const sparkleMaterial = sparkle.material as THREE.MeshBasicMaterial;
       sparkleMaterial.opacity = 1.0;
       
-      // Animate sparkles
+      // Animate sparkles with frame tracking
       const startTime = Date.now();
       const animateSparkle = () => {
+        if (this.isDestroyed) return; // Guard against destruction
+        
         const elapsed = Date.now() - startTime;
         const progress = Math.min(elapsed / 400, 1); // 400ms animation
         
@@ -405,12 +435,14 @@ export class TargetDummy implements MeleeTarget {
         sparkleMaterial.opacity = 1.0 * (1 - progress);
         
         if (progress < 1) {
-          requestAnimationFrame(animateSparkle);
+          const frameId = requestAnimationFrame(animateSparkle);
+          this.activeAnimationFrames.add(frameId);
         } else {
           sparkle.visible = false;
         }
       };
-      requestAnimationFrame(animateSparkle);
+      const frameId = requestAnimationFrame(animateSparkle);
+      this.activeAnimationFrames.add(frameId);
     });
   }
 
@@ -418,6 +450,9 @@ export class TargetDummy implements MeleeTarget {
    * Handle knockback effects
    */
   applyKnockback(force: number, direction: THREE.Vector3): void {
+    // Don't apply knockback if destroyed or not initialized
+    if (this.isDestroyed || !this.isInitialized || !this.mesh) return;
+    
     console.log(`💥 Dummy ${this.id} received ${force.toFixed(1)} knockback force`);
     
     // Visual knockback effect (slight mesh displacement)
@@ -450,14 +485,16 @@ export class TargetDummy implements MeleeTarget {
         ringMaterial.opacity = 1.0;
         ringMaterial.emissiveIntensity = 1.5;
         
-        // Animate explosion ring
+        // Animate explosion ring with frame tracking
         const startTime = Date.now();
         const animateKORing = () => {
+          if (this.isDestroyed || !this.koRing) return; // Guard against destruction
+          
           const elapsed = Date.now() - startTime;
           const progress = Math.min(elapsed / 600, 1); // 600ms animation
           
           const scale = 0.1 + (3.5 * progress); // Large explosion ring
-          this.koRing!.scale.set(scale, scale, scale);
+          this.koRing.scale.set(scale, scale, scale);
           
           const opacity = 1.0 * (1 - Math.pow(progress, 1.5)); // Fade out
           const intensity = 1.5 * (1 - progress);
@@ -465,12 +502,14 @@ export class TargetDummy implements MeleeTarget {
           ringMaterial.emissiveIntensity = intensity;
           
           if (progress < 1) {
-            requestAnimationFrame(animateKORing);
+            const frameId = requestAnimationFrame(animateKORing);
+            this.activeAnimationFrames.add(frameId);
           } else {
-            this.koRing!.visible = false;
+            this.koRing.visible = false;
           }
         };
-        requestAnimationFrame(animateKORing);
+        const frameId = requestAnimationFrame(animateKORing);
+        this.activeAnimationFrames.add(frameId);
       }
       
       // DEFER rigidBody.setEnabled(false) to avoid Rapier "recursive use" error
@@ -496,7 +535,6 @@ export class TargetDummy implements MeleeTarget {
    * Respawn the dummy with minimal visual changes
    */
   private respawn(): void {
-    console.log(`✨ Dummy ${this.id} respawned!`);
     
     // Add to combat log
     window.dispatchEvent(new CustomEvent('combatLogMessage', {
@@ -524,14 +562,16 @@ export class TargetDummy implements MeleeTarget {
       ringMaterial.opacity = 0.8;
       ringMaterial.emissiveIntensity = 1.2;
       
-      // Animate respawn ring (contracts inward)
+      // Animate respawn ring (contracts inward) with frame tracking
       const startTime = Date.now();
       const animateRespawnRing = () => {
+        if (this.isDestroyed || !this.respawnRing) return; // Guard against destruction
+        
         const elapsed = Date.now() - startTime;
         const progress = Math.min(elapsed / 400, 1); // 400ms animation
         
         const scale = 3.0 - (2.7 * progress); // Contract from 3.0 to 0.3
-        this.respawnRing!.scale.set(scale, scale, scale);
+        this.respawnRing.scale.set(scale, scale, scale);
         
         const opacity = 0.8 * (1 - progress);
         const intensity = 1.2 * (1 - progress);
@@ -539,12 +579,14 @@ export class TargetDummy implements MeleeTarget {
         ringMaterial.emissiveIntensity = intensity;
         
         if (progress < 1) {
-          requestAnimationFrame(animateRespawnRing);
+          const frameId = requestAnimationFrame(animateRespawnRing);
+          this.activeAnimationFrames.add(frameId);
         } else {
-          this.respawnRing!.visible = false;
+          this.respawnRing.visible = false;
         }
       };
-      requestAnimationFrame(animateRespawnRing);
+      const frameId = requestAnimationFrame(animateRespawnRing);
+      this.activeAnimationFrames.add(frameId);
     }
   }
 
@@ -581,8 +623,6 @@ export class TargetDummy implements MeleeTarget {
       this.rigidBody.setEnabled(true);
     }
     
-    console.log(`🔄 Dummy ${this.id} health reset: ${oldHealth}/${this.maxHealth} HP → ${this.currentHealth}/${this.maxHealth} HP (full)`);
-    
     // Add to combat log for round resets
     window.dispatchEvent(new CustomEvent('combatLogMessage', {
       detail: { message: `🔄 ${this.id} health reset to ${this.currentHealth}/${this.maxHealth} HP` }
@@ -595,12 +635,48 @@ export class TargetDummy implements MeleeTarget {
    * Cleanup resources
    */
   destroy(): void {
+    // Mark as destroyed first to prevent any ongoing operations
+    this.isDestroyed = true;
+    
+    // Cancel all active animation frames
+    this.activeAnimationFrames.forEach(frameId => {
+      cancelAnimationFrame(frameId);
+    });
+    this.activeAnimationFrames.clear();
+    
+    // Clear timers
     if (this.respawnTimer) {
       window.clearTimeout(this.respawnTimer);
+      this.respawnTimer = undefined;
     }
     
-    this.scene.remove(this.mesh);
-    this.world.removeRigidBody(this.rigidBody);
+    // Clean up main mesh and its materials/geometries
+    if (this.mesh) {
+      this.scene.remove(this.mesh);
+      this.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          if (child.geometry) {
+            child.geometry.dispose();
+          }
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(material => material.dispose());
+            } else {
+              child.material.dispose();
+            }
+          }
+        }
+      });
+    }
+    
+    // Clean up physics body (check if world still exists)
+    try {
+      if (this.rigidBody && this.world) {
+        this.world.removeRigidBody(this.rigidBody);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Error removing rigid body for ${this.id}:`, error);
+    }
 
     // Clean up FX elements
     if (this.hitRing) {
@@ -627,6 +703,9 @@ export class TargetDummy implements MeleeTarget {
       (sparkle.material as THREE.Material).dispose();
     });
     this.sparkles = [];
+    
+    // Clear cached materials array
+    this.cachedMaterials = [];
     
     console.log(`🗑️ Target dummy ${this.id} destroyed`);
   }
@@ -683,6 +762,9 @@ export class TargetDummy implements MeleeTarget {
    * Update dummy animations (rotation and floating) - called each frame
    */
   update(deltaTime: number): void {
+    // Don't update if destroyed or not initialized
+    if (this.isDestroyed || !this.isInitialized || !this.mesh) return;
+    
     // Only animate if dummy is alive and visible
     if (this.currentHealth > 0 && this.mesh.visible) {
       // Smooth rotation around Y-axis to show off the model design

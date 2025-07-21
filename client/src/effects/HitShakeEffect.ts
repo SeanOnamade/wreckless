@@ -46,7 +46,6 @@ export class HitShakeEffect implements CameraEffect {
     };
     
     window.addEventListener('passthroughHit', this.eventListener);
-    console.log('📹 HitShakeEffect: Listening for passthroughHit events');
   }
 
   /**
@@ -69,8 +68,6 @@ export class HitShakeEffect implements CameraEffect {
     this.isShaking = true;
     this.shakeEndTime = now + this.shakeDuration;
     this.shakeTime = 0;
-    
-    console.log(`📹 HitShake: Triggered for ${targetId} (${damage} dmg, intensity=${this.currentIntensity.toFixed(3)})`);
   }
 
   update(camera: THREE.Camera, deltaTime: number): void {

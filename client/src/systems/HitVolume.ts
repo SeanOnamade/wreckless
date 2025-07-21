@@ -60,8 +60,6 @@ export class HitVolume {
     
     // Set up bonus damage tracking
     this.setupBonusTracking();
-    
-    console.log('🎯 HitVolume system initialized for pass-through damage');
   }
 
   /**
@@ -120,7 +118,7 @@ export class HitVolume {
     const clampedDistance = Math.min(movementDistance, COMBAT_CONFIG.HIT_VOLUME.MAX_SWEEP_DISTANCE);
     
     if (clampedDistance < movementDistance) {
-      console.warn(`⚠️ HitVolume: Clamping sweep distance from ${movementDistance.toFixed(2)}m to ${clampedDistance.toFixed(2)}m`);
+      // Distance clamped for performance
     }
     
     // Calculate sweep direction
@@ -136,8 +134,6 @@ export class HitVolume {
    * Perform blink path sweep from origin to destination
    */
   blinkSweep(originPosition: THREE.Vector3, destinationPosition: THREE.Vector3): void {
-    console.log(`⚡ HitVolume: Blink sweep from (${originPosition.x.toFixed(1)}, ${originPosition.y.toFixed(1)}, ${originPosition.z.toFixed(1)}) to (${destinationPosition.x.toFixed(1)}, ${destinationPosition.y.toFixed(1)}, ${destinationPosition.z.toFixed(1)})`);
-    
     this.performCapsuleSweep(originPosition, destinationPosition, 'blink');
   }
 
@@ -176,7 +172,7 @@ export class HitVolume {
     }
     
     if (COMBAT_CONFIG.DEBUG.LOG_HIT_DETECTION) {
-      console.log(`🎯 Performing ${hitType} capsule sweep: distance=${sweepDistance.toFixed(2)}m, radius=${capsuleRadius.toFixed(2)}m`);
+      // Hit detection logging disabled
     }
     
     // Sample positions along the sweep path for hit detection
@@ -290,7 +286,6 @@ export class HitVolume {
     const HIT_COOLDOWN_MS = 500; // Increased from 300ms to 500ms
     
     if (lastHitTime && (now - lastHitTime) < HIT_COOLDOWN_MS) {
-      console.log(`⏰ HitVolume: ${targetId} still on cooldown (${now - lastHitTime}ms < ${HIT_COOLDOWN_MS}ms)`);
       return; // Still on cooldown
     }
     
@@ -322,12 +317,6 @@ export class HitVolume {
     const playerPos = this.currentPosition;
     const hitDirection = targetPos.clone().sub(playerPos).normalize();
     
-    // Debug damage application (reduced frequency for performance)
-    const timeSinceLastHit = lastHitTime ? now - lastHitTime : 'never';
-    if (Math.random() < 0.1) { // 10% chance to log damage for debugging
-      console.log(`🎯 HitVolume: Applying ${finalDamage} damage to ${targetId} (${hitType}) - Last hit: ${timeSinceLastHit}ms ago`);
-    }
-    
     // Apply damage with error handling
     if (target.takeDamage) {
       try {
@@ -348,7 +337,7 @@ export class HitVolume {
     if (damageResult.isCrit) hitDescription = `${finalDamage} HP CRIT`;
     if (damageResult.isBonus) hitDescription = `${finalDamage} HP BONUS`;
     
-    console.log(`💥 Hit ${targetId} for ${hitDescription}`);
+    // Hit processed
       
       // Get player class safely
       const playerClass = this.getCurrentPlayerClass();
@@ -425,7 +414,6 @@ export class HitVolume {
     const HIT_COOLDOWN_MS = 500; // Same cooldown as dummies
     
     if (lastHitTime && (now - lastHitTime) < HIT_COOLDOWN_MS) {
-      console.log(`⏰ HitVolume: ${playerId} PvP cooldown (${now - lastHitTime}ms < ${HIT_COOLDOWN_MS}ms)`);
       return; // Still on cooldown
     }
     
@@ -436,8 +424,6 @@ export class HitVolume {
     // Calculate damage with bonuses based on player class and state
     const damageResult = this.calculateDamage();
     const finalDamage = damageResult.damage;
-    
-    console.log(`⚔️ PvP HIT: Applying ${finalDamage} damage to ${playerId} (${hitType})`);
     
     // TODO: Get target player's blocking state (for now assume not blocking)
     const isTargetBlocking = false;
@@ -460,8 +446,7 @@ export class HitVolume {
     window.dispatchEvent(new CustomEvent('combatLogMessage', {
       detail: { message: logMessage }
     }));
-    
-    console.log(`⚔️ PvP hit ${playerId} for ${finalDamage} HP`);
+
   }
 
   /**
@@ -481,7 +466,6 @@ export class HitVolume {
       const customEvent = event as CustomEvent;
       if (customEvent.detail.className === 'blink') {
         this.lastBlinkTime = Date.now();
-        console.log('⚡ HitVolume: Blink timestamp recorded for bonus damage');
       }
     });
     
@@ -530,7 +514,6 @@ export class HitVolume {
         if (this.isSwingingState || recentlyDetached) {
           damage = 70; // Grapple crit damage
           isCrit = true;
-          console.log(`🪝 HitVolume: Grapple CRIT! (swinging: ${this.isSwingingState}, recently detached: ${recentlyDetached})`);
         }
         break;
         
@@ -542,7 +525,6 @@ export class HitVolume {
         if (timeSinceLastBlink < 500) {
           damage = 50; // Blink bonus damage (30 + 20)
           isBonus = true;
-          console.log(`⚡ HitVolume: Blink BONUS! (${timeSinceLastBlink}ms after blink)`);
         }
         break;
         
@@ -590,7 +572,6 @@ export class HitVolume {
    */
   destroy(): void {
     this.hitCooldowns.clear();
-    console.log('🎯 HitVolume system destroyed');
   }
 }
 
@@ -613,7 +594,6 @@ export function registerHitVolumes(
   
   globalHitVolume = new HitVolume(world, controller, meleeCombat);
   
-  console.log('🎯 HitVolume system registered globally');
   return globalHitVolume;
 }
 

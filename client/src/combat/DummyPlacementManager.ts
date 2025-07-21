@@ -46,15 +46,6 @@ export class DummyPlacementManager {
     
     this.setupKeyBindings();
     this.createPreviewMesh();
-    
-    console.log('🎯 Dummy Placement Manager initialized');
-    console.log('  F - Place dummy at current position (supports midair!)');
-    console.log('  Shift+F - Remove last placed dummy');
-    console.log('  Ctrl+F - Export all dummy positions (including JSON dummies)');
-    console.log('  Ctrl+Shift+F - Remove nearest dummy (any type)');
-    console.log('  Alt+F - Toggle placement preview mode');
-    console.log('  Ctrl+Alt+F - Toggle edit mode (work with JSON dummies)');
-    console.log('🏎️ Placed dummies will provide speed boosts like loaded dummies');
   }
 
   /**
@@ -62,7 +53,6 @@ export class DummyPlacementManager {
    */
   setLoadedDummies(loadedDummies: MeleeTarget[]): void {
     this.loadedDummies = loadedDummies;
-    console.log(`📋 Edit mode now managing ${loadedDummies.length} loaded JSON dummies`);
     
     // Update UI
     this.updateDummyCount();
@@ -150,13 +140,10 @@ export class DummyPlacementManager {
     
     // Update UI
     this.updateDummyCount();
-    
-    console.log(`✅ Placed racing dummy "${dummyId}" with speed boost at position:`, position);
   }
 
   private removeLastDummy(): void {
     if (this.placedDummies.length === 0) {
-      console.log('❌ No placed dummies to remove');
       return;
     }
     
@@ -170,15 +157,12 @@ export class DummyPlacementManager {
     
     // Update UI
     this.updateDummyCount();
-    
-    console.log(`🗑️ Removed dummy "${lastDummy.id}"`);
   }
 
   private removeNearestDummy(): void {
     const allDummies = this.getAllDummies();
     
     if (allDummies.length === 0) {
-      console.log('❌ No dummies to remove');
       return;
     }
     
@@ -216,7 +200,6 @@ export class DummyPlacementManager {
         this.placedDummies.splice(nearestIndex, 1);
         this.meleeCombat.removeTarget(nearestDummy.id);
         nearestDummy.dummy.destroy();
-        console.log(`🗑️ Removed placed dummy "${nearestDummy.id}" (${nearestDistance.toFixed(2)}m away)`);
       } else {
         // Remove loaded dummy
         this.loadedDummies.splice(nearestIndex, 1);
@@ -228,9 +211,6 @@ export class DummyPlacementManager {
         } else if (nearestDummy.targetDummy?.destroy) {
           nearestDummy.targetDummy.destroy();
         }
-        
-        console.log(`🗑️ Removed loaded dummy "${nearestDummy.id}" (${nearestDistance.toFixed(2)}m away)`);
-        console.log(`⚠️ This will be removed from export. Use Ctrl+F to save changes.`);
       }
       
       // Update UI
@@ -270,32 +250,18 @@ export class DummyPlacementManager {
       note: `Includes ${loadedPositions.length} loaded + ${placedPositions.length} newly placed dummies`
     };
     
-    // Log to console
-    console.log('📋 All dummy positions exported (loaded + placed):');
-    console.log(JSON.stringify(exportData, null, 2));
+    // Export data to console and clipboard
     
     // Copy to clipboard
     try {
       navigator.clipboard.writeText(JSON.stringify(exportData, null, 2));
-      console.log('✅ All dummy positions copied to clipboard!');
-      console.log(`📊 Total: ${allPositions.length} dummies (${loadedPositions.length} from JSON + ${placedPositions.length} newly placed)`);
     } catch (error) {
-      console.log('⚠️ Could not copy to clipboard, but data is logged above');
+      // Clipboard copy failed
     }
   }
 
   private toggleEditMode(): void {
     this.editMode = !this.editMode;
-    
-    console.log(`🔧 Edit mode ${this.editMode ? 'ON' : 'OFF'}`);
-    
-    if (this.editMode) {
-      console.log(`📝 Edit mode active! Managing ${this.loadedDummies.length} loaded + ${this.placedDummies.length} placed dummies`);
-      console.log('  Ctrl+Shift+F now removes ANY nearest dummy (including JSON dummies)');
-      console.log('  Ctrl+F exports ALL dummies for saving back to JSON');
-    } else {
-      console.log('📝 Edit mode disabled. Ctrl+Shift+F only affects newly placed dummies.');
-    }
     
     // Update UI
     window.dispatchEvent(new CustomEvent('dummyEditModeChanged', {
@@ -391,8 +357,6 @@ export class DummyPlacementManager {
 
     // Clear loaded dummies reference (don't destroy them, they're owned by DummyLoader)
     this.loadedDummies.length = 0;
-
-    console.log('🧹 DummyPlacementManager cleaned up - all resources disposed');
   }
 
   /**

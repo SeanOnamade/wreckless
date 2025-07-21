@@ -191,6 +191,11 @@ export class GameStateManager {
     setPlayerClass(playerClass);
     console.log(`🎯 Class selected: ${playerClass}`);
     
+    // Notify character system to load the selected character
+    window.dispatchEvent(new CustomEvent('characterClassSelected', {
+      detail: { playerClass }
+    }));
+    
     // Transition based on game mode
     if (this.context.gameMode === 'singleplayer') {
       this.startSingleplayer();
@@ -210,23 +215,30 @@ export class GameStateManager {
     
     console.log('🎮 Starting singleplayer game...');
     
-    // Transition to race state
-    this.transitionTo('race', { gameMode: 'singleplayer' });
-    
-    // Reset key states before starting race to prevent stuck keys
-    if (this.physicsWorld?.fpsController) {
-      this.physicsWorld.fpsController.resetKeyStates();
-    }
-    
-    // Reset player to spawn position for fresh start
-    window.dispatchEvent(new CustomEvent('resetToSpawn'));
-    
-    // Start the existing round system
-    if (this.roundSystem) {
-      this.roundSystem.startRound();
-    } else {
-      console.error('❌ Round system not available for singleplayer start');
-    }
+    // Request race start (will wait for animations if needed)
+    window.dispatchEvent(new CustomEvent('raceStartRequest', {
+      detail: {
+        callback: () => {
+          // Transition to race state
+          this.transitionTo('race', { gameMode: 'singleplayer' });
+          
+          // Reset key states before starting race to prevent stuck keys
+          if (this.physicsWorld?.fpsController) {
+            this.physicsWorld.fpsController.resetKeyStates();
+          }
+          
+          // Reset player to spawn position for fresh start
+          window.dispatchEvent(new CustomEvent('resetToSpawn'));
+          
+          // Start the existing round system
+          if (this.roundSystem) {
+            this.roundSystem.startRound();
+          } else {
+            console.error('❌ Round system not available for singleplayer start');
+          }
+        }
+      }
+    }));
   }
   
   /**
@@ -263,20 +275,27 @@ export class GameStateManager {
     
     console.log('🏁 Starting multiplayer race...');
     
-    // Reset key states before starting race to prevent stuck keys
-    if (this.physicsWorld?.fpsController) {
-      this.physicsWorld.fpsController.resetKeyStates();
-    }
-    
-    // Reset player to spawn position for fresh start
-    window.dispatchEvent(new CustomEvent('resetToSpawn'));
-    
-    this.transitionTo('race', { gameMode: 'multiplayer' });
-    
-    // Start the existing round system
-    if (this.roundSystem) {
-      this.roundSystem.startRound();
-    }
+    // Request race start (will wait for animations if needed)
+    window.dispatchEvent(new CustomEvent('raceStartRequest', {
+      detail: {
+        callback: () => {
+          // Reset key states before starting race to prevent stuck keys
+          if (this.physicsWorld?.fpsController) {
+            this.physicsWorld.fpsController.resetKeyStates();
+          }
+          
+          // Reset player to spawn position for fresh start
+          window.dispatchEvent(new CustomEvent('resetToSpawn'));
+          
+          this.transitionTo('race', { gameMode: 'multiplayer' });
+          
+          // Start the existing round system
+          if (this.roundSystem) {
+            this.roundSystem.startRound();
+          }
+        }
+      }
+    }));
   }
   
   /**

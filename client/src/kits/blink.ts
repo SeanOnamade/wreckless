@@ -58,7 +58,6 @@ const SAFE_MIN_HEIGHT = 2.5; // Minimum safe height (updated for raised track)
   if (isSpacePressed) {
     blinkDirection.y += 0.4; // Add upward component
     blinkDirection.normalize();
-    console.log('⚡ Blink with vertical boost activated');
   }
   
   // Calculate initial target position
@@ -79,7 +78,6 @@ const SAFE_MIN_HEIGHT = 2.5; // Minimum safe height (updated for raised track)
     finalTargetPosition = playerPosition.clone().add(
       blinkDirection.clone().multiplyScalar(safeDistance)
     );
-    console.log(`⚡ Collision detected at ${raycastResult.distance.toFixed(1)}m, adjusting to ${safeDistance.toFixed(1)}m`);
   } else {
     // No collision - use full distance
     finalTargetPosition = initialTarget.clone();
@@ -89,11 +87,9 @@ const SAFE_MIN_HEIGHT = 2.5; // Minimum safe height (updated for raised track)
   if (finalTargetPosition.y < CRITICAL_KILLZONE) {
     // Critical killzone - cancel blink entirely
     blockReason = 'critical killzone';
-    console.log('⚡ BLINK blocked - would teleport into critical killzone');
   } else if (finalTargetPosition.y < VOID_THRESHOLD) {
     // Void threshold - snap to safe height
     finalTargetPosition.y = SAFE_MIN_HEIGHT;
-    console.log(`⚡ Blink Y-position adjusted to safe height: ${SAFE_MIN_HEIGHT}`);
     blinkSuccess = true;
   } else {
     // Safe position
@@ -123,7 +119,6 @@ const SAFE_MIN_HEIGHT = 2.5; // Minimum safe height (updated for raised track)
     blinkState.blinkWindowEndTime = now + blinkWindowDuration;
     
     const actualDistance = playerPosition.distanceTo(finalTargetPosition);
-    console.log(`⚡ BLINK executed to position: ${finalTargetPosition.x.toFixed(1)}, ${finalTargetPosition.y.toFixed(1)}, ${finalTargetPosition.z.toFixed(1)} (${actualDistance.toFixed(1)}m) with forward impulse`);
     
     // Visual feedback effect
     createBlinkEffect(playerPosition, finalTargetPosition);
@@ -134,7 +129,6 @@ const SAFE_MIN_HEIGHT = 2.5; // Minimum safe height (updated for raised track)
     if (!blockReason) {
       blockReason = 'target collision';
     }
-    console.log(`⚡ BLINK blocked - ${blockReason}`);
     
     // Dispatch blocked event for feedback
     window.dispatchEvent(new CustomEvent('blinkBlocked', {
@@ -237,8 +231,6 @@ function checkBlinkTarget(world: RAPIER.World, targetPosition: THREE.Vector3): b
  */
 function createBlinkEffect(fromPos: THREE.Vector3, toPos: THREE.Vector3): void {
   // TODO: Add particle effects, screen flash, etc.
-  // For now, just log the effect
-  console.log(`⚡ Blink effect: ${fromPos.x.toFixed(1)},${fromPos.y.toFixed(1)},${fromPos.z.toFixed(1)} → ${toPos.x.toFixed(1)},${toPos.y.toFixed(1)},${toPos.z.toFixed(1)}`);
   
   // Dispatch event for visual effects system
   window.dispatchEvent(new CustomEvent('blinkEffect', {
@@ -259,7 +251,6 @@ export function updateBlink(): void {
   // Update i-frames
   if (blinkState.isInIFrames && now >= blinkState.iFramesEndTime) {
     blinkState.isInIFrames = false;
-    console.log('⚡ I-frames ended');
   }
   
   // Note: regen disable and blink window are checked by external systems

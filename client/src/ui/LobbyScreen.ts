@@ -22,11 +22,14 @@ export class LobbyScreen {
   private raceStarting: boolean = false; // Prevent duplicate race start requests
   private networkingTimeouts: number[] = []; // Track timeouts for cleanup
   private isDestroyed: boolean = false; // Track component destruction
+  private animationReadyPlayers = new Set<string>(); // Track which players have loaded animations
+  private allAnimationsReady = false; // Track if all players have loaded animations
   
   // Event listener references for cleanup
   private keydownHandler: (e: KeyboardEvent) => void;
   private lobbyClassUpdateHandler: (event: any) => void;
   private resetRaceStartingHandler: () => void;
+  private animationStatusHandler: (event: any) => void;
   
   constructor(stateManager: GameStateManager) {
     this.stateManager = stateManager;
@@ -35,6 +38,7 @@ export class LobbyScreen {
     this.keydownHandler = this.handleKeydown.bind(this);
     this.lobbyClassUpdateHandler = this.handleLobbyClassUpdate.bind(this);
     this.resetRaceStartingHandler = this.handleResetRaceStarting.bind(this);
+    this.animationStatusHandler = this.handleAnimationStatusUpdate.bind(this);
     
     this.container = this.createUI();
     this.setupEventListeners();
@@ -135,6 +139,7 @@ export class LobbyScreen {
     document.removeEventListener('keydown', this.keydownHandler);
     window.removeEventListener('lobbyClassUpdate', this.lobbyClassUpdateHandler);
     window.removeEventListener('resetRaceStarting', this.resetRaceStartingHandler);
+    window.removeEventListener('multiplayerAnimationStatus', this.animationStatusHandler);
     
     // Remove DOM element
     if (this.container && this.container.parentNode) {
@@ -346,6 +351,27 @@ export class LobbyScreen {
       this.startButtonElement.textContent = '🏁 START RACE';
     }
   }
+
+  /**
+   * Handle animation loading status updates from server
+   */
+  private handleAnimationStatusUpdate(event: CustomEvent): void {
+    const { playerId, isReady, allReady } = event.detail;
+    
+    console.log(`🎭 Animation status update: Player ${playerId} is ${isReady ? 'ready' : 'loading'}, all ready: ${allReady}`);
+    
+    // Update ready players set
+    if (isReady) {
+      this.animationReadyPlayers.add(playerId);
+    } else {
+      this.animationReadyPlayers.delete(playerId);
+    }
+    
+    this.allAnimationsReady = allReady;
+    
+    // Update start button availability
+    this.updateStartButtonAvailability();
+  }
   
   /**
    * Setup event listeners
@@ -359,6 +385,9 @@ export class LobbyScreen {
     
     // Listen for race starting flag reset
     window.addEventListener('resetRaceStarting', this.resetRaceStartingHandler);
+    
+    // Listen for animation loading status updates
+    window.addEventListener('multiplayerAnimationStatus', this.animationStatusHandler);
   }
   
   /**
@@ -626,7 +655,7 @@ export class LobbyScreen {
   }
 
   /**
-   * Update START button availability based on all players having classes
+   * Update START button availability based on all players having classes and animations loaded
    */
   private updateStartButtonAvailability(): void {
     if (!this.startButtonElement) return;
@@ -637,14 +666,27 @@ export class LobbyScreen {
     const mySocketId = debugInfo?.socketId?.slice(-4);
     const isHost = mySocketId && this.allPlayersData[mySocketId]?.isHost;
 
-    if (allHaveClasses && isHost) {
+    // Race can only start if all players have classes AND all animations are loaded
+    const canStart = allHaveClasses && this.allAnimationsReady && isHost;
+    
+    if (canStart) {
       this.startButtonElement.style.display = 'inline-block';
       this.startButtonElement.disabled = false;
       this.startButtonElement.style.opacity = '1';
+      this.startButtonElement.textContent = '🏁 START RACE';
     } else {
       this.startButtonElement.style.display = isHost ? 'inline-block' : 'none';
-      this.startButtonElement.disabled = !allHaveClasses;
-      this.startButtonElement.style.opacity = allHaveClasses ? '1' : '0.5';
+      this.startButtonElement.disabled = true;
+      this.startButtonElement.style.opacity = '0.5';
+      
+      // Update button text based on what's missing
+      if (!allHaveClasses) {
+        this.startButtonElement.textContent = '⏳ WAITING FOR CLASSES';
+      } else if (!this.allAnimationsReady) {
+        this.startButtonElement.textContent = '🎭 LOADING ANIMATIONS...';
+      } else {
+        this.startButtonElement.textContent = '🏁 START RACE';
+      }
     }
   }
 

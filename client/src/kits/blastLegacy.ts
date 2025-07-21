@@ -33,7 +33,6 @@ export function legacyBlast(context: BlastAbilityContext): void {
   
   // Check lockout
   if (isInBlastLockout()) {
-    console.log('💥 BLAST blocked - still in lockout period');
     return;
   }
   
@@ -61,7 +60,6 @@ export function legacyBlast(context: BlastAbilityContext): void {
   );
   
   // Apply blast to player (kinematic body - handled via event)
-  console.log(`💥 BLAST self-impulse: ${selfImpulse.x.toFixed(1)}, ${selfImpulse.y.toFixed(1)}, ${selfImpulse.z.toFixed(1)}`);
   window.dispatchEvent(new CustomEvent('blastSelfImpulse', {
     detail: { impulse: selfImpulse }
   }));
@@ -92,8 +90,6 @@ export function legacyBlast(context: BlastAbilityContext): void {
       // Apply impulse to the body
       body.applyImpulse(direction, true);
       affectedCount++;
-      
-      console.log(`💥 Blasted body at distance ${distance.toFixed(1)}m with impulse ${impulseStrength.toFixed(1)}`);
     }
   }
   
@@ -101,8 +97,6 @@ export function legacyBlast(context: BlastAbilityContext): void {
   activateBlastLockout(lockoutDuration);
   
   // Visual/audio feedback
-  console.log(`💥 BLAST executed at position: ${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)}`);
-  console.log(`💥 Affected ${affectedCount} nearby objects within ${blastRadius}m radius`);
   
   // Dispatch event for visual effects
   window.dispatchEvent(new CustomEvent('abilityUsed', {

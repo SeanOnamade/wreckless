@@ -46,7 +46,6 @@ export class WindStreakEffect implements CameraEffect {
   initialize(): void {
     this.createOverlayElement();
     this.isInitialized = true;
-    console.log(`📹 WindStreakEffect: Initialized with speed range ${this.minSpeed}-${this.maxSpeed} m/s`);
   }
 
   /**

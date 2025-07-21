@@ -106,7 +106,6 @@ export class MeleeCombat {
     
     // Check cooldown
     if (!this.canMelee || (now - this.lastMeleeTime) < COMBAT_CONFIG.MELEE_COOLDOWN) {
-      console.log('⏳ Melee on cooldown');
       return false;
     }
 
@@ -114,17 +113,15 @@ export class MeleeCombat {
     const className = currentKit.className;
     const combatMode = getCombatMode();
     
-    console.log(`🗡️ Manual click detected - Combat mode: ${combatMode}`);
+    // Manual click detected
     
     // ARCHIVED MANUAL COMBAT: Only use click-to-hit for players or when explicitly disabled
     if (combatMode === 'manual' || !PASSTHROUGH_CONFIG.MODE.USE_PASSTHROUGH_FOR_DUMMIES) {
-      console.log(`🗡️ Attempting ${className} MANUAL melee attack (manual mode)...`);
       return this.performManualMeleeAttack(className, playerVelocity, now);
     }
     
     // PASSTHROUGH MODE: For dummies, damage is now handled by HitVolume system
     // This method only handles manual clicks for PvP targets
-    console.log(`🗡️ Manual click in PASSTHROUGH mode - checking for PvP targets only (dummies use HitVolume)...`);
     
     // Manual combat in passthrough mode only handles PvP targets
     
@@ -241,10 +238,9 @@ export class MeleeCombat {
     
     // Apply class-specific modifiers
     switch (className) {
-      case 'blast':
+              case 'blast':
         // +25% range
         range *= COMBAT_CONFIG.BLAST_RANGE_MULTIPLIER;
-        console.log('🔥 Blast class: +25% range boost!');
         break;
         
                       case 'grapple':
@@ -252,12 +248,7 @@ export class MeleeCombat {
           const speed = playerVelocity ? Math.sqrt(playerVelocity.x * playerVelocity.x + playerVelocity.z * playerVelocity.z) : 0;
           const fullSpeed = playerVelocity ? Math.sqrt(playerVelocity.x * playerVelocity.x + playerVelocity.y * playerVelocity.y + playerVelocity.z * playerVelocity.z) : 0;
           
-          console.log(`🪝 Grapple attack - Speed: ${speed.toFixed(1)} m/s (3D: ${fullSpeed.toFixed(1)}), Velocity: (${playerVelocity?.x.toFixed(1) || 'N/A'}, ${playerVelocity?.y.toFixed(1) || 'N/A'}, ${playerVelocity?.z.toFixed(1) || 'N/A'}), Swinging: ${this.isSwingingState}, Recently detached: ${(Date.now() - this.lastGrappleDetachTime) < COMBAT_CONFIG.GRAPPLE_CRIT_WINDOW}`);
-          
-          // Add detailed velocity info to combat log
-          window.dispatchEvent(new CustomEvent('combatLogMessage', {
-            detail: { message: `🪝 Grapple - Speed: ${speed.toFixed(1)} m/s, Swinging: ${this.isSwingingState}` }
-          }));
+          // Grapple velocity calculation
           
           // Always use 360° sweep while grappling (much more generous)
           if (this.isSwingingState) {
@@ -293,25 +284,11 @@ export class MeleeCombat {
             const timeSinceGrappleDetach = Date.now() - this.lastGrappleDetachTime;
             if (timeSinceGrappleDetach < COMBAT_CONFIG.GRAPPLE_CRIT_WINDOW) {
               damage = COMBAT_CONFIG.GRAPPLE_CRIT_DAMAGE;
-              console.log(`🪝 POST-SWING CRIT! (${speed.toFixed(1)} m/s) - 70 HP`);
-              // Add to combat log
-              window.dispatchEvent(new CustomEvent('combatLogMessage', {
-                detail: { message: `🪝 POST-SWING CRIT! (${speed.toFixed(1)} m/s)` }
-              }));
             } else if (speed > 6.0) {
               // Even without swinging, reward high velocity
               damage = COMBAT_CONFIG.GRAPPLE_CRIT_DAMAGE;
-              console.log(`🪝 HIGH VELOCITY! (${speed.toFixed(1)} m/s) - 70 HP`);
-              // Add to combat log
-              window.dispatchEvent(new CustomEvent('combatLogMessage', {
-                detail: { message: `🪝 HIGH VELOCITY! (${speed.toFixed(1)} m/s)` }
-              }));
             } else {
-              console.log(`🪝 Ground attack (${speed.toFixed(1)} m/s) - 25 HP`);
-              // Add to combat log
-              window.dispatchEvent(new CustomEvent('combatLogMessage', {
-                detail: { message: `🪝 Ground attack (${speed.toFixed(1)} m/s) - 25 HP` }
-              }));
+              // Ground attack
             }
           }
           break;
@@ -321,7 +298,6 @@ export class MeleeCombat {
           const timeSinceLastBlink = Date.now() - this.lastBlinkTime;
           if (timeSinceLastBlink < COMBAT_CONFIG.BLINK_BONUS_WINDOW) {
             damage += COMBAT_CONFIG.BLINK_BONUS_DAMAGE;
-            console.log('⚡ BLINK BONUS! (+20 HP = 50 total)');
           }
           break;
     }
@@ -436,14 +412,7 @@ export class MeleeCombat {
     const damage = attackParams.damage;
     const knockbackForce = damage * COMBAT_CONFIG.KNOCKBACK_MULTIPLIER;
     
-    // Generate appropriate log message
-    let logMessage = `🗡️ Melee hit ${target.id} for ${damage} HP`;
-    if (attackParams.isCrit) {
-      logMessage = `🪝 GRAPPLE CRIT! Hit ${target.id} for ${damage} HP`;
-    } else if (attackParams.isBonus) {
-      logMessage = `⚡ BONUS HIT! Hit ${target.id} for ${damage} HP`;
-    }
-    console.log(logMessage);
+    // Apply damage and effects
     
     // Apply damage
     if (target.takeDamage) {

@@ -391,7 +391,7 @@ export class CheckpointSystem {
           console.log(`✅ Valid checkpoint progression: ${checkpoint.id} (speed: ${playerSpeed.toFixed(1)} m/s)`);
         } else {
           if (import.meta.env.DEV) {
-            console.log(`⚪ Invalid checkpoint: ${checkpoint.id} (not next in sequence)`);
+            // console.log(`⚪ Invalid checkpoint: ${checkpoint.id} (not next in sequence)`); // Suppressed spam
           }
         }
         

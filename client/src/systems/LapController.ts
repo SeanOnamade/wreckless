@@ -40,7 +40,7 @@ export class LapController {
     if (checkpointId !== expected) {
       // Wrong sequence - trigger callback but don't advance state
       if (import.meta.env.DEV) {
-        console.log(`❌ Wrong checkpoint: got ${checkpointId}, expected ${expected}`);
+        // console.log(`❌ Wrong checkpoint: got ${checkpointId}, expected ${expected}`); // Suppressed spam
       }
       this.onCheckpointVisit?.(checkpointId, false);
       return false;

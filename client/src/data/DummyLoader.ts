@@ -54,8 +54,6 @@ export class DummyLoader {
     try {
       const data = dummyPositionsData as DummyPositionData;
       
-      console.log(`🎯 Loading ${data.totalDummies} dummies from saved positions...`);
-      
       // Clear any existing dummies
       this.clearDummies();
       
@@ -80,9 +78,6 @@ export class DummyLoader {
         this.meleeCombat.addTarget(dummy);
         this.loadedDummies.push(dummy);
       }
-      
-      console.log(`✅ Successfully loaded ${this.loadedDummies.length} racing dummies`);
-      console.log(`🏎️ Speed boost system active: ${this.speedBoostConfig.baseVelocity}→${this.speedBoostConfig.boostedVelocity} m/s`);
       
       return this.loadedDummies;
       
@@ -145,6 +140,8 @@ export class RacingTargetDummy implements MeleeTarget {
   private speedBoostConfig: SpeedBoostConfig;
   private respawnTimer?: number;
   private isAvailable = true;
+  private isDestroyed = false;
+  private activeAnimationFrames: Set<number> = new Set();
 
   constructor(
     scene: THREE.Scene,
@@ -172,27 +169,40 @@ export class RacingTargetDummy implements MeleeTarget {
    * Update dummy state from server (online mode)
    */
   updateFromServerState(serverState: any): void {
+    if (this.isDestroyed) return; // Guard against updates after destruction
+    
     const healthStatus = this.targetDummy.getHealthStatus();
     
     if (serverState.health !== healthStatus.current) {
-      console.log(`🌐 Updating dummy ${this.id}: ${healthStatus.current}→${serverState.health} HP (server sync)`);
       
-      // Update health via direct property access (bypass normal damage processing)
-      (this.targetDummy as any).currentHealth = serverState.health;
-      
-      // Handle KO state changes
+      // Handle KO state changes using proper API instead of direct property access
       if (serverState.health <= 0 && serverState.isAlive === false) {
         // Dummy was KO'd on server - trigger visual KO
         if (healthStatus.current > 0) {
-          console.log(`💀 Dummy ${this.id} KO'd by server - triggering visual feedback`);
-          // Trigger KO visual without affecting health (already set)
-          this.targetDummy.takeDamage(0, new THREE.Vector3(0, 0, 0));
+          // Calculate damage needed to reach server health
+          const damageNeeded = healthStatus.current - serverState.health;
+          if (damageNeeded > 0) {
+            this.targetDummy.takeDamage(damageNeeded, new THREE.Vector3(0, 0, 0));
+          }
         }
       } else if (serverState.health > 0 && serverState.isAlive === true) {
         // Dummy respawned on server
         if (healthStatus.current <= 0) {
-          console.log(`✨ Dummy ${this.id} respawned by server - updating visual state`);
-          this.targetDummy.resetHealth?.();
+          this.targetDummy.resetHealth();
+        }
+      } else if (serverState.health !== healthStatus.current) {
+        // Health changed but not KO - calculate damage difference
+        const healthDiff = healthStatus.current - serverState.health;
+        if (healthDiff > 0) {
+          // Health decreased - apply damage
+          this.targetDummy.takeDamage(healthDiff, new THREE.Vector3(0, 0, 0));
+        } else if (healthDiff < 0) {
+          // Health increased - reset to full then apply damage to reach target
+          this.targetDummy.resetHealth();
+          const damageToApply = this.targetDummy.getHealthStatus().max - serverState.health;
+          if (damageToApply > 0) {
+            this.targetDummy.takeDamage(damageToApply, new THREE.Vector3(0, 0, 0));
+          }
         }
       }
     }
@@ -202,31 +212,36 @@ export class RacingTargetDummy implements MeleeTarget {
    * Implement MeleeTarget interface by delegating to underlying dummy
    */
   takeDamage(damage: number, direction: THREE.Vector3): void {
+    // Don't process damage if destroyed
+    if (this.isDestroyed) return;
+    
     // Racing mode: Always apply speed boosts
     
     // Check if we're in online mode - send damage to server
     if (Network.isNetworkingEnabled()) {
-      console.log(`🌐 Sending dummy damage to server: ${this.id} -${damage} HP`);
       
-      // Send damage to server
-      Network.sendDummyDamage(this.id, damage);
-      
-      // Still grant speed boost locally for immediate feedback
-      const baseDuration = this.speedBoostConfig.baseDuration;
-      const bonusDuration = (damage / this.speedBoostConfig.damageScaling) * 1000;
-      const totalDuration = Math.min(baseDuration + bonusDuration, this.speedBoostConfig.maxDuration);
-      this.grantSpeedBoost(damage, totalDuration);
-      
-      // Don't process damage locally - server will handle it and broadcast state
-      return;
+      try {
+        // Send damage to server
+        Network.sendDummyDamage(this.id, damage);
+        
+        // Still grant speed boost locally for immediate feedback
+        const baseDuration = this.speedBoostConfig.baseDuration;
+        const bonusDuration = (damage / this.speedBoostConfig.damageScaling) * 1000;
+        const totalDuration = Math.min(baseDuration + bonusDuration, this.speedBoostConfig.maxDuration);
+        this.grantSpeedBoost(damage, totalDuration);
+        
+        // Don't process damage locally - server will handle it and broadcast state
+        return;
+      } catch (error) {
+        console.error(`❌ Failed to send dummy damage to server for ${this.id}:`, error);
+        // Fall through to offline processing if network fails
+      }
     }
     
     // OFFLINE MODE: Continue with local dummy processing
     const wasAvailable = this.isAvailable;
     
-    // Log before delegating to underlying dummy
-    const healthStatus = this.targetDummy.getHealthStatus();
-    console.log(`🏎️ Racing dummy ${this.id} taking ${damage} damage (current: ${healthStatus.current}/${healthStatus.max} HP)`);
+    // Apply damage to underlying dummy
     
     // Calculate speed boost duration based on damage
     const baseDuration = this.speedBoostConfig.baseDuration;
@@ -258,6 +273,8 @@ export class RacingTargetDummy implements MeleeTarget {
    * Delegate applyKnockback to underlying dummy
    */
   applyKnockback(force: number, direction: THREE.Vector3): void {
+    if (this.isDestroyed) return; // Guard against destruction
+    
     if (this.targetDummy.applyKnockback) {
       this.targetDummy.applyKnockback(force, direction);
     }
@@ -289,39 +306,74 @@ export class RacingTargetDummy implements MeleeTarget {
    * Hide the target visually (simple approach)
    */
   private hideTarget(): void {
+    if (this.isDestroyed) return; // Guard against destruction
+    
     // DEFER setTranslation to avoid Rapier "recursive use" error
     // This happens when setTranslation is called during an active physics query
-    requestAnimationFrame(() => {
+    const frameId = requestAnimationFrame(() => {
+      if (this.isDestroyed) return; // Check again after frame delay
+      
       try {
-    // Move dummy underground temporarily
-    this.rigidBody.setTranslation({
-      x: this.position.x,
-      y: this.position.y - 100,
-      z: this.position.z
-    }, true);
+        // Check if rigidBody exists before trying to use it
+        if (!this.rigidBody) {
+          // Silently skip - dummy might have been cleaned up
+          return;
+        }
+        
+        // Move dummy underground temporarily
+        this.rigidBody.setTranslation({
+          x: this.position.x,
+          y: this.position.y - 100,
+          z: this.position.z
+        }, true);
       } catch (deferredError) {
         console.error(`Error in deferred hideTarget for ${this.id}:`, deferredError);
       }
+      
+      // Remove frame ID from tracking set
+      this.activeAnimationFrames.delete(frameId);
     });
+    
+    // Track the animation frame for cleanup
+    this.activeAnimationFrames.add(frameId);
   }
 
   /**
    * Show the target visually 
    */
   private showTarget(): void {
+    if (this.isDestroyed) return; // Guard against destruction
+    
     // DEFER setTranslation to avoid Rapier "recursive use" error
-    requestAnimationFrame(() => {
+    const frameId = requestAnimationFrame(() => {
+      if (this.isDestroyed) return; // Check again after frame delay
+      
       try {
-    // Move dummy back to original position
-    this.rigidBody.setTranslation({
-      x: this.position.x,
-      y: this.position.y,
-      z: this.position.z
-    }, true);
+        // Check if rigidBody exists before trying to use it
+        if (!this.rigidBody) {
+          // Silently skip - dummy might have been cleaned up
+          return;
+        }
+        
+        // Move dummy back to original position
+        this.rigidBody.setTranslation({
+          x: this.position.x,
+          y: this.position.y,
+          z: this.position.z
+        }, true);
       } catch (deferredError) {
-        console.error(`Error in deferred showTarget for ${this.id}:`, deferredError);
+        // Only log if it's not a common cleanup issue
+        if (this.rigidBody) {
+          console.warn(`⚠️ Dummy ${this.id}: Could not reset position`);
+        }
       }
+      
+      // Remove frame ID from tracking set
+      this.activeAnimationFrames.delete(frameId);
     });
+    
+    // Track the animation frame for cleanup
+    this.activeAnimationFrames.add(frameId);
   }
 
   /**
@@ -345,6 +397,8 @@ export class RacingTargetDummy implements MeleeTarget {
    * Reset health to full (for round resets)
    */
   resetHealth(): void {
+    if (this.isDestroyed) return; // Guard against destruction
+    
     // Reset underlying dummy health
     if (this.targetDummy.resetHealth) {
       this.targetDummy.resetHealth();
@@ -359,18 +413,16 @@ export class RacingTargetDummy implements MeleeTarget {
     // Reset availability
     this.isAvailable = true;
     this.showTarget();
-    
-    console.log(`🔄 Racing dummy ${this.id} reset to full health`);
   }
 
   /**
    * Respawn the dummy
    */
   private respawn(): void {
+    if (this.isDestroyed) return; // Guard against destruction
+    
     this.isAvailable = true;
     this.showTarget();
-    
-    console.log(`🔄 Dummy ${this.id} respawned and ready for boost!`);
     
     // Add to combat log  
           // Dummy is now available for speed boosts again
@@ -380,6 +432,7 @@ export class RacingTargetDummy implements MeleeTarget {
    * Check if dummy is available for speed boost
    */
   isReadyForSpeedBoost(): boolean {
+    if (this.isDestroyed) return false; // Guard against destruction
     return this.isAvailable;
   }
 
@@ -387,6 +440,8 @@ export class RacingTargetDummy implements MeleeTarget {
    * Update dummy animation (delegates to underlying TargetDummy)
    */
   update(deltaTime: number): void {
+    if (this.isDestroyed) return; // Guard against destruction
+    
     if (this.targetDummy.update) {
       this.targetDummy.update(deltaTime);
     }
@@ -396,9 +451,22 @@ export class RacingTargetDummy implements MeleeTarget {
    * Clean up resources
    */
   destroy(): void {
+    // Mark as destroyed first to prevent new operations
+    this.isDestroyed = true;
+    
+    // Cancel all active animation frames
+    this.activeAnimationFrames.forEach(frameId => {
+      cancelAnimationFrame(frameId);
+    });
+    this.activeAnimationFrames.clear();
+    
+    // Clear timers
     if (this.respawnTimer) {
       clearTimeout(this.respawnTimer);
+      this.respawnTimer = undefined;
     }
+    
+    // Destroy underlying dummy
     this.targetDummy.destroy();
   }
 } 

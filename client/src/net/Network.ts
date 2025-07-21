@@ -54,6 +54,11 @@ class NetworkManager {
   
   // Dummy state management
   private dummyStateCallback: ((dummyStates: Record<string, any>) => void) | null = null;
+  
+  // Event listener cleanup tracking
+  private eventListeners: Array<{ target: EventTarget; type: string; listener: (event: Event) => void }> = [];
+  private positionCorrectionTimeouts: Set<number> = new Set();
+  private isDestroyed = false;
 
   constructor() {
     // Initialize empty input state
@@ -158,6 +163,13 @@ class NetworkManager {
       console.log('🏆 Received leaderboard from server:', leaderboardData);
       // Dispatch custom event with leaderboard data
       window.dispatchEvent(new CustomEvent('leaderboardUpdate', { detail: leaderboardData }));
+    });
+
+    // Listen for animation status updates from all players
+    this.socket.on('animationStatusUpdate', (data: { playerId: string, isReady: boolean, allReady: boolean, readyPlayers: string[] }) => {
+      console.log('🎭 Animation status update:', data);
+      // Dispatch custom event with animation readiness data
+      window.dispatchEvent(new CustomEvent('multiplayerAnimationStatus', { detail: data }));
     });
 
     // Listen for any other events (extensible)
@@ -309,31 +321,31 @@ class NetworkManager {
 
   // Public methods to update input state (to be called by game systems later)
   public updateMovementInput(forward: boolean, backward: boolean, left: boolean, right: boolean): void {
-    if (!this.isOnlineMode) return;
+    if (!this.isOnlineMode || this.isDestroyed) return;
     
     this.currentInput.movement = { forward, backward, left, right };
   }
 
   public updateMouseInput(leftButton: boolean, rightButton: boolean, direction: { x: number; y: number }): void {
-    if (!this.isOnlineMode) return;
+    if (!this.isOnlineMode || this.isDestroyed) return;
     
     this.currentInput.mouse = { leftButton, rightButton, direction };
   }
 
   public updateCameraInput(yaw: number, pitch?: number): void {
-    if (!this.isOnlineMode) return;
+    if (!this.isOnlineMode || this.isDestroyed) return;
     
     this.currentInput.camera = { yaw, pitch };
   }
 
   public updateActionInput(jump: boolean, slide: boolean, ability: boolean): void {
-    if (!this.isOnlineMode) return;
+    if (!this.isOnlineMode || this.isDestroyed) return;
     
     this.currentInput.actions = { jump, slide, ability };
   }
 
   public updateStateInput(isRocketJumping: boolean, isSwinging: boolean, isBlinkMomentum: boolean, isSliding: boolean, currentAbility?: string): void {
-    if (!this.isOnlineMode) return;
+    if (!this.isOnlineMode || this.isDestroyed) return;
     
     this.currentInput.states = { isRocketJumping, isSwinging, isBlinkMomentum, isSliding, currentAbility };
   }
@@ -343,60 +355,112 @@ class NetworkManager {
     this.playerContextProvider = provider;
   }
 
-  private setupAbilityNetworking(): void {
-    // Listen for local ability activations to network them
-    window.addEventListener('abilityActivated', (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      
-      // Get current player context from provider
-      let position = { x: 0, y: 0, z: 0 };
-      let cameraDirection = { x: 0, y: 0, z: 1 };
-      
-      if (this.playerContextProvider) {
+  /**
+   * Helper method to add tracked event listeners for proper cleanup
+   */
+  private addTrackedEventListener(target: EventTarget, type: string, listener: (event: Event) => void): void {
+    target.addEventListener(type, listener);
+    this.eventListeners.push({ target, type, listener });
+  }
+
+  /**
+   * Helper method to create tracked timeouts for position corrections
+   */
+  private createTrackedTimeout(callback: () => void, delay: number): void {
+    const timeoutId = setTimeout(() => {
+      if (!this.isDestroyed) {
         try {
-          const context = this.playerContextProvider();
-          position = context.position;
-          cameraDirection = context.cameraDirection;
+          callback();
         } catch (error) {
-          console.warn('Failed to get player context for ability networking:', error);
+          console.error('Error in tracked timeout callback:', error);
         }
       }
+      this.positionCorrectionTimeouts.delete(timeoutId);
+    }, delay);
+    this.positionCorrectionTimeouts.add(timeoutId);
+  }
+
+  private setupAbilityNetworking(): void {
+    // Listen for local ability activations to network them
+    const abilityActivatedListener = (event: Event) => {
+      if (this.isDestroyed) return;
       
-      this.networkAbilityActivation(
-        detail.className,
-        position,
-        cameraDirection,
-        detail
-      );
-    });
+      try {
+        const detail = (event as CustomEvent).detail;
+        
+        // Get current player context from provider
+        let position = { x: 0, y: 0, z: 0 };
+        let cameraDirection = { x: 0, y: 0, z: 1 };
+        
+        if (this.playerContextProvider) {
+          try {
+            const context = this.playerContextProvider();
+            position = context.position;
+            cameraDirection = context.cameraDirection;
+          } catch (error) {
+            console.warn('Failed to get player context for ability networking:', error);
+          }
+        }
+        
+        this.networkAbilityActivation(
+          detail.className,
+          position,
+          cameraDirection,
+          detail
+        );
+      } catch (error) {
+        console.error('Error handling abilityActivated event:', error);
+      }
+    };
+    this.addTrackedEventListener(window, 'abilityActivated', abilityActivatedListener);
 
     // Listen for blast impulse events to send position corrections
-    window.addEventListener('blastSelfImpulse', (_: Event) => {
-      console.log('🚀 Blast impulse event detected, scheduling position correction...');
-      // Schedule position correction after physics has applied the impulse
-      setTimeout(() => {
-        this.sendPositionCorrectionFromProvider('blast-impulse');
-      }, 50); // Small delay to let physics settle
-    });
+    const blastSelfImpulseListener = (_: Event) => {
+      if (this.isDestroyed) return;
+      
+      try {
+        console.log('🚀 Blast impulse event detected, scheduling position correction...');
+        this.createTrackedTimeout(() => {
+          this.sendPositionCorrectionFromProvider('blast-impulse');
+        }, 50);
+      } catch (error) {
+        console.error('Error handling blastSelfImpulse event:', error);
+      }
+    };
+    this.addTrackedEventListener(window, 'blastSelfImpulse', blastSelfImpulseListener);
 
     // Listen for swing state changes for position corrections  
-    window.addEventListener('swingStateChanged', (_: Event) => {
-      console.log('🪝 Swing state change detected, scheduling position correction...');
-      setTimeout(() => {
-        this.sendPositionCorrectionFromProvider('grapple-swing');
-      }, 50);
-    });
+    const swingStateChangedListener = (_: Event) => {
+      if (this.isDestroyed) return;
+      
+      try {
+        console.log('🪝 Swing state change detected, scheduling position correction...');
+        this.createTrackedTimeout(() => {
+          this.sendPositionCorrectionFromProvider('grapple-swing');
+        }, 50);
+      } catch (error) {
+        console.error('Error handling swingStateChanged event:', error);
+      }
+    };
+    this.addTrackedEventListener(window, 'swingStateChanged', swingStateChangedListener);
 
     // Listen for blink teleportation
-    window.addEventListener('abilityUsed', (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail.ability === 'blink') {
-        console.log('⚡ Blink ability used, scheduling position correction...');
-        setTimeout(() => {
-          this.sendPositionCorrectionFromProvider('blink-teleport');
-        }, 50);
+    const abilityUsedListener = (event: Event) => {
+      if (this.isDestroyed) return;
+      
+      try {
+        const detail = (event as CustomEvent).detail;
+        if (detail.ability === 'blink') {
+          console.log('⚡ Blink ability used, scheduling position correction...');
+          this.createTrackedTimeout(() => {
+            this.sendPositionCorrectionFromProvider('blink-teleport');
+          }, 50);
+        }
+      } catch (error) {
+        console.error('Error handling abilityUsed event:', error);
       }
-    });
+    };
+    this.addTrackedEventListener(window, 'abilityUsed', abilityUsedListener);
 
     // Listen for networked ability events from other players
     if (this.socket) {
@@ -543,6 +607,10 @@ class NetworkManager {
 
   // Clean shutdown
   public disconnect(): void {
+    // Mark as destroyed to prevent further operations
+    this.isDestroyed = true;
+    
+    // Clear intervals
     if (this.inputInterval) {
       clearInterval(this.inputInterval);
       this.inputInterval = null;
@@ -553,13 +621,39 @@ class NetworkManager {
       this.positionInterval = null;
     }
 
+    // Clear all tracked timeouts
+    this.positionCorrectionTimeouts.forEach(timeoutId => {
+      clearTimeout(timeoutId);
+    });
+    this.positionCorrectionTimeouts.clear();
+
+    // Remove all tracked event listeners
+    this.eventListeners.forEach(({ target, type, listener }) => {
+      try {
+        target.removeEventListener(type, listener);
+      } catch (error) {
+        console.warn('Error removing event listener:', error);
+      }
+    });
+    this.eventListeners = [];
+
+    // Disconnect socket
     if (this.socket) {
       console.log('🔌 Network: Disconnecting...');
+      
+      // Remove all socket listeners to prevent memory leaks
+      this.socket.removeAllListeners();
       this.socket.disconnect();
       this.socket = null;
     }
 
+    // Reset state
     this.connectionStatus = 'disconnected';
+    this.lastServerState = null;
+    this.lastSentInput = null;
+    this.dummyStateCallback = null;
+    this.playerContextProvider = null;
+    this.lastHeartbeat = 0;
   }
 
   // Debug helper to manually inspect network state
@@ -808,6 +902,18 @@ class NetworkManager {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Send animation loading status to server
+   */
+  public sendAnimationStatus(isReady: boolean): void {
+    if (!this.validateConnection('send animation status')) {
+      return;
+    }
+
+    console.log(`🎭 Network: Sending animation status: ${isReady ? 'Ready' : 'Loading'}`);
+    this.socket!.emit('animationStatus', { isReady });
   }
 
   /**

@@ -135,8 +135,6 @@ export class BoostOverlay {
     
     // Start countdown animation
     this.startCountdown();
-    
-    console.log(`🚀 Boost UI: ${boostData.fromSpeed}→${boostData.toSpeed} m/s for ${this.boostDuration/1000}s`);
   }
 
   private endBoost(): void {
@@ -161,8 +159,6 @@ export class BoostOverlay {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
-    
-    console.log('🚀 Boost UI: Ended');
   }
 
   private startCountdown(): void {

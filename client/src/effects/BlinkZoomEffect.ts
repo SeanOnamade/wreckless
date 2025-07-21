@@ -55,7 +55,6 @@ export class BlinkZoomEffect implements CameraEffect {
     };
     
     window.addEventListener('abilityUsed', this.eventListener);
-    console.log('📹 BlinkZoomEffect: Listening for blink ability events');
   }
 
   /**
@@ -69,8 +68,6 @@ export class BlinkZoomEffect implements CameraEffect {
     this.zoomPhase = 'out';
     this.zoomPhaseStartTime = now;
     this.fovCaptured = false; // Reset FOV capture flag
-    
-    console.log('📹 BlinkZoom: Teleport zoom effect triggered!');
   }
 
   update(camera: THREE.Camera, _deltaTime: number): void {

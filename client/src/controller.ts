@@ -536,8 +536,6 @@ export class FirstPersonController {
       
       // Short momentum preservation
       this.preservedMomentum.copy(this.direction.clone().multiplyScalar(this.currentSpeed * 0.016));
-      
-      console.log(`⚡ BLINK momentum applied: ${this.currentSpeed.toFixed(1)} m/s forward (rocket jump state SET)`);
     }
     
     // Small upward component if any
@@ -581,7 +579,6 @@ export class FirstPersonController {
         this.direction.copy(horizontalImpulse);
         this.currentSpeed = horizontalSpeed; // Pure horizontal freedom
         this.rocketJumpSpeed = horizontalSpeed;
-        console.log(`🚀 BLAST: Powerful (${horizontalSpeed.toFixed(1)} m/s) - rocket jump state SET`);
       } else {
         // Weak/medium blast - boost to minimum powerful speed
         const minBlastSpeed = Math.max(minPowerfulBlast, this.moveSpeed * 1.4); // Ensure 25+ m/s minimum
@@ -595,7 +592,6 @@ export class FirstPersonController {
         
         this.currentSpeed = minBlastSpeed; // Ensure blast always feels powerful
         this.rocketJumpSpeed = minBlastSpeed;
-        console.log(`🚀 BLAST: Boosted weak (${horizontalSpeed.toFixed(1)} m/s → ${minBlastSpeed.toFixed(1)} m/s) - rocket jump state SET`);
       }
     } else {
       // Legacy behavior for backwards compatibility
@@ -637,10 +633,6 @@ export class FirstPersonController {
     this.moveSpeed = toVelocity; // Update actual moveSpeed used in movement calculations
     this.isSpeedBoosted = true;
     this.speedBoostEndTime = Date.now() + duration;
-    
-    console.log(`🏎️ SPEED BOOST ACTIVE! ${fromVelocity}→${toVelocity} m/s for ${(duration/1000).toFixed(1)}s (${damage} damage from ${source})`);
-    
-    // Speed boost applied successfully
     
     // Visual feedback - dispatch event for UI
     window.dispatchEvent(new CustomEvent('speedBoostActive', {
@@ -754,8 +746,6 @@ export class FirstPersonController {
       // Speed boost expired
       this.isSpeedBoosted = false;
       this.moveSpeed = this.baseMoveSpeed;
-      
-      console.log(`⏰ Speed boost expired - back to ${this.baseMoveSpeed} m/s`);
       
       // Dispatch speed boost end event
       window.dispatchEvent(new CustomEvent('speedBoostEnded', {

@@ -139,7 +139,7 @@ export class AbilityManager {
         } as BlinkAbilityContext);
       
       default:
-        return () => console.warn(`Unknown ability class: ${className}`);
+        return () => {};
     }
   }
 
@@ -158,21 +158,17 @@ export class AbilityManager {
     if (kit.className === 'grapple') {
       // Check if already swinging (for release)
       if (isSwinging()) {
-        console.log(`🪝 Allowing grapple release`);
         // Don't set any cooldown here - will be set on release
       } else {
         // Firing new grapple - check if ready but don't set cooldown yet
         if (!kit.ability.isReady) {
-          console.log(`⏳ Grapple on cooldown`);
           return false;
         }
         // Don't call useAbilityFromKit - we'll set cooldown only on successful swing release
-        console.log(`🪝 Firing grapple (no cooldown until hit)`);
       }
     } else {
       // For other abilities: normal cooldown behavior
     if (!useAbilityFromKit(kit)) {
-      console.log(`⏳ Ability on cooldown (${kit.className})`);
       return false;
       }
     }
@@ -221,8 +217,6 @@ export class AbilityManager {
     // Dev mode: Toggle blast type with 'L' key
     if (event.code === 'KeyL' && !event.repeat && import.meta.env.DEV) {
       this.useLegacyBlast = !this.useLegacyBlast;
-      const blastType = this.useLegacyBlast ? 'LEGACY BLAST' : 'ROCKET JUMP';
-      console.log(`🔄 Switched to ${blastType} (press L to toggle)`);
     }
   }
 
