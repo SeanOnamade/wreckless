@@ -25,6 +25,8 @@ export class ClassSelection {
   private subtitleElement!: HTMLParagraphElement;
   private boundKeydownHandler: (e: KeyboardEvent) => void;
   private characterModal?: HTMLDivElement;
+  private selectedDuration: number = 120000; // Default: 2 minutes in milliseconds
+  private durationSelector!: HTMLSelectElement;
   
   constructor(stateManager: GameStateManager) {
     this.stateManager = stateManager;
@@ -48,6 +50,16 @@ export class ClassSelection {
     // Update subtitle with current mode from context
     const currentMode = this.stateManager.getContext().gameMode;
     this.subtitleElement.textContent = `${currentMode === 'singleplayer' ? 'Singleplayer' : 'Multiplayer'} Mode`;
+    
+    // Show/hide duration selector based on game mode
+    const durationContainer = this.container.querySelector('#duration-selector-container') as HTMLElement;
+    if (durationContainer) {
+      if (currentMode === 'singleplayer') {
+        durationContainer.style.display = 'block';
+      } else {
+        durationContainer.style.display = 'none';
+      }
+    }
     
     console.log('🎯 ClassSelection shown');
     
@@ -135,6 +147,71 @@ export class ClassSelection {
     `;
     // Will be updated in show() method with current context
     
+    // Round Duration Selector (only show for singleplayer)
+    const durationContainer = document.createElement('div');
+    durationContainer.id = 'duration-selector-container';
+    durationContainer.style.cssText = `
+      margin: 0 0 30px 0;
+      padding: 20px;
+      background: rgba(0, 34, 68, 0.3);
+      border: 1px solid rgba(0, 230, 255, 0.3);
+      border-radius: 10px;
+    `;
+    
+    const durationLabel = document.createElement('div');
+    durationLabel.style.cssText = `
+      color: #00E6FF;
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 10px;
+      text-align: center;
+    `;
+    durationLabel.textContent = '⏱️ Round Duration';
+    
+    this.durationSelector = document.createElement('select');
+    this.durationSelector.style.cssText = `
+      background: rgba(0, 17, 34, 0.8);
+      color: #00E6FF;
+      border: 2px solid #00E6FF;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-family: monospace;
+      font-size: 14px;
+      width: 200px;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.2s ease;
+    `;
+    
+    // Add duration options
+    const durationOptions = [
+      { value: 60000, label: '1 Minute' },
+      { value: 90000, label: '1.5 Minutes' },
+      { value: 120000, label: '2 Minutes' },
+      { value: 180000, label: '3 Minutes' },
+      { value: 300000, label: '5 Minutes' }
+    ];
+    
+    durationOptions.forEach(option => {
+      const optionElement = document.createElement('option');
+      optionElement.value = option.value.toString();
+      optionElement.textContent = option.label;
+      if (option.value === this.selectedDuration) {
+        optionElement.selected = true;
+      }
+      this.durationSelector.appendChild(optionElement);
+    });
+    
+    // Handle duration selection
+    this.durationSelector.addEventListener('change', (e) => {
+      const target = e.target as HTMLSelectElement;
+      this.selectedDuration = parseInt(target.value);
+      console.log(`⏱️ Round duration selected: ${this.selectedDuration / 1000}s`);
+    });
+    
+    durationContainer.appendChild(durationLabel);
+    durationContainer.appendChild(this.durationSelector);
+    
     // Class container
     const classContainer = document.createElement('div');
     classContainer.style.cssText = `
@@ -176,6 +253,7 @@ export class ClassSelection {
     // Assemble the UI
     content.appendChild(title);
     content.appendChild(this.subtitleElement);
+    content.appendChild(durationContainer); // Add duration selector
     content.appendChild(classContainer);
     content.appendChild(instructions);
     content.appendChild(backButton);
@@ -336,6 +414,10 @@ export class ClassSelection {
     
     // Click handler
     card.addEventListener('click', () => {
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
       this.handleClassSelect(className);
     });
     
@@ -384,6 +466,14 @@ export class ClassSelection {
       button.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.3)';
     });
     
+    // Click SFX
+    button.addEventListener('mousedown', () => {
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
+    });
+    
     return button;
   }
   
@@ -391,7 +481,15 @@ export class ClassSelection {
    * Handle class selection
    */
   private handleClassSelect(className: PlayerClass): void {
-    console.log(`🎯 Class selected: ${className}`);
+    console.log(`🎯 Class selected: ${className}, Duration: ${this.selectedDuration / 1000}s`);
+    
+    // Store both class and duration in GameStateManager context
+    this.stateManager.updateContext({ 
+      selectedClass: className,
+      selectedDuration: this.selectedDuration 
+    });
+    
+    // Proceed with class selection
     this.stateManager.selectClass(className);
   }
   

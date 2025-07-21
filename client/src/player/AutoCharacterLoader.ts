@@ -20,6 +20,7 @@ export class AutoCharacterLoader {
   private portraitContainer: HTMLDivElement | null = null;
   private hoverEnterHandler?: () => void;
   private hoverLeaveHandler?: () => void;
+  private boundSettingsHandler?: (event: Event) => void;
   
   // Static image support for when animations are disabled
   private staticImageElement: HTMLImageElement | null = null;
@@ -53,7 +54,7 @@ export class AutoCharacterLoader {
    * Setup listener for character animation settings changes
    */
   private setupSettingsListener(): void {
-    window.addEventListener('characterAnimationsSettingChanged', (event: Event) => {
+    this.boundSettingsHandler = (event: Event) => {
       const customEvent = event as CustomEvent;
       const enabled = customEvent.detail?.enabled ?? true;
       
@@ -66,7 +67,8 @@ export class AutoCharacterLoader {
         this.switchPortraitMode(enabled);
         console.log(`🔄 Switched to ${enabled ? 'animated' : 'static'} portrait mode`);
       }
-    });
+    };
+    window.addEventListener('characterAnimationsSettingChanged', this.boundSettingsHandler);
   }
 
   /**
@@ -446,6 +448,12 @@ export class AutoCharacterLoader {
   public async preloadAllCharacterAnimations(): Promise<void> {
     if (!AutoCharacterLoader.isCharacterAnimationsEnabled()) {
       console.log('🚫 Character animations disabled - skipping preload');
+      
+      // MULTIPLAYER FIX: Send animation ready status to server even when disabled
+      if ((window as any).Network && (window as any).Network.isNetworkingEnabled()) {
+        (window as any).Network.sendAnimationStatus(true);
+        console.log('🎭 Sent animation ready status to server (animations disabled)');
+      }
       return;
     }
     
@@ -486,6 +494,12 @@ export class AutoCharacterLoader {
           percentage: 100
         }
       }));
+      
+      // MULTIPLAYER FIX: Send animation ready status to server even when disabled
+      if ((window as any).Network && (window as any).Network.isNetworkingEnabled()) {
+        (window as any).Network.sendAnimationStatus(true);
+        console.log('🎭 Sent animation ready status to server (animations disabled)');
+      }
       return;
     }
     
@@ -931,6 +945,12 @@ export class AutoCharacterLoader {
     
     // Clean up static image
     this.staticImageElement = null;
+    
+    // Remove settings event listener
+    if (this.boundSettingsHandler) {
+      window.removeEventListener('characterAnimationsSettingChanged', this.boundSettingsHandler);
+      this.boundSettingsHandler = undefined;
+    }
     
     // Remove portrait UI from DOM
     if (this.portraitContainer && this.portraitContainer.parentNode) {

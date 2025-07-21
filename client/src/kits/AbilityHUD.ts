@@ -280,6 +280,11 @@ export class AbilityHUD {
       // Check if cooldown just completed
       if (this.wasOnCooldown && cooldownState.isReady) {
         this.triggerCooldownCompleteEffect(colors.ready);
+        
+        // SFX: Play ability ready sound (same for all abilities)
+        window.dispatchEvent(new CustomEvent('sfxRequest', {
+          detail: { category: 'abilities', filename: 'ability_ready.wav' }
+        }));
       }
 
       // Update button appearance with ability-specific colors

@@ -134,6 +134,11 @@ export function executeGrapple(context: GrappleAbilityContext): void {
   
   const { playerBody, world, camera, scene } = context;
   
+  // SFX: Play grapple shoot sound immediately when fired
+  window.dispatchEvent(new CustomEvent('sfxRequest', {
+    detail: { category: 'abilities', filename: 'grapple_shoot.wav' }
+  }));
+  
   // If already swinging, release
   if (swingState.isSwinging) {
     releaseSwing("manual", context);
@@ -178,6 +183,11 @@ export function executeGrapple(context: GrappleAbilityContext): void {
     
     // Trigger hook flash animation
     swingState.hookFlashStartTime = Date.now();
+    
+    // SFX: Play grapple latch sound on successful attachment
+    window.dispatchEvent(new CustomEvent('sfxRequest', {
+      detail: { category: 'abilities', filename: 'grapple_latch.wav' }
+    }));
     
     // Trigger green latch ring effect
     window.dispatchEvent(new CustomEvent('grappleLatch', {

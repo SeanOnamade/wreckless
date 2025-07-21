@@ -38,6 +38,13 @@ export class FirstPersonController {
   // Mouse button state for networking
   private mouseButtons = { left: false, right: false };
   
+  // Movement SFX tracking
+  private wasGrounded = false; // Track previous grounded state for landing detection
+  private lastFootstepTime = 0; // Track last footstep time for spacing
+  private footstepInterval = 400; // Milliseconds between footsteps (adjust for speed)
+  private wasMoving = false; // Track if player was moving for footstep control
+  private lastAirborneHeight = 0; // Track height when leaving ground for landing detection
+  
   private moveSpeed = 18.0; // 18 m/s base speed (increased for movement shooter feel)
   private slideSpeed = 24.0; // 24 m/s slide speed (increased for faster gameplay)
   private jumpVelocity = 12.0; // Increased for better jump height with reduced gravity
@@ -198,6 +205,12 @@ export class FirstPersonController {
     this.isBlinkMomentum = false;
     this.blinkMomentumSpeed = 0;
     this.isSwinging = false;
+    
+    // Reset SFX tracking
+    this.wasGrounded = true; // Start as grounded to prevent spawn landing sound
+    this.lastFootstepTime = 0;
+    this.wasMoving = false;
+    this.lastAirborneHeight = 0;
 
     // Reset killzone tracking
     this.timeInVoid = 0;
@@ -772,6 +785,11 @@ export class FirstPersonController {
     // Check for killzone conditions (multiple fallbacks for robustness)
     const shouldRespawn = this.checkKillzoneConditions(translation);
     if (shouldRespawn) {
+      // SFX: Play killzone sound before respawn
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'environment', filename: 'killzone_hit.wav' }
+      }));
+      
       // Dispatch respawn event BEFORE reset to avoid circular dependency
       const respawnPosition = this.checkpointSystem 
         ? this.checkpointSystem.getLastCheckpointPosition()
@@ -870,10 +888,11 @@ export class FirstPersonController {
       // Normal movement or with input - calculate movement from current direction/speed
     this.moveVector.copy(this.direction).multiplyScalar(this.currentSpeed * deltaTime);
       
-      // Update preserved momentum when we have input or are grounded
-      if (hasInput || this.isGrounded) {
-        this.preservedMomentum.copy(this.moveVector);
-      }
+          // Update preserved momentum when we have input or are grounded
+    if (hasInput || this.isGrounded) {
+      this.preservedMomentum.copy(this.moveVector);
+    }
+    
     }
     
     // Debug: Log movement state for rocket jumping (disabled to reduce console spam)
@@ -907,6 +926,65 @@ export class FirstPersonController {
       this.velocity.y = 0;
     }
     
+    // SFX: Landing detection - when transitioning from airborne to grounded
+    // Track when we leave the ground
+    if (!this.isGrounded && this.wasGrounded) {
+      this.lastAirborneHeight = this.playerBody.translation().y;
+
+    }
+    
+    // Only trigger landing sound if we fell a significant distance
+    if (this.isGrounded && !this.wasGrounded) {
+            const currentHeight = this.playerBody.translation().y;
+      const fallDistance = this.lastAirborneHeight - currentHeight;
+      if (fallDistance > 0.15) { // Lower threshold for responsive landing on small jumps
+        // SFX: Play landing sound
+        window.dispatchEvent(new CustomEvent('sfxRequest', {
+          detail: { category: 'movement', filename: 'land_hard.wav' }
+        }));
+      }
+    }
+    
+    // Update previous grounded state for next frame
+    this.wasGrounded = this.isGrounded;
+    
+    // SFX: Footsteps - Use actual movement vector magnitude
+    // This reflects the real movement being applied to the physics body
+    const horizontalSpeed = Math.sqrt(this.moveVector.x * this.moveVector.x + this.moveVector.z * this.moveVector.z) / deltaTime;
+    const isFootstepCondition = this.isGrounded && horizontalSpeed > 0.1;
+    
+    // Debug: Log footstep state changes (occasionally)
+    if (Math.random() < 0.001) { // Very rare logging
+      console.log(`👟 Footstep state - grounded: ${this.isGrounded}, hasInput: ${hasInput}, currentSpeed: ${this.currentSpeed.toFixed(1)}, horizontalSpeed: ${horizontalSpeed.toFixed(1)}, playing: ${isFootstepCondition}, wasMoving: ${this.wasMoving}`);
+    }
+    
+    if (isFootstepCondition) {
+      const now = Date.now();
+      
+      // Adjust footstep interval based on current speed (faster = more frequent)
+      const speedBasedInterval = Math.max(200, this.footstepInterval - (this.currentSpeed * 5));
+      
+      if (now - this.lastFootstepTime > speedBasedInterval) {
+        // SFX: Play footstep sound
+        window.dispatchEvent(new CustomEvent('sfxRequest', {
+          detail: { category: 'movement', filename: 'footstep_concrete.wav' }
+        }));
+        this.lastFootstepTime = now;
+      }
+      this.wasMoving = true;
+    } else {
+      // Stop footsteps immediately when conditions not met
+      if (this.wasMoving) {
+        this.wasMoving = false;
+        this.lastFootstepTime = 0; // Reset for immediate restart
+        
+        // SFX: Stop footstep sound immediately
+        window.dispatchEvent(new CustomEvent('sfxStop', {
+          detail: { category: 'movement', filename: 'footstep_concrete.wav' }
+        }));
+      }
+    }
+    
     // Update killzone tracking
     this.updateKillzoneTracking(deltaTime);
     
@@ -932,6 +1010,11 @@ export class FirstPersonController {
     if (this.keys['Space'] && this.isGrounded && this.canJump && !this.isSliding) {
       this.velocity.y = this.jumpVelocity;
       this.canJump = false;
+      
+      // SFX: Play jump sound (uses optimized volume)
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'movement', filename: 'jump.wav' }
+      }));
     }
     
     // Reset jump ability when space is released
@@ -1141,6 +1224,12 @@ export class FirstPersonController {
     this.isBlinkMomentum = false;
     this.blinkMomentumSpeed = 0;
     this.isSwinging = false; // CRITICAL: Reset swing state to prevent high-speed walking bug
+    
+    // Reset SFX tracking
+    this.wasGrounded = true; // Start as grounded to prevent spawn landing sound
+    this.lastFootstepTime = 0;
+    this.wasMoving = false;
+    this.lastAirborneHeight = 0;
 
     // Reset killzone tracking
     this.timeInVoid = 0;

@@ -13,6 +13,7 @@ import { AbilityManager } from './kits/useAbility';
 import { setPlayerClass, getCurrentPlayerKit } from './kits/classKit';
 import { AbilityHUD } from './kits/AbilityHUD';
 import { MeleeCombat, type MeleeTarget } from './combat';
+import { TargetDummy } from './combat/TargetDummy';
 import { DummyPlacementManager } from './combat/DummyPlacementManager';
 import { DummyLoader } from './data/DummyLoader';
 import { PlayerHealth } from './player/PlayerHealth';
@@ -61,7 +62,13 @@ import { gameStateManager } from './state/GameStateManager';
 import { HomeScreen } from './ui/HomeScreen';
 import { ClassSelection } from './ui/ClassSelection';
 import { LobbyScreen } from './ui/LobbyScreen';
+import { SettingsScreen } from './ui/SettingsScreen';
 import { GameMenu } from './menu';
+
+// Audio System
+import { AudioManager } from './audio/AudioManager';
+
+import { DummyPhysicsManager } from './combat/DummyPhysicsManager';
 
 // Character Animation System
 import { AutoCharacterLoader } from './player/AutoCharacterLoader';
@@ -370,6 +377,11 @@ let _roundEndUI: RoundEndUI | null = null;
 let homeScreen: HomeScreen | null = null;
 let classSelection: ClassSelection | null = null;
 let lobbyScreen: LobbyScreen | null = null;
+let settingsScreen: SettingsScreen | null = null;
+
+// Audio System
+let audioManager: AudioManager | null = null;
+
 
 // Character Animation System
 let autoCharacterLoader: AutoCharacterLoader | null = null;
@@ -610,6 +622,100 @@ initPhysics(scene, camera).then((world) => {
     physicsWorld: world
   });
   
+  // Initialize Audio System
+  audioManager = AudioManager.getInstance();
+  
+
+  
+  // Expose physics manager for debugging
+  (window as any).dummyPhysicsManager = DummyPhysicsManager.getInstance();
+  
+  // Expose animation management for debugging
+  (window as any).TargetDummy = TargetDummy;
+  
+  // Start ambient wind once audio is initialized and user has interacted
+  let windStarted = false;
+  const startWindOnInteraction = () => {
+    if (!windStarted) {
+      windStarted = true;
+      setTimeout(() => {
+        audioManager?.playAmbient();
+      }, 500);
+      // Remove listeners after first interaction
+      document.removeEventListener('click', startWindOnInteraction);
+      document.removeEventListener('keydown', startWindOnInteraction);
+    }
+  };
+  
+  // Listen for first user interaction to start wind (autoplay policy)
+  document.addEventListener('click', startWindOnInteraction);
+  document.addEventListener('keydown', startWindOnInteraction);
+  
+  // CRASH PREVENTION: Periodic cleanup to prevent resource buildup  
+  setInterval(() => {
+    try {
+      const stats = TargetDummy.getAnimationStats();
+      
+      // Log animation status occasionally
+      if (import.meta.env.DEV) {
+        console.log(`🎬 Animation Stats: ${stats.global}/${stats.limit} global frames, ${stats.rate}/s max rate`);
+      }
+      
+      // Aggressive cleanup if animation frames are building up
+      if (stats.global > stats.limit * 0.8) {
+        console.warn(`⚠️ High animation frame usage (${stats.global}/${stats.limit}) - cleaning up`);
+        TargetDummy.cleanupGlobalAnimations();
+      }
+      
+      // Check individual dummies
+      if (targetDummies) {
+        targetDummies.forEach(dummy => {
+          if ('activeAnimationFrames' in dummy) {
+            const frames = (dummy as any).activeAnimationFrames;
+            if (frames && frames.size > 6) {
+              console.warn(`⚠️ Dummy ${(dummy as any).id}: ${frames.size} active animation frames`);
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.warn('Cleanup monitoring error:', error);
+    }
+  }, 10000); // Check every 10 seconds (more frequent)
+  
+  // Expose AudioManager to window for console testing
+  (window as any).AudioManager = AudioManager;
+  (window as any).audioManager = audioManager;
+  
+  // Immediate SFX Event System - audio plays instantly, physics operations still deferred
+  
+  // Play SFX immediately - audio doesn't need physics safety delays
+  window.addEventListener('sfxRequest', (event: Event) => {
+    const customEvent = event as CustomEvent<{ category: string, filename: string, volumeOverride?: number }>;
+    const { category, filename, volumeOverride } = customEvent.detail;
+    
+    // Play audio immediately for responsive feedback
+    if (audioManager) {
+      audioManager.playSFX(category as any, filename, volumeOverride).catch(error => {
+        console.warn(`🔊 Failed to play SFX immediately: ${category}/${filename}`, error);
+      });
+    }
+  });
+
+  // Handle SFX stop requests immediately
+  window.addEventListener('sfxStop', (event: Event) => {
+    const customEvent = event as CustomEvent<{ category: string, filename: string }>;
+    const { category, filename } = customEvent.detail;
+    
+    // Stop the SFX immediately (no queue to clear since audio plays instantly)
+    audioManager?.stopSFX(category as any, filename);
+  });
+  
+  // SFX queue system removed - audio now plays immediately
+  // Only physics operations use the DummyPhysicsManager for safety
+  
+  console.log('🎵 Audio system initialized - immediate SFX, deferred physics');
+  
   // Create HomeScreen UI component
   homeScreen = new HomeScreen(gameStateManager);
   
@@ -619,11 +725,15 @@ initPhysics(scene, camera).then((world) => {
   // Create LobbyScreen UI component (placeholder)
   lobbyScreen = new LobbyScreen(gameStateManager);
   
+  // Create SettingsScreen UI component
+  settingsScreen = new SettingsScreen(gameStateManager);
+  
   // Register UI components with GameStateManager
   gameStateManager.registerComponents({
     homeScreen: homeScreen,
     classSelection: classSelection,
-    lobbyScreen: lobbyScreen
+    lobbyScreen: lobbyScreen,
+    settingsScreen: settingsScreen
   });
   
   console.log('🏠 Day 6 Sprint: Game state management initialized');
@@ -842,8 +952,10 @@ initPhysics(scene, camera).then((world) => {
     
     // Handle other keys in separate listener  
     window.addEventListener('keydown', (event) => {
-      if (event.code === 'KeyC') {
-        // Copy combat log to clipboard
+      // Only trigger combat log copy on C key WITHOUT any modifiers
+      if (event.code === 'KeyC' && !event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) {
+        // SAFETY: Defer clipboard operation to avoid physics conflicts
+        setTimeout(() => {
         if (debugUI) {
           const combatLog = debugUI.getCombatLog();
           const logText = combatLog.join('\n');
@@ -856,6 +968,7 @@ initPhysics(scene, camera).then((world) => {
             combatLog.forEach(entry => console.log(entry));
           });
         }
+        }, 0);
       }
     });
   }
@@ -959,7 +1072,11 @@ window.addEventListener('beforeunload', () => {
     homeScreen?.destroy();
     classSelection?.destroy();
     lobbyScreen?.destroy();
+    settingsScreen?.destroy();
     gameMenu?.destroy();
+    
+    // Cleanup Audio System
+    audioManager?.destroy();
     
     // Cleanup FX effects to prevent memory leaks
     blastShakeEffect?.cleanup();
@@ -1142,6 +1259,11 @@ function animate() {
         const currentSpeed = physicsWorld.fpsController.getCurrentSpeed();
         speedFovEffect.updateSpeed(currentSpeed);
         windStreakEffect.updateSpeed(currentSpeed);
+        
+        // Update ambient wind volume based on speed
+        if (audioManager) {
+          audioManager.updateSpeed(currentSpeed);
+        }
       }
       CameraEffects.update(deltaTime);
     } catch (error) {
@@ -1157,19 +1279,61 @@ function animate() {
       console.error('⚠️ Ability effects update error:', error);
     }
 
-    // Update dummy rotation animations
-    try {
-      if (targetDummies && targetDummies.length > 0) {
-        targetDummies.forEach(dummy => {
-          // Check if dummy has update method (TargetDummy or RacingTargetDummy)
-          if ('update' in dummy && typeof dummy.update === 'function') {
-            (dummy as any).update(deltaTime);
+    // Update dummy rotation animations with MAXIMUM isolation from physics
+    // Use requestIdleCallback to ensure dummy updates never conflict with physics
+    if (typeof requestIdleCallback !== 'undefined') {
+      requestIdleCallback(() => {
+        try {
+          if (targetDummies && targetDummies.length > 0) {
+            targetDummies.forEach((dummy, index) => {
+              try {
+                // Check if dummy has update method (TargetDummy or RacingTargetDummy)
+                if ('update' in dummy && typeof dummy.update === 'function') {
+                  (dummy as any).update(deltaTime);
+                }
+              } catch (dummyError) {
+                // Handle individual dummy errors without crashing the whole system
+                if (dummyError instanceof Error && dummyError.message.includes('recursive')) {
+                  console.warn(`⚠️ Dummy ${index} recursive error (skipping this frame):`, dummyError.message);
+                } else {
+                  console.warn(`⚠️ Dummy ${index} update error:`, dummyError);
+                }
+              }
+            });
           }
-        });
-      }
-    } catch (error) {
-      // Suppress spammy dummy animation errors
-      // console.error('⚠️ Dummy animation update error:', error);
+        } catch (error) {
+          // Catch-all for dummy system errors
+          console.warn('⚠️ Dummy animation system error:', error);
+        }
+      });
+    } else {
+      // Fallback: defer with double setTimeout for maximum safety
+      setTimeout(() => {
+        setTimeout(() => {
+          try {
+            if (targetDummies && targetDummies.length > 0) {
+              targetDummies.forEach((dummy, index) => {
+                try {
+                  // Check if dummy has update method (TargetDummy or RacingTargetDummy)
+                  if ('update' in dummy && typeof dummy.update === 'function') {
+                    (dummy as any).update(deltaTime);
+                  }
+                } catch (dummyError) {
+                  // Handle individual dummy errors without crashing the whole system
+                  if (dummyError instanceof Error && dummyError.message.includes('recursive')) {
+                    console.warn(`⚠️ Dummy ${index} recursive error (skipping this frame):`, dummyError.message);
+                  } else {
+                    console.warn(`⚠️ Dummy ${index} update error:`, dummyError);
+                  }
+                }
+              });
+            }
+          } catch (error) {
+            // Catch-all for dummy system errors
+            console.warn('⚠️ Dummy animation system error:', error);
+          }
+        }, 16);
+      }, 0);
     }
 
     // Update UI and checkpoint system

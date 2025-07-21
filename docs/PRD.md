@@ -150,3 +150,44 @@ Spawn → Checkpoint A (Momentum Pad) → Checkpoint B (Combat Arena) → Chec
 We're currently using **PvE Dummy Targets** for the MVP. Players will race around the track and hit dummy targets placed on or near the course. Dummies will grant **speed boosts** or other bonuses (e.g. cooldown resets). This ensures the game remains satisfying and testable even without multiplayer.
 
 We are **pinning a future extension (Option 3)** to include PvP combat *alongside* the dummy system. In this version, dummies would remain as optional boost pickups, while players could also melee each other for points or disruption. We'll explore this hybrid mode if there's time after MVP polish.
+
+---
+
+## Remaining After Project End
+
+The following features from the original PRD remain to be implemented to achieve the full vision:
+
+### Combat & Defense Systems
+
+- **Quick-Block System** – RMB hold reduces damage to 25% and knockback by half, with 0.5s lockout after release
+- **Parry Mechanic** – RMB tap in 0.15s window nullifies damage and staggers attacker for 0.4s, 1s cooldown
+
+### Speed Boost & Racing Mechanics
+
+- **KO Speed Buff** – +30% speed after KO'ing opponent, decays linearly over 5 seconds
+- **Slipstream System** – +15% top speed when >10m behind nearest rival, until gap <5m
+- **Momentum Pad Functionality** – Checkpoint A grants +10% speed for 4s on touch
+
+### Round & Victory Systems
+
+- **60s Round Timer** – with overtime (continues until leader finishes)
+- **Victory Conditions** – first across finish line OR farthest checkpoint progress on timer
+- **Round-based Scoring** – proper points system for race completion vs combat
+
+### Track Design Refinements
+
+- **Combat Arena at Checkpoint B** – tight bridges/low walls for focal combat area
+- **Vertical Climb at Checkpoint C** – special respawn mechanics (fall respawns on ground)
+- **Figure-8 Layout Validation** – ensure proper intersecting course design
+
+### Multiplayer Polish
+
+- **Server Authoritative Combat** – prevent desync in melee hit detection
+- **2-8 Player Race State** – proper lobby, race start, and leaderboard systems
+- **Player Knockback Physics** – implement proper impulse forces between players
+
+### Balance & Polish
+
+- **Class Damage Verification** – ensure Blast 60 HP, Grapple 40 HP (70 crit), Blink 50 HP (30+20 bonus) match PRD exactly
+- **Cooldown Balance Pass** – verify all ability cooldowns match PRD specifications
+- **Performance Optimization** – 60 fps on low-spec laptops, sub-2ms physics frames

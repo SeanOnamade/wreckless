@@ -6,6 +6,7 @@ import type { DummyPositionData } from './DummyPositionTypes';
 import dummyPositionsData from './dummyPositions.json';
 import type { MeleeTarget } from '../combat/MeleeCombat';
 import { Network } from '../net';
+import { DummyPhysicsManager } from '../combat/DummyPhysicsManager';
 
 export interface SpeedBoostConfig {
   baseDuration: number; // 3 seconds base
@@ -294,7 +295,10 @@ export class RacingTargetDummy implements MeleeTarget {
       source: this.id
     };
     
-    // Dispatch speed boost event
+    // SFX: Play speed boost gained sound
+    window.dispatchEvent(new CustomEvent('sfxRequest', {
+      detail: { category: 'combat', filename: 'speed_boost_gained.wav' }
+    }));
     
     // Dispatch speed boost event for the controller to handle
     window.dispatchEvent(new CustomEvent('speedBoostGranted', {
@@ -308,34 +312,14 @@ export class RacingTargetDummy implements MeleeTarget {
   private hideTarget(): void {
     if (this.isDestroyed) return; // Guard against destruction
     
-    // DEFER setTranslation to avoid Rapier "recursive use" error
-    // This happens when setTranslation is called during an active physics query
-    const frameId = requestAnimationFrame(() => {
-      if (this.isDestroyed) return; // Check again after frame delay
-      
-      try {
-        // Check if rigidBody exists before trying to use it
-        if (!this.rigidBody) {
-          // Silently skip - dummy might have been cleaned up
-          return;
-        }
-        
-        // Move dummy underground temporarily
-        this.rigidBody.setTranslation({
-          x: this.position.x,
-          y: this.position.y - 100,
-          z: this.position.z
-        }, true);
-      } catch (deferredError) {
-        console.error(`Error in deferred hideTarget for ${this.id}:`, deferredError);
-      }
-      
-      // Remove frame ID from tracking set
-      this.activeAnimationFrames.delete(frameId);
-    });
-    
-    // Track the animation frame for cleanup
-    this.activeAnimationFrames.add(frameId);
+    // ULTRA SAFE: Use centralized physics manager to prevent recursive errors
+    const physicsManager = DummyPhysicsManager.getInstance();
+    physicsManager.queueSetTranslation(
+      this.rigidBody,
+      { x: this.position.x, y: this.position.y - 100, z: this.position.z },
+      true,
+      this.id
+    );
   }
 
   /**
@@ -344,36 +328,14 @@ export class RacingTargetDummy implements MeleeTarget {
   private showTarget(): void {
     if (this.isDestroyed) return; // Guard against destruction
     
-    // DEFER setTranslation to avoid Rapier "recursive use" error
-    const frameId = requestAnimationFrame(() => {
-      if (this.isDestroyed) return; // Check again after frame delay
-      
-      try {
-        // Check if rigidBody exists before trying to use it
-        if (!this.rigidBody) {
-          // Silently skip - dummy might have been cleaned up
-          return;
-        }
-        
-        // Move dummy back to original position
-        this.rigidBody.setTranslation({
-          x: this.position.x,
-          y: this.position.y,
-          z: this.position.z
-        }, true);
-      } catch (deferredError) {
-        // Only log if it's not a common cleanup issue
-        if (this.rigidBody) {
-          console.warn(`⚠️ Dummy ${this.id}: Could not reset position`);
-        }
-      }
-      
-      // Remove frame ID from tracking set
-      this.activeAnimationFrames.delete(frameId);
-    });
-    
-    // Track the animation frame for cleanup
-    this.activeAnimationFrames.add(frameId);
+    // ULTRA SAFE: Use centralized physics manager to prevent recursive errors
+    const physicsManager = DummyPhysicsManager.getInstance();
+    physicsManager.queueSetTranslation(
+      this.rigidBody,
+      { x: this.position.x, y: this.position.y, z: this.position.z },
+      true,
+      this.id
+    );
   }
 
   /**

@@ -81,6 +81,11 @@ export function blastJump(
   const velocity = cameraDirection.clone().multiplyScalar(50);
   projectileBody.setLinvel(velocity, true);
   
+  // SFX: Request blast launch sound (safe - uses events)
+  window.dispatchEvent(new CustomEvent('sfxRequest', {
+    detail: { category: 'abilities', filename: 'blast_launch.wav' }
+  }));
+  
   // Create active projectile record
   const projectile: ActiveProjectile = {
     mesh: projectileMesh,
@@ -150,15 +155,24 @@ export function updateBlast(): void {
       shouldExplode = true;
     }
     
-    // Method 3: Contact detection (20ms response time)
+    // Method 3: Contact detection (20ms response time) - DEFERRED FOR SAFETY
+    // CRASH PREVENTION: Defer collision detection to avoid recursive Rapier access
+    setTimeout(() => {
+      if (!projectile.hasExploded && activeProjectiles.has(projectile)) {
     let numContacts = 0;
+        try {
     projectile.world.contactPairsWith(projectile.body.collider(0)!, (_collider2) => {
       numContacts++;
       return true;
     });
     if (numContacts > 0 && age > 0.02) {
-      shouldExplode = true;
+            explodeProjectile(projectile);
+          }
+        } catch (error) {
+          console.warn('Collision detection error (deferred):', error);
     }
+      }
+    }, 0);
     
     // Method 4: Ground check
     if (currentPosition.y < -1.0) {

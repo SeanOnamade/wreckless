@@ -379,6 +379,11 @@ export class CheckpointSystem {
           // Calculate player speed for visual feedback
           const playerSpeed = playerVelocity ? playerVelocity.length() : 0;
           
+          // SFX: Play checkpoint hit sound
+          window.dispatchEvent(new CustomEvent('sfxRequest', {
+            detail: { category: 'ui', filename: 'checkpoint_hit.wav' }
+          }));
+          
           // Trigger visual feedback for valid progression only
           window.dispatchEvent(new CustomEvent('checkpointHit', {
             detail: {

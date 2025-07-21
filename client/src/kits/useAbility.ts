@@ -162,6 +162,10 @@ export class AbilityManager {
       } else {
         // Firing new grapple - check if ready but don't set cooldown yet
         if (!kit.ability.isReady) {
+          // SFX: Play ability blocked sound for grapple too
+          window.dispatchEvent(new CustomEvent('sfxRequest', {
+            detail: { category: 'abilities', filename: 'ability_blocked.wav' }
+          }));
           return false;
         }
         // Don't call useAbilityFromKit - we'll set cooldown only on successful swing release
@@ -169,6 +173,10 @@ export class AbilityManager {
     } else {
       // For other abilities: normal cooldown behavior
     if (!useAbilityFromKit(kit)) {
+        // SFX: Play ability blocked sound when on cooldown
+        window.dispatchEvent(new CustomEvent('sfxRequest', {
+          detail: { category: 'abilities', filename: 'ability_blocked.wav' }
+        }));
       return false;
       }
     }
@@ -179,9 +187,18 @@ export class AbilityManager {
     try {
       handler(this.context);
       
-      // Dispatch success event
+      // Dispatch success events for compatibility
       window.dispatchEvent(new CustomEvent('abilityActivated', {
         detail: {
+          className: kit.className,
+          timestamp: Date.now()
+        }
+      }));
+      
+      // Also dispatch abilityUsed for systems expecting this event
+      window.dispatchEvent(new CustomEvent('abilityUsed', {
+        detail: {
+          ability: kit.className,
           className: kit.className,
           timestamp: Date.now()
         }

@@ -309,6 +309,14 @@ export class LobbyScreen {
       button.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.3)';
     });
     
+    // Click SFX
+    button.addEventListener('mousedown', () => {
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
+    });
+    
     return button;
   }
   
@@ -549,9 +557,27 @@ export class LobbyScreen {
     const grappleBtn = container.querySelector('#class-grapple') as HTMLButtonElement;
     const blinkBtn = container.querySelector('#class-blink') as HTMLButtonElement;
     
-    blastBtn?.addEventListener('click', () => this.selectClass('blast'));
-    grappleBtn?.addEventListener('click', () => this.selectClass('grapple'));
-    blinkBtn?.addEventListener('click', () => this.selectClass('blink'));
+    blastBtn?.addEventListener('click', () => {
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
+      this.selectClass('blast');
+    });
+    grappleBtn?.addEventListener('click', () => {
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
+      this.selectClass('grapple');
+    });
+    blinkBtn?.addEventListener('click', () => {
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
+      this.selectClass('blink');
+    });
   }
   
   /**

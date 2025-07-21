@@ -127,7 +127,13 @@ export class RoundStartUI {
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
     `;
     this.startButton.textContent = 'START RACE';
-    this.startButton.addEventListener('click', this.boundClickHandler);
+    this.startButton.addEventListener('click', () => {
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
+      this.boundClickHandler();
+    });
     
     // Add hover effect
     this.startButton.addEventListener('mouseenter', () => {

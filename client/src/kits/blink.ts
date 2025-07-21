@@ -101,6 +101,11 @@ const SAFE_MIN_HEIGHT = 2.5; // Minimum safe height (updated for raised track)
     // Execute the blink
     playerBody.setTranslation(finalTargetPosition, true);
     
+    // SFX: Request blink teleport sound (safe - uses events)
+    window.dispatchEvent(new CustomEvent('sfxRequest', {
+      detail: { category: 'abilities', filename: 'blink_teleport.wav' }
+    }));
+    
     // Apply forward impulse for momentum preservation and feel
     const forwardImpulse = direction.clone().multiplyScalar(forwardImpulseStrength);
     window.dispatchEvent(new CustomEvent('blinkMomentumImpulse', {
@@ -138,7 +143,7 @@ const SAFE_MIN_HEIGHT = 2.5; // Minimum safe height (updated for raised track)
     }));
   }
   
-  // Dispatch ability used event
+  // Dispatch ability events for compatibility
   window.dispatchEvent(new CustomEvent('abilityUsed', {
     detail: {
       ability: 'blink',
@@ -148,6 +153,15 @@ const SAFE_MIN_HEIGHT = 2.5; // Minimum safe height (updated for raised track)
       distance: blinkSuccess ? playerPosition.distanceTo(finalTargetPosition) : 0,
       verticalBoost: isSpacePressed,
       blockReason: blockReason || undefined
+    }
+  }));
+  
+  // Also dispatch abilityActivated for systems expecting this event
+  window.dispatchEvent(new CustomEvent('abilityActivated', {
+    detail: {
+      className: 'blink',
+      timestamp: Date.now(),
+      success: blinkSuccess
     }
   }));
 }

@@ -258,23 +258,29 @@ export class MeleeCombat {
             if (speed > 8.0) { // If moving fast while swinging
               damage = COMBAT_CONFIG.GRAPPLE_CRIT_DAMAGE; // 70 HP
               console.log(`🪝 VELOCITY CRIT! (${speed.toFixed(1)} m/s) - 70 HP`);
-              // Add to combat log
+              // SAFETY: Defer event dispatching to avoid physics conflicts
+              setTimeout(() => {
               window.dispatchEvent(new CustomEvent('combatLogMessage', {
                 detail: { message: `🪝 VELOCITY CRIT! (${speed.toFixed(1)} m/s)` }
               }));
+              }, 0);
             } else if (speed > 4.0) { // Medium speed
               damage = COMBAT_CONFIG.DAMAGE.grapple + 20; // 25 + 20 = 45
               console.log(`🪝 Speed bonus (${speed.toFixed(1)} m/s) - 45 HP`);
-              // Add to combat log
+              // SAFETY: Defer event dispatching to avoid physics conflicts
+              setTimeout(() => {
               window.dispatchEvent(new CustomEvent('combatLogMessage', {
                 detail: { message: `🪝 Speed bonus (${speed.toFixed(1)} m/s) - 45 HP` }
               }));
+              }, 0);
             } else {
               console.log(`🪝 Slow swing (${speed.toFixed(1)} m/s) - 25 HP`);
-              // Add to combat log
+              // SAFETY: Defer event dispatching to avoid physics conflicts
+              setTimeout(() => {
               window.dispatchEvent(new CustomEvent('combatLogMessage', {
                 detail: { message: `🪝 Slow swing (${speed.toFixed(1)} m/s) - 25 HP` }
               }));
+              }, 0);
             }
             
             console.log('🔄 Grapple 360° swing active!');
@@ -428,7 +434,8 @@ export class MeleeCombat {
       this.triggerSpecialHitFeedback(attackParams.isCrit ? 'crit' : 'bonus');
     }
     
-    // Dispatch hit event for effects/UI
+    // SAFETY: Defer event dispatching to avoid physics conflicts
+    setTimeout(() => {
     window.dispatchEvent(new CustomEvent('meleeHit', {
       detail: {
         targetId: target.id,
@@ -440,6 +447,7 @@ export class MeleeCombat {
         isBonus: attackParams.isBonus || false
       }
     }));
+    }, 0);
   }
   
   /**

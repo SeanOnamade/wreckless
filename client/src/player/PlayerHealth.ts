@@ -38,10 +38,12 @@ export class PlayerHealth {
       damage = Math.floor(damage * 0.25);
       console.log(`🛡️ Blocked! Damage reduced to ${damage}`);
       
-      // Add to combat log
+      // SAFETY: Defer event dispatching to avoid physics conflicts
+      setTimeout(() => {
       window.dispatchEvent(new CustomEvent('combatLogMessage', {
         detail: { message: `🛡️ Blocked! Damage reduced to ${damage}` }
       }));
+      }, 0);
     }
     
     const healthBefore = this.currentHealth;
@@ -53,6 +55,8 @@ export class PlayerHealth {
     
     console.log(`💔 Player health: ${healthBefore} → ${this.currentHealth}/${this.maxHealth} HP (damage: ${damage})`);
     
+    // SAFETY: Defer event dispatching to avoid physics conflicts
+    setTimeout(() => {
     // Add to combat log
     window.dispatchEvent(new CustomEvent('combatLogMessage', {
       detail: { message: `💔 Player: ${this.currentHealth}/${this.maxHealth} HP` }
@@ -62,6 +66,7 @@ export class PlayerHealth {
     window.dispatchEvent(new CustomEvent('playerHealthChanged', {
       detail: { current: this.currentHealth, max: this.maxHealth }
     }));
+    }, 0);
     
     // Check for KO with debugging
     if (this.currentHealth <= 0) {

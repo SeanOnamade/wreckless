@@ -70,6 +70,30 @@ export class RaceRoundSystem {
       this.onRoundEndCallbacks.push(callbacks.onRoundEnd);
     }
   }
+  
+  /**
+   * Update round configuration (can only be done when round is waiting)
+   */
+  updateConfig(newConfig: Partial<RoundConfig>): boolean {
+    if (this.state !== 'waiting') {
+      console.warn('Cannot update round config - round is not in waiting state');
+      return false;
+    }
+    
+    this.config = {
+      ...this.config,
+      ...newConfig
+    };
+    
+    console.log(`🔧 Round config updated:`, {
+      duration: `${this.config.roundDurationMs / 1000}s`,
+      dummyKOPoints: this.config.dummyKOPoints,
+      checkpointPoints: this.config.checkpointPoints,
+      lapCompletePoints: this.config.lapCompletePoints
+    });
+    
+    return true;
+  }
 
   /**
    * Legacy method for backward compatibility

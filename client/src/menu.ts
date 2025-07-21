@@ -97,13 +97,27 @@ export class GameMenu {
     const resetBtn = menuContent.querySelector('#reset-btn') as HTMLButtonElement;
     const menuBtn = menuContent.querySelector('#menu-btn') as HTMLButtonElement;
     
-    resumeBtn.addEventListener('click', () => this.closeMenu());
+    resumeBtn.addEventListener('click', () => {
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
+      this.closeMenu();
+    });
     resetBtn.addEventListener('click', () => {
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
       this.closeMenu();
       // Dispatch player position reset (same as R key)
       window.dispatchEvent(new CustomEvent('resetPlayerPosition'));
     });
     menuBtn.addEventListener('click', () => {
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
       this.closeMenu();
       // Dispatch main menu event (clean transition to homescreen)
       window.dispatchEvent(new CustomEvent('main-menu-requested'));

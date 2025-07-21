@@ -241,7 +241,13 @@ export class RoundEndUI {
           0 4px 10px rgba(0, 0, 0, 0.3);
       `;
       this.anotherRoundButton.textContent = '🔄 ANOTHER ROUND';
-      this.anotherRoundButton.addEventListener('click', this.boundAnotherRoundHandler);
+      this.anotherRoundButton.addEventListener('click', () => {
+        // SFX: Play button click sound
+        window.dispatchEvent(new CustomEvent('sfxRequest', {
+          detail: { category: 'ui', filename: 'button_click.wav' }
+        }));
+        this.boundAnotherRoundHandler();
+      });
       
       // Add hover effect for another round button
       this.anotherRoundButton.addEventListener('mouseenter', () => {
@@ -272,7 +278,13 @@ export class RoundEndUI {
         0 4px 10px rgba(0, 0, 0, 0.3);
     `;
     this.menuButton.textContent = '🏠 BACK TO MENU';
-    this.menuButton.addEventListener('click', this.boundMenuHandler);
+    this.menuButton.addEventListener('click', () => {
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
+      this.boundMenuHandler();
+    });
     
     // Add hover effect for menu button
     this.menuButton.addEventListener('mouseenter', () => {

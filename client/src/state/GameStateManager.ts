@@ -4,11 +4,12 @@ import type { RaceRoundSystem } from '../systems/RaceRoundSystem';
 import type { MultiplayerManager } from '../net/MultiplayerManager';
 import { Network } from '../net';
 
-export type GameState = 'initializing' | 'homescreen' | 'class-selection' | 'singleplayer' | 'lobby' | 'race' | 'leaderboard';
+export type GameState = 'initializing' | 'homescreen' | 'class-selection' | 'singleplayer' | 'lobby' | 'race' | 'leaderboard' | 'settings';
 export type GameMode = 'singleplayer' | 'multiplayer';
 
 export interface GameStateContext {
   selectedClass?: PlayerClass;
+  selectedDuration?: number; // Round duration in milliseconds
   gameMode?: GameMode;
   isOnline?: boolean;
   lobbyData?: any;
@@ -29,6 +30,7 @@ export class GameStateManager {
   private homeScreen?: any;
   private classSelection?: any;
   private lobbyScreen?: any;
+  private settingsScreen?: any;
   
   // Existing round UI components (to hide/show when needed)
   private roundStartUI?: any;
@@ -80,10 +82,12 @@ export class GameStateManager {
     homeScreen?: any;
     classSelection?: any;
     lobbyScreen?: any;
+    settingsScreen?: any;
   }) {
     this.homeScreen = components.homeScreen;
     this.classSelection = components.classSelection;
     this.lobbyScreen = components.lobbyScreen;
+    this.settingsScreen = components.settingsScreen;
     console.log('🔗 UI components registered with GameStateManager');
   }
   
@@ -214,6 +218,16 @@ export class GameStateManager {
     }
     
     console.log('🎮 Starting singleplayer game...');
+    
+    // Configure round system with selected duration
+    if (this.roundSystem && this.context.selectedDuration) {
+      const success = this.roundSystem.updateConfig({
+        roundDurationMs: this.context.selectedDuration
+      });
+      if (success) {
+        console.log(`⏱️ Round duration configured: ${this.context.selectedDuration / 1000}s`);
+      }
+    }
     
     // Request race start (will wait for animations if needed)
     window.dispatchEvent(new CustomEvent('raceStartRequest', {
@@ -409,12 +423,13 @@ export class GameStateManager {
   private isValidTransition(from: GameState, to: GameState): boolean {
     const validTransitions: Record<GameState, GameState[]> = {
       'initializing': ['homescreen'],
-      'homescreen': ['class-selection', 'lobby'], // Allow direct multiplayer lobby access
+      'homescreen': ['class-selection', 'lobby', 'settings'], // Allow direct multiplayer lobby access and settings
       'class-selection': ['singleplayer', 'lobby', 'homescreen', 'race'], // Allow direct race start
       'singleplayer': ['race'],
       'lobby': ['race', 'homescreen'],
       'race': ['leaderboard', 'homescreen'], // Allow quitting race to main menu
-      'leaderboard': ['homescreen', 'lobby'] // Can return to lobby for another round
+      'leaderboard': ['homescreen', 'lobby'], // Can return to lobby for another round
+      'settings': ['homescreen'] // Settings can only return to homescreen
     };
     
     return validTransitions[from]?.includes(to) ?? false;
@@ -451,6 +466,12 @@ export class GameStateManager {
         this.lobbyScreen?.show();
         break;
         
+      case 'settings':
+        this.hideAllUI();
+        this.blockInput(); // Block player movement in menu
+        this.settingsScreen?.show();
+        break;
+        
       case 'race':
         this.hideAllUI();
         this.unblockInput(); // Enable player movement for gameplay
@@ -472,6 +493,7 @@ export class GameStateManager {
     this.homeScreen?.hide();
     this.classSelection?.hide();
     this.lobbyScreen?.hide();
+    this.settingsScreen?.hide();
     
     // Also hide existing round UI when showing menu screens
     if (this.roundStartUI?.hide) {

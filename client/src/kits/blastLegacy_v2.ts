@@ -106,13 +106,21 @@ export function blastJump(
   
   console.log(`🚀 Rocket launched at ${settings.projectileSpeed} m/s from position: ${spawnPosition.x.toFixed(1)}, ${spawnPosition.y.toFixed(1)}, ${spawnPosition.z.toFixed(1)}`);
   
-  // Dispatch event for visual effects
+  // Dispatch events for visual effects and compatibility
   window.dispatchEvent(new CustomEvent('abilityUsed', {
     detail: {
       ability: 'rocketJump',
       position: spawnPosition,
       direction: cameraDirection,
       settings: settings
+    }
+  }));
+  
+  // Also dispatch abilityActivated for systems expecting this event
+  window.dispatchEvent(new CustomEvent('abilityActivated', {
+    detail: {
+      className: 'blast',
+      timestamp: Date.now()
     }
   }));
 }

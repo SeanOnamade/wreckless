@@ -28,6 +28,7 @@ export class HitVolume {
   private world: RAPIER.World;
   private controller: FirstPersonController;
   private meleeCombat: MeleeCombat;
+  private isDestroyed = false;
   
   // Position tracking for frame-by-frame sweeps
   private lastPosition: THREE.Vector3 = new THREE.Vector3();
@@ -210,8 +211,13 @@ export class HitVolume {
     const testPos = { x: position.x, y: position.y, z: position.z };
     const testRot = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
     
-    // Check for intersections with both dummies and players
-    this.world.intersectionsWithShape(testPos, testRot, testShape, (collider: RAPIER.Collider) => {
+    // ULTRA SAFE: Use requestIdleCallback to ensure collision check happens outside physics step
+    if (typeof requestIdleCallback !== 'undefined') {
+      requestIdleCallback(() => {
+        if (this.isDestroyed) return;
+        
+        try {
+          this.world.intersectionsWithShape(testPos, testRot, testShape, (collider: RAPIER.Collider) => {
       const userData = collider.parent()?.userData as any;
       const rigidBody = collider.parent();
       
@@ -236,8 +242,8 @@ export class HitVolume {
         // Mark as hit to prevent multiple hits
         hitTargets.add(targetId);
         
-        // Process the hit
-        this.processHitOnTarget(targetId, hitType, sweepDistance, deltaTime);
+            // Process the hit (immediate - no more nested deferrals)
+            this.processHitOnTarget(targetId, hitType, sweepDistance, deltaTime);
         
         return true; // Continue checking for more targets
       }
@@ -255,13 +261,81 @@ export class HitVolume {
           // Mark as hit to prevent multiple hits
           hitTargets.add(targetId);
           
-          // Process the PvP hit
+          // Process the PvP hit (immediate - no more nested deferrals)
           this.processPlayerHit(targetId, hitType, sweepDistance);
         }
       }
       
-      return true; // Continue checking for more targets
+      return true; // Continue checking
     });
+        } catch (error) {
+          console.warn('⚠️ HitVolume collision detection error (deferred):', error);
+        }
+      }, { timeout: 100 });
+    } else {
+      // Fallback: use double setTimeout for browsers without requestIdleCallback
+      setTimeout(() => {
+        setTimeout(() => {
+          if (this.isDestroyed) return;
+          
+          try {
+            this.world.intersectionsWithShape(testPos, testRot, testShape, (collider: RAPIER.Collider) => {
+              const userData = collider.parent()?.userData as any;
+              const rigidBody = collider.parent();
+              
+              if (!userData || !rigidBody) {
+                return true; // Continue checking
+              }
+              
+              // Handle dummy colliders (existing logic)
+              if (userData.isDummy) {
+                // Skip disabled rigidBodies (KO'd dummies)
+                const isEnabled = rigidBody.isEnabled();
+                
+                if (!isEnabled) {
+                  return true; // Continue checking (dummy is KO'd)
+                }
+                
+                const targetId = userData.id;
+                if (!targetId || hitTargets.has(targetId)) {
+                  return true; // Continue if already hit or no ID
+                }
+                
+                // Mark as hit to prevent multiple hits
+                hitTargets.add(targetId);
+                
+                // Process the hit (immediate - no more nested deferrals)
+                this.processHitOnTarget(targetId, hitType, sweepDistance, deltaTime);
+            
+                return true; // Continue checking for more targets
+              }
+              
+              // Handle player colliders (NEW PvP logic)
+              if (COMBAT_MODE_CONFIG.PVP_ENABLED && userData.isPlayer && userData.id !== 'localPlayer') {
+                // PvP hit detected - check if local player is attacking
+                const localCombatState = this.controller.getCombatState();
+                if (localCombatState.isAttacking) {
+                  const targetId = userData.id;
+                  if (!targetId || hitTargets.has(targetId)) {
+                    return true; // Continue if already hit or no ID
+                  }
+                  
+                  // Mark as hit to prevent multiple hits
+                  hitTargets.add(targetId);
+                  
+                  // Process the PvP hit (immediate - no more nested deferrals)
+                  this.processPlayerHit(targetId, hitType, sweepDistance);
+                }
+              }
+              
+              return true; // Continue checking
+            });
+          } catch (error) {
+            console.warn('⚠️ HitVolume collision detection error (deferred):', error);
+          }
+        }, 0);
+      }, 0);
+    }
   }
 
   /**
@@ -332,7 +406,20 @@ export class HitVolume {
     // Get player class safely
     const playerClass = this.getCurrentPlayerClass();
     
-    // Dispatch hit event for combat log (same format as MeleeCombat)
+    // Dispatch passthrough hit event for scoring system
+    window.dispatchEvent(new CustomEvent('passthroughHit', {
+      detail: {
+        targetId,
+        damage: finalDamage,
+        className: playerClass,
+        knockbackForce: finalDamage * 10,
+        direction: hitDirection,
+        isCrit: damageResult.isCrit,
+        isBonus: damageResult.isBonus
+      }
+    }));
+    
+    // Also dispatch meleeHit for combat log compatibility
     window.dispatchEvent(new CustomEvent('meleeHit', {
       detail: {
         targetId,
@@ -520,7 +607,10 @@ export class HitVolume {
    * Cleanup resources
    */
   destroy(): void {
+    this.isDestroyed = true;
     this.hitCooldowns.clear();
+    this.frameHitTargets.clear();
+    this.cachedTestShapes.clear();
   }
 }
 

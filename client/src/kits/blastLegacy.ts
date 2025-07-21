@@ -98,7 +98,7 @@ export function legacyBlast(context: BlastAbilityContext): void {
   
   // Visual/audio feedback
   
-  // Dispatch event for visual effects
+  // Dispatch events for visual effects and compatibility
   window.dispatchEvent(new CustomEvent('abilityUsed', {
     detail: {
       ability: 'blast',
@@ -107,6 +107,14 @@ export function legacyBlast(context: BlastAbilityContext): void {
       radius: blastRadius,
       affectedCount: affectedCount,
       selfImpulse: selfImpulse
+    }
+  }));
+  
+  // Also dispatch abilityActivated for systems expecting this event
+  window.dispatchEvent(new CustomEvent('abilityActivated', {
+    detail: {
+      className: 'blast',
+      timestamp: Date.now()
     }
   }));
 }

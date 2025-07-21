@@ -117,12 +117,12 @@ export class HomeScreen {
     const content = document.createElement('div');
     content.style.cssText = `
       background: rgba(0, 17, 34, 0.95);
-      padding: 60px 80px;
+      padding: 40px 60px;
       border-radius: 15px;
       border: 3px solid #00E6FF;
       text-align: center;
-      max-width: 500px;
-      min-width: 400px;
+      max-width: 480px;
+      min-width: 380px;
       box-shadow: 0 0 30px rgba(0, 230, 255, 0.3);
       position: relative;
     `;
@@ -130,9 +130,9 @@ export class HomeScreen {
     // Title
     const title = document.createElement('h1');
     title.style.cssText = `
-      margin: 0 0 15px 0;
+      margin: 0 0 10px 0;
       color: #FF0080;
-      font-size: 48px;
+      font-size: 42px;
       font-weight: bold;
       text-shadow: 0 0 20px rgba(255, 0, 128, 0.5);
       letter-spacing: 2px;
@@ -142,9 +142,9 @@ export class HomeScreen {
     // Subtitle
     const subtitle = document.createElement('p');
     subtitle.style.cssText = `
-      margin: 0 0 40px 0;
+      margin: 0 0 25px 0;
       color: #00E6FF;
-      font-size: 18px;
+      font-size: 16px;
       font-weight: normal;
       text-shadow: 0 0 10px rgba(0, 230, 255, 0.5);
     `;
@@ -155,8 +155,8 @@ export class HomeScreen {
     buttonContainer.style.cssText = `
       display: flex;
       flex-direction: column;
-      gap: 20px;
-      margin: 30px 0;
+      gap: 15px;
+      margin: 20px 0;
     `;
     
     // Singleplayer button
@@ -171,11 +171,17 @@ export class HomeScreen {
       this.handleMultiplayerClick();
     });
     
+    // Settings button
+    const settingsBtn = this.createButton('⚙️ SETTINGS', '#666666', 'white');
+    settingsBtn.addEventListener('click', () => {
+      this.handleSettingsClick();
+    });
+    
     // Settings container
     const settingsContainer = document.createElement('div');
     settingsContainer.style.cssText = `
-      margin-top: 25px;
-      padding: 15px;
+      margin-top: 20px;
+      padding: 12px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 8px;
       background: rgba(0, 0, 0, 0.2);
@@ -184,10 +190,10 @@ export class HomeScreen {
     // Settings title
     const settingsTitle = document.createElement('div');
     settingsTitle.style.cssText = `
-      margin-bottom: 12px;
+      margin-bottom: 8px;
       color: #00E6FF;
       font-weight: bold;
-      font-size: 14px;
+      font-size: 13px;
     `;
     settingsTitle.textContent = 'SETTINGS';
     
@@ -237,17 +243,17 @@ export class HomeScreen {
     // Controls info
     const controlsInfo = document.createElement('div');
     controlsInfo.style.cssText = `
-      margin-top: 20px;
-      padding-top: 20px;
+      margin-top: 15px;
+      padding-top: 15px;
       border-top: 1px solid rgba(255, 255, 255, 0.2);
-      font-size: 14px;
-      line-height: 1.6;
+      font-size: 13px;
+      line-height: 1.5;
       color: #cccccc;
     `;
     
     controlsInfo.innerHTML = `
-      <div style="margin-bottom: 15px; color: #00E6FF; font-weight: bold;">CONTROLS</div>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; text-align: left;">
+      <div style="margin-bottom: 10px; color: #00E6FF; font-weight: bold;">CONTROLS</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; text-align: left;">
         <div>WASD - Move</div>
         <div>E - Use Ability</div>
         <div>Space - Jump</div>
@@ -257,7 +263,7 @@ export class HomeScreen {
         <div>R - Reset Position</div>
         <div>ESC - Menu</div>
       </div>
-      <div style="margin-top: 15px; font-size: 12px; color: #888;">
+      <div style="margin-top: 10px; font-size: 11px; color: #888;">
         Classes: 1-Blast 2-Grapple 3-Blink
       </div>
     `;
@@ -276,6 +282,7 @@ export class HomeScreen {
     // Assemble the UI
     buttonContainer.appendChild(singleplayerBtn);
     buttonContainer.appendChild(multiplayerBtn);
+    buttonContainer.appendChild(settingsBtn);
     
     content.appendChild(title);
     content.appendChild(subtitle);
@@ -299,12 +306,12 @@ export class HomeScreen {
       background: ${bgColor};
       color: ${textColor};
       border: none;
-      padding: 18px 30px;
+      padding: 14px 25px;
       border-radius: 8px;
       cursor: pointer;
       font-family: monospace;
       font-weight: bold;
-      font-size: 16px;
+      font-size: 15px;
       letter-spacing: 1px;
       transition: all 0.2s ease;
       box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
@@ -333,6 +340,11 @@ export class HomeScreen {
     // Click effects
     button.addEventListener('mousedown', () => {
       button.style.transform = 'translateY(1px)';
+      
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
     });
     
     button.addEventListener('mouseup', () => {
@@ -368,6 +380,14 @@ export class HomeScreen {
     }
     
     this.stateManager.selectMode('multiplayer');
+  }
+  
+  /**
+   * Handle settings button click
+   */
+  private handleSettingsClick(): void {
+    console.log('⚙️ Settings selected');
+    this.stateManager.transitionTo('settings');
   }
   
   /**

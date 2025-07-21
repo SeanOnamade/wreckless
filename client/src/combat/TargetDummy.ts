@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { MeleeTarget } from './MeleeCombat';
+import { DummyPhysicsManager } from './DummyPhysicsManager';
 
 export class TargetDummy implements MeleeTarget {
   public id: string;
@@ -32,20 +33,45 @@ export class TargetDummy implements MeleeTarget {
   private floatSpeed: number; // Speed of floating animation
   private basePosition!: THREE.Vector3; // Store the true base position for floating (set during mesh creation)
   
-  // PERFORMANCE FIX: Cache materials once instead of traversing every frame
-  private cachedMaterials: THREE.MeshStandardMaterial[] = [];
-  private baseGlowIntensity: number = 0;
-  
-  // PERFORMANCE FIX: Cache time calculations
-  private lastGlowUpdate = 0;
-  private readonly GLOW_UPDATE_INTERVAL = 50; // Update every 50ms instead of every frame
+
   
   // MEMORY LEAK FIX: Track animation frames for cleanup
   private activeAnimationFrames: Set<number> = new Set();
   private isDestroyed = false;
   private isInitialized = false;
   
+  // CRASH PREVENTION: Limit concurrent animations to prevent buildup
+  private readonly MAX_ANIMATION_FRAMES_PER_DUMMY = 4;
+  
+  // AGGRESSIVE LIMITS: Global animation tracking to prevent system-wide buildup
+  private static globalAnimationFrames: Set<number> = new Set();
+  private static readonly MAX_GLOBAL_ANIMATION_FRAMES = 20; // System-wide limit
+  private static readonly MAX_ANIMATIONS_PER_SECOND = 10; // Rate limiting
+  private static lastAnimationTime = 0;
+  
   // Note: Scale values finalized - stopwatch: 1.8x, hourglass: 0.4x, chronoshard: 5.6x
+
+  /**
+   * Global cleanup method to clear stuck animation frames
+   */
+  public static cleanupGlobalAnimations(): void {
+    console.log(`🧹 Cleaning up ${TargetDummy.globalAnimationFrames.size} global animation frames`);
+    TargetDummy.globalAnimationFrames.forEach(frameId => {
+      cancelAnimationFrame(frameId);
+    });
+    TargetDummy.globalAnimationFrames.clear();
+  }
+
+  /**
+   * Get global animation statistics for monitoring
+   */
+  public static getAnimationStats(): { global: number; limit: number; rate: number } {
+    return {
+      global: TargetDummy.globalAnimationFrames.size,
+      limit: TargetDummy.MAX_GLOBAL_ANIMATION_FRAMES,
+      rate: TargetDummy.MAX_ANIMATIONS_PER_SECOND
+    };
+  }
 
   constructor(
     scene: THREE.Scene,
@@ -327,24 +353,31 @@ export class TargetDummy implements MeleeTarget {
       return; // Silently reject damage for KO'd dummies
     }
     
+    // SFX: Play dummy hit sound (glass breaking impact)
+    window.dispatchEvent(new CustomEvent('sfxRequest', {
+      detail: { category: 'combat', filename: 'dummy_hit.wav' }
+    }));
+    
     // Log HP BEFORE damage
     const hpBefore = this.currentHealth;
     
     this.currentHealth -= damage;
     
-    // Add to combat log with clear HP status
-    window.dispatchEvent(new CustomEvent('combatLogMessage', {
-      detail: { 
-        message: `🎯 ${this.id}: ${hpBefore} HP → ${damage} dmg → ${this.currentHealth} HP remaining` 
-      }
-    }));
+    // Combat log message (can be immediate)
+    if (!this.isDestroyed) {
+      window.dispatchEvent(new CustomEvent('combatLogMessage', {
+        detail: { 
+          message: `🎯 ${this.id}: ${hpBefore} HP → ${damage} dmg → ${this.currentHealth} HP remaining` 
+        }
+      }));
+    }
     
-    // Enhanced visual damage feedback
+    // Enhanced visual damage feedback (handles its own animation frames)
     this.triggerHitFX();
     
     // Check for KO
     if (this.currentHealth <= 0) {
-      this.triggerKO();
+      this.triggerKO(); // triggerKO now uses DummyPhysicsManager for safety
     }
   }
 
@@ -354,6 +387,26 @@ export class TargetDummy implements MeleeTarget {
    * Simplified hit feedback - no visual changes to dummy appearance
    */
   private triggerHitFX(): void {
+    // AGGRESSIVE CRASH PREVENTION: Multiple limits to prevent animation buildup
+    const now = Date.now();
+    
+    // Global animation frame limit
+    if (TargetDummy.globalAnimationFrames.size >= TargetDummy.MAX_GLOBAL_ANIMATION_FRAMES) {
+      return; // Silent skip - system overloaded
+    }
+    
+    // Rate limiting - prevent too many animations per second
+    if (now - TargetDummy.lastAnimationTime < (1000 / TargetDummy.MAX_ANIMATIONS_PER_SECOND)) {
+      return; // Silent skip - too frequent
+    }
+    
+    // Per-dummy limit
+    if (this.activeAnimationFrames.size >= this.MAX_ANIMATION_FRAMES_PER_DUMMY) {
+      return; // Silent skip - dummy overloaded
+    }
+    
+    TargetDummy.lastAnimationTime = now;
+    
     // Keep hit ring effect but no color/scale changes to the dummy itself
     if (this.hitRing && !this.isDestroyed) {
       this.hitRing.visible = true;
@@ -379,14 +432,16 @@ export class TargetDummy implements MeleeTarget {
         ringMaterial.emissiveIntensity = intensity;
         
         if (progress < 1) {
-          const frameId = requestAnimationFrame(animateHitRing);
-          this.activeAnimationFrames.add(frameId);
+          const nextFrameId = requestAnimationFrame(animateHitRing);
+          this.activeAnimationFrames.add(nextFrameId);
+          TargetDummy.globalAnimationFrames.add(nextFrameId);
         } else {
           this.hitRing.visible = false;
         }
       };
       const frameId = requestAnimationFrame(animateHitRing);
       this.activeAnimationFrames.add(frameId);
+      TargetDummy.globalAnimationFrames.add(frameId);
     }
 
     // Keep sparkle particles effect
@@ -400,6 +455,15 @@ export class TargetDummy implements MeleeTarget {
    */
   private triggerSparkles(): void {
     if (this.isDestroyed) return; // Guard against destruction
+    
+    // AGGRESSIVE LIMITS: Skip sparkles entirely if system is stressed
+    if (TargetDummy.globalAnimationFrames.size >= TargetDummy.MAX_GLOBAL_ANIMATION_FRAMES - 5) {
+      return; // Save global animation frames for more important effects
+    }
+    
+    if (this.activeAnimationFrames.size >= this.MAX_ANIMATION_FRAMES_PER_DUMMY - 2) {
+      return; // Save dummy animation frames
+    }
     
     this.sparkles.forEach((sparkle, index) => {
       if (this.isDestroyed) return; // Check for each sparkle
@@ -435,8 +499,9 @@ export class TargetDummy implements MeleeTarget {
         sparkleMaterial.opacity = 1.0 * (1 - progress);
         
         if (progress < 1) {
-          const frameId = requestAnimationFrame(animateSparkle);
-          this.activeAnimationFrames.add(frameId);
+          const nextFrameId = requestAnimationFrame(animateSparkle);
+          this.activeAnimationFrames.add(nextFrameId);
+          TargetDummy.globalAnimationFrames.add(nextFrameId);
         } else {
           sparkle.visible = false;
         }
@@ -453,18 +518,27 @@ export class TargetDummy implements MeleeTarget {
     // Don't apply knockback if destroyed or not initialized
     if (this.isDestroyed || !this.isInitialized || !this.mesh) return;
     
-    console.log(`💥 Dummy ${this.id} received ${force.toFixed(1)} knockback force`);
-    
-    // Visual knockback effect (slight mesh displacement)
-    const originalPosition = this.mesh.position.clone();
-    const knockbackDistance = Math.min(force * 0.02, 0.3); // Cap knockback visual
-    
-    this.mesh.position.add(direction.clone().multiplyScalar(knockbackDistance));
-    
-    // Return to original position after a short delay
-    window.setTimeout(() => {
-      this.mesh.position.copy(originalPosition);
-    }, 200);
+    // DEFER ALL MESH OPERATIONS to avoid Rapier conflicts
+    requestAnimationFrame(() => {
+      if (this.isDestroyed || !this.mesh) return;
+      
+      try {
+        // Visual knockback effect (slight mesh displacement)
+        const originalPosition = this.mesh.position.clone();
+        const knockbackDistance = Math.min(force * 0.02, 0.3); // Cap knockback visual
+        
+        this.mesh.position.add(direction.clone().multiplyScalar(knockbackDistance));
+        
+        // Return to original position after a short delay
+        window.setTimeout(() => {
+          if (!this.isDestroyed && this.mesh) {
+            this.mesh.position.copy(originalPosition);
+          }
+        }, 200);
+      } catch (error) {
+        console.warn(`⚠️ Knockback error for dummy ${this.id}:`, error);
+      }
+    });
   }
 
   /**
@@ -501,25 +575,22 @@ export class TargetDummy implements MeleeTarget {
           ringMaterial.opacity = opacity;
           ringMaterial.emissiveIntensity = intensity;
           
-          if (progress < 1) {
-            const frameId = requestAnimationFrame(animateKORing);
-            this.activeAnimationFrames.add(frameId);
-          } else {
-            this.koRing.visible = false;
-          }
-        };
-        const frameId = requestAnimationFrame(animateKORing);
-        this.activeAnimationFrames.add(frameId);
+                  if (progress < 1) {
+          const nextFrameId = requestAnimationFrame(animateKORing);
+          this.activeAnimationFrames.add(nextFrameId);
+          TargetDummy.globalAnimationFrames.add(nextFrameId);
+        } else {
+          this.koRing.visible = false;
+        }
+      };
+      const frameId = requestAnimationFrame(animateKORing);
+      this.activeAnimationFrames.add(frameId);
+      TargetDummy.globalAnimationFrames.add(frameId);
       }
       
-      // DEFER rigidBody.setEnabled(false) to avoid Rapier "recursive use" error
-      requestAnimationFrame(() => {
-        try {
-          this.rigidBody.setEnabled(false);
-        } catch (deferredError) {
-          console.error(`Error in deferred rigidBody disable for ${this.id}:`, deferredError);
-        }
-      });
+      // ULTRA SAFE: Use centralized physics manager to prevent recursive errors
+      const physicsManager = DummyPhysicsManager.getInstance();
+      physicsManager.queueDisableRigidBody(this.rigidBody, this.id);
       
       // Respawn after delay
       this.respawnTimer = window.setTimeout(() => {
@@ -536,10 +607,14 @@ export class TargetDummy implements MeleeTarget {
    */
   private respawn(): void {
     
-    // Add to combat log
+    // SAFETY: Defer event dispatching to avoid physics conflicts
+    setTimeout(() => {
+      if (!this.isDestroyed) {
     window.dispatchEvent(new CustomEvent('combatLogMessage', {
       detail: { message: `✨ ${this.id} respawned with full HP!` }
     }));
+      }
+    }, 0);
     
     // Reset health
     this.currentHealth = this.maxHealth;
@@ -551,8 +626,9 @@ export class TargetDummy implements MeleeTarget {
     // Simply show the mesh again - no color/scale changes
     this.mesh.visible = true;
     
-    // Re-enable collision
-    this.rigidBody.setEnabled(true);
+    // Re-enable collision using centralized physics manager
+    const physicsManager = DummyPhysicsManager.getInstance();
+    physicsManager.queueEnableRigidBody(this.rigidBody, this.id);
 
     // Keep respawn ring effect but no changes to dummy appearance
     if (this.respawnRing) {
@@ -579,8 +655,8 @@ export class TargetDummy implements MeleeTarget {
         ringMaterial.emissiveIntensity = intensity;
         
         if (progress < 1) {
-          const frameId = requestAnimationFrame(animateRespawnRing);
-          this.activeAnimationFrames.add(frameId);
+          const nextFrameId = requestAnimationFrame(animateRespawnRing);
+          this.activeAnimationFrames.add(nextFrameId);
         } else {
           this.respawnRing.visible = false;
         }
@@ -640,6 +716,7 @@ export class TargetDummy implements MeleeTarget {
     // Cancel all active animation frames
     this.activeAnimationFrames.forEach(frameId => {
       cancelAnimationFrame(frameId);
+      TargetDummy.globalAnimationFrames.delete(frameId); // Clean up global tracking
     });
     this.activeAnimationFrames.clear();
     
@@ -703,9 +780,6 @@ export class TargetDummy implements MeleeTarget {
     });
     this.sparkles = [];
     
-    // Clear cached materials array
-    this.cachedMaterials = [];
-    
     console.log(`🗑️ Target dummy ${this.id} destroyed`);
   }
 
@@ -759,79 +833,42 @@ export class TargetDummy implements MeleeTarget {
 
   /**
    * Update dummy animations (rotation and floating) - called each frame
+   * SIMPLIFIED: Reduced complexity to prevent animation frame buildup
    */
   update(deltaTime: number): void {
     // Don't update if destroyed or not initialized
     if (this.isDestroyed || !this.isInitialized || !this.mesh) return;
     
+    // PERFORMANCE: Skip animations if system is overloaded
+    if (TargetDummy.globalAnimationFrames.size >= TargetDummy.MAX_GLOBAL_ANIMATION_FRAMES - 10) {
+      return; // Skip all dummy animations when system stressed
+    }
+    
     // Only animate if dummy is alive and visible
     if (this.currentHealth > 0 && this.mesh.visible) {
-      // Smooth rotation around Y-axis to show off the model design
-      this.mesh.rotation.y += this.rotationSpeed * deltaTime;
+      // Simple rotation - reduced complexity
+      this.mesh.rotation.y += this.rotationSpeed * deltaTime * 0.5; // Slower rotation
       
-      // Keep rotation in 0-2π range for numerical stability
+      // Keep rotation in range
       if (this.mesh.rotation.y > Math.PI * 2) {
         this.mesh.rotation.y -= Math.PI * 2;
       }
       
-      // Dramatic floating up/down animation with ease-in-ease-out rhythm
-      this.floatOffset += this.floatSpeed * deltaTime;
+      // SIMPLIFIED: Basic floating without complex easing
+      this.floatOffset += this.floatSpeed * deltaTime * 0.3; // Slower floating
+      const floatAmount = Math.sin(this.floatOffset) * 0.15; // Reduced amplitude
       
-      // Keep floatOffset in reasonable bounds for numerical stability
-      if (this.floatOffset > Math.PI * 4) {
-        this.floatOffset -= Math.PI * 4; // Reset every 2 complete cycles
-      }
-      
-      // Optimized ease-in-ease-out motion using smoothstep
-      const rawSin = Math.sin(this.floatOffset);
-      // Use optimized smoothstep: t = 3t² - 2t³
-      const t = (rawSin + 1) * 0.5; // Convert from [-1,1] to [0,1]
-      const smoothed = t * t * (3 - 2 * t); // Smoothstep formula
-      const floatAmount = (smoothed * 2 - 1) * 0.3; // Convert back to [-1,1] and scale (reduced to prevent ground clipping)
-      
-      // Apply floating animation - basePosition already includes hourglass offset
+      // Apply basic floating
       this.mesh.position.copy(this.basePosition);
       this.mesh.position.y += floatAmount;
       
-      // Add subtle glow pulsing for magical effect
-      this.updateGlowPulse(deltaTime);
+      // REMOVED: Glow pulsing to reduce computational load
     }
   }
 
-  /**
-   * Update magical glow pulsing animation
-   */
-  private updateGlowPulse(_deltaTime: number): void {
-    const currentTime = Date.now();
-    if (currentTime - this.lastGlowUpdate > this.GLOW_UPDATE_INTERVAL) {
-      this.lastGlowUpdate = currentTime;
-      this.cachedMaterials = [];
-      this.mesh.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
-          this.cachedMaterials.push(child.material);
-        }
-      });
-      this.baseGlowIntensity = this.getBaseGlowIntensity();
-    }
 
-    const glowPulse = Math.sin(currentTime * 0.001) * 0.3 + 1.0; // 0.7 to 1.3 multiplier
 
-    this.cachedMaterials.forEach(material => {
-      material.emissiveIntensity = this.baseGlowIntensity * glowPulse;
-    });
-  }
 
-  /**
-   * Get base glow intensity for this dummy type
-   */
-  private getBaseGlowIntensity(): number {
-    const baseIntensities = {
-      stopwatch: 0.08, // Reduced from 0.15 for subtler glow
-      hourglass: 0.12,
-      chronoshard: 0.18
-    };
-    return baseIntensities[this.modelType];
-  }
 
 
 } 
