@@ -269,8 +269,8 @@ export class HitVolume {
    */
   private processHitOnTarget(
     targetId: string,
-    hitType: HitVolumeType,
-    sweepDistance: number,
+    _hitType: HitVolumeType,
+    _sweepDistance: number,
     _deltaTime: number
   ): void {
     const now = Date.now();
@@ -281,22 +281,21 @@ export class HitVolume {
       return;
     }
     
-    // Check hit cooldown to prevent rapid-fire hits (500ms for racing)
+    // Check hit cooldown to prevent rapid-fire hits
     const lastHitTime = this.hitCooldowns.get(targetId);
-    const HIT_COOLDOWN_MS = 500; // Increased from 300ms to 500ms
+    const HIT_COOLDOWN_MS = 500; // 500ms cooldown between hits on same target
     
     if (lastHitTime && (now - lastHitTime) < HIT_COOLDOWN_MS) {
-      return; // Still on cooldown
+      return; // Skip hit - still on cooldown
     }
     
-    // CRITICAL: Set cooldown BEFORE applying damage to prevent race conditions
-    this.frameHitTargets.add(targetId);
+    // Record this hit's timestamp for cooldown tracking
     this.hitCooldowns.set(targetId, now);
-    this.hitCount++;
     
-
+    // Mark target as hit this frame
+    this.frameHitTargets.add(targetId);
     
-    // Get the target from melee combat system
+    // Find the target from the registered targets
     const target = this.meleeCombat.getTarget(targetId);
     if (!target) {
       console.warn(`⚠️ HitVolume: Target ${targetId} not found in melee combat system`);
@@ -304,9 +303,6 @@ export class HitVolume {
     }
     
     // Calculate damage with bonuses based on player class and state
-    const playerVelocity = this.controller.getVelocity();
-    const velocity3D = new THREE.Vector3(playerVelocity.x, playerVelocity.y, playerVelocity.z);
-    const speed = velocity3D.length();
     
     // Calculate damage with blink/grapple bonuses
     const damageResult = this.calculateDamage();
@@ -320,7 +316,7 @@ export class HitVolume {
     // Apply damage with error handling
     if (target.takeDamage) {
       try {
-      target.takeDamage(finalDamage, hitDirection);
+        target.takeDamage(finalDamage, hitDirection);
       } catch (damageError) {
         console.error(`❌ HitVolume: Exception in takeDamage for ${targetId}:`, damageError);
         if (damageError instanceof Error) {
@@ -331,70 +327,23 @@ export class HitVolume {
       console.warn(`⚠️ Target ${targetId} has no takeDamage method`);
     }
     
-    // Log the hit with error handling
-    try {
-    let hitDescription = `${finalDamage} HP`;
-    if (damageResult.isCrit) hitDescription = `${finalDamage} HP CRIT`;
-    if (damageResult.isBonus) hitDescription = `${finalDamage} HP BONUS`;
-    
     // Hit processed
-      
-      // Get player class safely
-      const playerClass = this.getCurrentPlayerClass();
+    
+    // Get player class safely
+    const playerClass = this.getCurrentPlayerClass();
     
     // Dispatch hit event for combat log (same format as MeleeCombat)
     window.dispatchEvent(new CustomEvent('meleeHit', {
       detail: {
         targetId,
         damage: finalDamage,
-          className: playerClass,
+        className: playerClass,
         knockbackForce: finalDamage * 10, // Same knockback calculation as MeleeCombat
         direction: hitDirection,
         isCrit: damageResult.isCrit,
         isBonus: damageResult.isBonus
       }
     }));
-    
-    // Add clean hit info to combat log
-    let logMessage = `💥 ${finalDamage} HP`;
-    if (damageResult.isCrit) logMessage = `💥 ${finalDamage} HP CRIT`;
-    if (damageResult.isBonus) logMessage = `💥 ${finalDamage} HP BONUS`;
-    
-    window.dispatchEvent(new CustomEvent('combatLogMessage', {
-      detail: { message: logMessage }
-    }));
-    
-      // Dispatch hit event for UI/effects (CRITICAL for scoring)
-    window.dispatchEvent(new CustomEvent('passthroughHit', {
-      detail: {
-        targetId,
-        damage: finalDamage,
-        hitType,
-        speed,
-        sweepDistance,
-        timestamp: now
-      }
-    }));
-      
-    } catch (error) {
-      console.error(`❌ HitVolume: Error in event dispatch for ${targetId}:`, error);
-      
-      // Try to dispatch at least the scoring event
-      try {
-        window.dispatchEvent(new CustomEvent('passthroughHit', {
-          detail: {
-            targetId,
-            damage: finalDamage,
-            hitType,
-            speed: 0,
-            sweepDistance: 0,
-            timestamp: now
-          }
-        }));
-      } catch (emergencyError) {
-        console.error(`❌ HitVolume: Emergency dispatch also failed:`, emergencyError);
-      }
-    }
   }
 
   /**

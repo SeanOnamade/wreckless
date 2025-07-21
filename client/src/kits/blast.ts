@@ -131,7 +131,6 @@ export function updateBlast(): void {
     
     // Collision detection - multiple methods
     let shouldExplode = false;
-    let explodeReason = '';
     
     // Method 1: Stuck detection
     const distanceMoved = currentPosition.distanceTo(projectile.lastPosition);
@@ -139,7 +138,6 @@ export function updateBlast(): void {
       projectile.stuckFrames++;
       if (projectile.stuckFrames > 3) {
         shouldExplode = true;
-        explodeReason = `stuck (moved only ${distanceMoved.toFixed(3)}m)`;
       }
     } else {
       projectile.stuckFrames = 0;
@@ -150,7 +148,6 @@ export function updateBlast(): void {
     const speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z);
     if (speed < 2.0 && age > 0.2) {
       shouldExplode = true;
-      explodeReason = `low velocity (${speed.toFixed(1)} m/s)`;
     }
     
     // Method 3: Contact detection (20ms response time)
@@ -161,13 +158,11 @@ export function updateBlast(): void {
     });
     if (numContacts > 0 && age > 0.02) {
       shouldExplode = true;
-      explodeReason = `contact detected (${numContacts} contacts)`;
     }
     
     // Method 4: Ground check
     if (currentPosition.y < -1.0) {
       shouldExplode = true;
-      explodeReason = `below ground level (Y=${currentPosition.y.toFixed(1)})`;
     }
     
     if (shouldExplode) {
@@ -251,9 +246,6 @@ function explodeProjectile(projectile: ActiveProjectile): void {
     
     // Final impulse vector
     const impulseVec = dir.clone().multiplyScalar(impulseMag);
-    
-    // Store pre-impulse velocity for debug
-    const preVel = { x: currentVel.x, y: currentVel.y, z: currentVel.z };
     
     if (isLocalPlayer) {
       // KINEMATIC PLAYER - Send event to controller

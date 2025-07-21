@@ -244,9 +244,8 @@ export class MeleeCombat {
         break;
         
                       case 'grapple':
-          // Get velocity first for logging
+          // Get velocity first for calculations
           const speed = playerVelocity ? Math.sqrt(playerVelocity.x * playerVelocity.x + playerVelocity.z * playerVelocity.z) : 0;
-          const fullSpeed = playerVelocity ? Math.sqrt(playerVelocity.x * playerVelocity.x + playerVelocity.y * playerVelocity.y + playerVelocity.z * playerVelocity.z) : 0;
           
           // Grapple velocity calculation
           

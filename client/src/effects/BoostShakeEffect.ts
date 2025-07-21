@@ -59,7 +59,7 @@ export class BoostShakeEffect implements CameraEffect {
   /**
    * Trigger the boost effect (wind shake + FOV burst)
    */
-  private triggerBoostEffect(boostData: any): void {
+  private triggerBoostEffect(_boostData: any): void {
     const now = Date.now();
     
     // Start wind shake effect

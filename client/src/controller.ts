@@ -625,7 +625,7 @@ export class FirstPersonController {
    * Handle speed boost from racing dummies
    */
   private handleSpeedBoost(data: any): void {
-    const { fromVelocity, toVelocity, duration, damage, source } = data;
+    const { fromVelocity, toVelocity, duration, damage } = data;
     
     // Apply speed boost to controller
     

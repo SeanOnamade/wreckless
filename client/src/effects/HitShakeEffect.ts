@@ -52,7 +52,7 @@ export class HitShakeEffect implements CameraEffect {
    * Trigger the hit shake effect
    */
   private triggerHitShake(hitData: any): void {
-    const { damage, targetId, speed } = hitData;
+    const { damage, speed } = hitData;
     const now = Date.now();
     
     // Calculate shake intensity based on damage (higher damage = stronger shake)

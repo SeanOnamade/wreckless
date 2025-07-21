@@ -605,7 +605,6 @@ export class TargetDummy implements MeleeTarget {
    * Reset health to full (for round resets)
    */
   resetHealth(): void {
-    const oldHealth = this.currentHealth;
     this.currentHealth = this.maxHealth;
     
     // Clear any respawn timer

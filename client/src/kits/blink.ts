@@ -118,8 +118,6 @@ const SAFE_MIN_HEIGHT = 2.5; // Minimum safe height (updated for raised track)
     blinkState.regenDisabledUntil = now + regenDisableDuration;
     blinkState.blinkWindowEndTime = now + blinkWindowDuration;
     
-    const actualDistance = playerPosition.distanceTo(finalTargetPosition);
-    
     // Visual feedback effect
     createBlinkEffect(playerPosition, finalTargetPosition);
     

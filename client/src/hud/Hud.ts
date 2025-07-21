@@ -136,7 +136,7 @@ export class LapHUD {
   /**
    * Flash the HUD when a checkpoint is visited (simplified with cleanup)
    */
-  flashCheckpoint(checkpointId: CheckpointId, isValid: boolean): void {
+  flashCheckpoint(_checkpointId: CheckpointId, isValid: boolean): void {
     if (this.isDestroyed || !this.checkpointProgressElement) return; // Guard against destruction
     
     const color = isValid ? '#00ff00' : '#ff0000';

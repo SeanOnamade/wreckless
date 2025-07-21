@@ -78,13 +78,8 @@ export class CheckpointHitEffect implements CameraEffect {
   /**
    * Trigger the checkpoint hit effect
    */
-  private triggerCheckpointHit(checkpointData: any): void {
-    const { checkpointId, playerSpeed } = checkpointData;
+  private triggerCheckpointHit(_checkpointData: any): void {
     const now = Date.now();
-    
-    // Calculate effect intensity based on player speed (faster = more intense)
-    const speedRatio = Math.min(playerSpeed / 30, 1.5); // Cap at 1.5x intensity
-    const finalShakeIntensity = this.shakeIntensity * speedRatio;
     
     // Start shake effect
     this.isShaking = true;
