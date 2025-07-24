@@ -176,7 +176,6 @@ export class HitVolume {
   public world: RAPIER.World; // Made public for physics query manager
   public controller: FirstPersonController; // Made public for physics query manager
   private meleeCombat: MeleeCombat;
-  private isDestroyed = false;
   
   // Position tracking for frame-by-frame sweeps
   private lastPosition: THREE.Vector3 = new THREE.Vector3();
@@ -196,8 +195,8 @@ export class HitVolume {
   private lastGrappleDetachTime = 0;
   private isSwingingState = false;
 
-  // PERFORMANCE FIX: Cache test shapes to avoid repeated allocation
-  private cachedTestShapes: Map<number, RAPIER.Ball> = new Map();
+  // Cached test shapes for performance
+  private cachedTestShapes = new Map<number, RAPIER.Shape>();
 
   constructor(world: RAPIER.World, controller: FirstPersonController, meleeCombat: MeleeCombat) {
     this.world = world;
@@ -372,7 +371,7 @@ export class HitVolume {
   /**
    * Process hit on a dummy target
    */
-  public processHitOnTarget(targetId: string, hitType: HitVolumeType, sweepDistance: number, deltaTime: number): void {
+  public processHitOnTarget(targetId: string, _hitType: HitVolumeType, _sweepDistance: number, _deltaTime: number): void {
     const now = Date.now();
     
     // FRAME-LEVEL protection: Prevent multiple hits on same target in same frame
@@ -633,7 +632,6 @@ export class HitVolume {
    * Cleanup resources
    */
   destroy(): void {
-    this.isDestroyed = true;
     this.hitCooldowns.clear();
     this.frameHitTargets.clear();
     this.cachedTestShapes.clear();

@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import { type PlayerClass } from '../kits/classKit.js';
-import { isSwinging } from '../kits/grapple.js';
+import type { PlayerClass } from '../kits/classKit';
 
 // Blast animation state tracking
 let blastAnimationState = {
@@ -1325,17 +1324,7 @@ export class AutoCharacterLoader {
     });
   }
 
-  /**
-   * Deep clone model with complete material and geometry isolation
-   * Prevents 3D portrait system from affecting main game objects
-   * CRITICAL: Preserves animations properly
-   */
-  private deepCloneWithMaterialIsolation(model: THREE.Group): THREE.Group {
-    // REMOVED: This method is no longer used since we're not cloning
-    // Just return the original model for now
-    console.log('🎭 Using original model without cloning for better animation compatibility');
-    return model;
-  }
+  // deepCloneWithMaterialIsolation method removed - no longer needed since we don't clone models
 
   /**
    * Apply character-specific positioning and scaling for portrait view
@@ -1370,154 +1359,7 @@ export class AutoCharacterLoader {
     console.log(`🎭 Applied ${characterClass} portrait settings: scale=${settings.scale}, position=(${settings.position.x}, ${settings.position.y}, ${settings.position.z})`);
   }
 
-  /**
-   * Create temporary adjustment UI for testing character positioning
-   */
-  private createTemporaryAdjustmentUI(model: THREE.Group, characterClass: PlayerClass): void {
-    // Remove any existing adjustment UI
-    const existingUI = document.getElementById('character-adjustment-ui');
-    if (existingUI) existingUI.remove();
-
-    // Create adjustment panel
-    const panel = document.createElement('div');
-    panel.id = 'character-adjustment-ui';
-    panel.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      width: 300px;
-      background: rgba(0, 0, 0, 0.9);
-      color: white;
-      padding: 15px;
-      border-radius: 10px;
-      font-family: monospace;
-      font-size: 12px;
-      z-index: 9999;
-      border: 2px solid #444;
-    `;
-
-    panel.innerHTML = `
-      <div style="margin-bottom: 10px; font-weight: bold; color: #4CAF50;">
-        🎛️ ${characterClass.toUpperCase()} POSITION ADJUSTER
-      </div>
-      
-                    <div style="margin-bottom: 8px;">
-         <label>Scale: <span id="scale-value">${characterClass === 'blast' ? '0.01' : characterClass === 'blink' ? '0.01' : '0.80'}</span></label><br>
-         <input type="range" id="scale-slider" min="0.01" max="1.0" step="0.01" value="${characterClass === 'blast' ? '0.01' : characterClass === 'blink' ? '0.01' : '0.80'}" style="width: 100%;">
-       </div>
-       
-       <div style="margin-bottom: 8px;">
-         <label>Position Y: <span id="pos-y-value">${characterClass === 'blast' ? '-1.3' : characterClass === 'blink' ? '-1.2' : '-1.2'}</span></label><br>
-         <input type="range" id="pos-y-slider" min="-3.0" max="1.0" step="0.1" value="${characterClass === 'blast' ? '-1.3' : characterClass === 'blink' ? '-1.2' : '-1.2'}" style="width: 100%;">
-       </div>
-      
-             <div style="margin-bottom: 8px;">
-         <label>Position X: <span id="pos-x-value">${characterClass === 'blast' ? '-0.1' : '0.0'}</span></label><br>
-         <input type="range" id="pos-x-slider" min="-2.0" max="2.0" step="0.1" value="${characterClass === 'blast' ? '-0.1' : '0.0'}" style="width: 100%;">
-       </div>
-       
-       <div style="margin-bottom: 8px;">
-         <label>Position Z: <span id="pos-z-value">${characterClass === 'blast' ? '-0.3' : '0.0'}</span></label><br>
-         <input type="range" id="pos-z-slider" min="-2.0" max="2.0" step="0.1" value="${characterClass === 'blast' ? '-0.3' : '0.0'}" style="width: 100%;">
-       </div>
-       
-       <div style="margin-bottom: 8px;">
-         <label>Rotation Y: <span id="rot-y-value">${characterClass === 'blast' ? '0.06' : characterClass === 'blink' ? '-0.04' : '0.0'}</span></label><br>
-         <input type="range" id="rot-y-slider" min="-3.14" max="3.14" step="0.1" value="${characterClass === 'blast' ? '0.06' : characterClass === 'blink' ? '-0.04' : '0.0'}" style="width: 100%;">
-       </div>
-      
-      <div style="margin-top: 15px;">
-        <button id="copy-settings" style="background: #4CAF50; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; width: 100%; margin-bottom: 5px;">
-          📋 Copy Settings to Console
-        </button>
-        <button id="reset-character" style="background: #f44336; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; width: 100%; margin-bottom: 5px;">
-          🔄 Reset to Default
-        </button>
-        <button id="close-adjuster" style="background: #666; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; width: 100%;">
-          ✖️ Close Adjuster
-        </button>
-      </div>
-    `;
-
-    document.body.appendChild(panel);
-
-    // Wire up controls
-    const scaleSlider = document.getElementById('scale-slider') as HTMLInputElement;
-    const posYSlider = document.getElementById('pos-y-slider') as HTMLInputElement;
-    const posXSlider = document.getElementById('pos-x-slider') as HTMLInputElement;
-    const posZSlider = document.getElementById('pos-z-slider') as HTMLInputElement;
-    const rotYSlider = document.getElementById('rot-y-slider') as HTMLInputElement;
-
-    const scaleValue = document.getElementById('scale-value')!;
-    const posYValue = document.getElementById('pos-y-value')!;
-    const posXValue = document.getElementById('pos-x-value')!;
-    const posZValue = document.getElementById('pos-z-value')!;
-    const rotYValue = document.getElementById('rot-y-value')!;
-
-    const updateCharacter = () => {
-      const scale = parseFloat(scaleSlider.value);
-      const posY = parseFloat(posYSlider.value);
-      const posX = parseFloat(posXSlider.value);
-      const posZ = parseFloat(posZSlider.value);
-      const rotY = parseFloat(rotYSlider.value);
-
-      model.scale.setScalar(scale);
-      model.position.set(posX, posY, posZ);
-      model.rotation.y = rotY;
-
-      scaleValue.textContent = scale.toFixed(2);
-      posYValue.textContent = posY.toFixed(1);
-      posXValue.textContent = posX.toFixed(1);
-      posZValue.textContent = posZ.toFixed(1);
-      rotYValue.textContent = rotY.toFixed(1);
-    };
-
-    // Add event listeners
-    scaleSlider.addEventListener('input', updateCharacter);
-    posYSlider.addEventListener('input', updateCharacter);
-    posXSlider.addEventListener('input', updateCharacter);
-    posZSlider.addEventListener('input', updateCharacter);
-    rotYSlider.addEventListener('input', updateCharacter);
-
-    // Copy settings button
-    document.getElementById('copy-settings')!.addEventListener('click', () => {
-      const settings = `
-${characterClass}: {
-  scale: ${parseFloat(scaleSlider.value)},
-  position: { x: ${parseFloat(posXSlider.value)}, y: ${parseFloat(posYSlider.value)}, z: ${parseFloat(posZSlider.value)} },
-  rotation: { y: ${parseFloat(rotYSlider.value)} }
-}`;
-      console.log('📋 Copy this to your code:');
-      console.log(settings);
-      navigator.clipboard.writeText(settings);
-    });
-
-         // Reset button
-     document.getElementById('reset-character')!.addEventListener('click', () => {
-       let defaultSettings;
-       if (characterClass === 'blast') {
-         defaultSettings = { scale: 0.01, posX: -0.1, posY: -1.3, posZ: -0.3, rotY: 0.06 };  // Tested blast settings
-       } else if (characterClass === 'blink') {
-         defaultSettings = { scale: 0.01, posX: 0, posY: -1.2, posZ: 0, rotY: -0.04 };  // Tested blink settings
-       } else {
-         defaultSettings = { scale: 0.8, posX: 0, posY: -1.2, posZ: 0, rotY: 0 };  // Swing/grapple
-       }
-
-      scaleSlider.value = defaultSettings.scale.toString();
-      posXSlider.value = defaultSettings.posX.toString();
-      posYSlider.value = defaultSettings.posY.toString();
-      posZSlider.value = defaultSettings.posZ.toString();
-      rotYSlider.value = defaultSettings.rotY.toString();
-      updateCharacter();
-    });
-
-    // Close button
-    document.getElementById('close-adjuster')!.addEventListener('click', () => {
-      panel.remove();
-    });
-
-    console.log('🎛️ Temporary character adjuster created! Use the sliders in the top-right to position the character perfectly.');
-  }
+  // createTemporaryAdjustmentUI method removed - was used for development only
 
   /**
    * Setup character model properties for full-body portrait view

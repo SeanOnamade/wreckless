@@ -932,7 +932,6 @@ export class TargetDummy implements MeleeTarget {
     this.isDestroyed = true;
     
     // Cancel all active animation frames and track which pool contexts to clean
-    const frameIdsToClean = Array.from(this.activeAnimationFrames);
     this.activeAnimationFrames.forEach(frameId => {
       cancelAnimationFrame(frameId);
       TargetDummy.globalAnimationFrames.delete(frameId); // Clean up global tracking
