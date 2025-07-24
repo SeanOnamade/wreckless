@@ -20,13 +20,161 @@ interface DamageResult {
   isCrit: boolean;
 }
 
+// PHYSICS TIMING FIX: Queue for deferred physics queries
+interface PhysicsQuery {
+  id: string;
+  position: { x: number; y: number; z: number; }; // RAPIER position type
+  rotation: { w: number; x: number; y: number; z: number; }; // RAPIER rotation type
+  shape: RAPIER.Shape;
+  hitTargets: Set<string>;
+  hitType: HitVolumeType;
+  sweepDistance: number;
+  deltaTime: number;
+  timestamp: number;
+  hitVolume: HitVolume; // Reference to process the hit
+}
+
+class PhysicsQueryManager {
+  private static instance: PhysicsQueryManager;
+  private queryQueue: PhysicsQuery[] = [];
+  private isProcessingQueries = false;
+  private lastProcessTime = 0;
+  private readonly PROCESS_INTERVAL_MS = 16; // ~60fps
+  private readonly MAX_QUERIES_PER_FRAME = 10; // Limit to prevent overload
+  
+  public static getInstance(): PhysicsQueryManager {
+    if (!PhysicsQueryManager.instance) {
+      PhysicsQueryManager.instance = new PhysicsQueryManager();
+    }
+    return PhysicsQueryManager.instance;
+  }
+  
+  public queuePhysicsQuery(query: PhysicsQuery): void {
+    // Add timestamp for query ordering
+    query.timestamp = Date.now();
+    this.queryQueue.push(query);
+    
+    // Start processing if not already running
+    if (!this.isProcessingQueries) {
+      this.scheduleQueryProcessing();
+    }
+  }
+  
+  private scheduleQueryProcessing(): void {
+    const now = Date.now();
+    const timeSinceLastProcess = now - this.lastProcessTime;
+    
+    if (timeSinceLastProcess >= this.PROCESS_INTERVAL_MS) {
+      // Process immediately
+      this.processQueuedQueries();
+    } else {
+      // Schedule for next available slot
+      const delay = this.PROCESS_INTERVAL_MS - timeSinceLastProcess;
+      setTimeout(() => this.processQueuedQueries(), delay);
+    }
+  }
+  
+  private processQueuedQueries(): void {
+    if (this.queryQueue.length === 0) {
+      this.isProcessingQueries = false;
+      return;
+    }
+    
+    this.isProcessingQueries = true;
+    this.lastProcessTime = Date.now();
+    
+    // Process up to MAX_QUERIES_PER_FRAME queries
+    const queriesToProcess = this.queryQueue.splice(0, this.MAX_QUERIES_PER_FRAME);
+    
+    // Schedule the actual physics queries for the next idle period
+    if (typeof requestIdleCallback !== 'undefined') {
+      requestIdleCallback(() => this.executePhysicsQueries(queriesToProcess), { timeout: 100 });
+    } else {
+      setTimeout(() => this.executePhysicsQueries(queriesToProcess), 0);
+    }
+    
+    // If more queries remain, schedule next batch
+    if (this.queryQueue.length > 0) {
+      setTimeout(() => this.scheduleQueryProcessing(), this.PROCESS_INTERVAL_MS);
+    } else {
+      this.isProcessingQueries = false;
+    }
+  }
+  
+  private executePhysicsQueries(queries: PhysicsQuery[]): void {
+    for (const query of queries) {
+      try {
+        // Execute the actual physics query safely
+        query.hitVolume.world.intersectionsWithShape(query.position, query.rotation, query.shape, (collider: RAPIER.Collider) => {
+          const userData = collider.parent()?.userData as any;
+          const rigidBody = collider.parent();
+          
+          if (!userData || !rigidBody) {
+            return true; // Continue checking
+          }
+          
+          // Handle dummy colliders
+          if (userData.isDummy) {
+            // Skip disabled rigidBodies (KO'd dummies)
+            const isEnabled = rigidBody.isEnabled();
+            
+            if (!isEnabled) {
+              return true; // Continue checking (dummy is KO'd)
+            }
+            
+            const targetId = userData.id;
+            if (!targetId || query.hitTargets.has(targetId)) {
+              return true; // Continue if already hit or no ID
+            }
+            
+            // Mark as hit to prevent multiple hits
+            query.hitTargets.add(targetId);
+            
+            // Process the hit immediately (safe since we're outside physics step)
+            query.hitVolume.processHitOnTarget(targetId, query.hitType, query.sweepDistance, query.deltaTime);
+            
+            return true; // Continue checking for more targets
+          }
+          
+          // Handle player colliders (PvP logic)
+          if (COMBAT_MODE_CONFIG.PVP_ENABLED && userData.isPlayer && userData.id !== 'localPlayer') {
+            // PvP hit detected - check if local player is attacking
+            const localCombatState = query.hitVolume.controller.getCombatState();
+            if (localCombatState.isAttacking) {
+              const targetId = userData.id;
+              if (!targetId || query.hitTargets.has(targetId)) {
+                return true; // Continue if already hit or no ID
+              }
+              
+              // Mark as hit to prevent multiple hits
+              query.hitTargets.add(targetId);
+              
+              // Process the PvP hit immediately (safe since we're outside physics step)
+              query.hitVolume.processPlayerHit(targetId, query.hitType, query.sweepDistance);
+            }
+          }
+          
+          return true; // Continue checking
+        });
+      } catch (error) {
+        console.warn('⚠️ Physics query execution error:', error);
+      }
+    }
+  }
+  
+  public clearQueue(): void {
+    this.queryQueue = [];
+    this.isProcessingQueries = false;
+  }
+}
+
 /**
  * HitVolume System - Pass-through damage using capsule sweeps
  * Handles frame-by-frame movement, blink teleportation, and swing path damage
  */
 export class HitVolume {
-  private world: RAPIER.World;
-  private controller: FirstPersonController;
+  public world: RAPIER.World; // Made public for physics query manager
+  public controller: FirstPersonController; // Made public for physics query manager
   private meleeCombat: MeleeCombat;
   private isDestroyed = false;
   
@@ -200,153 +348,31 @@ export class HitVolume {
     deltaTime: number,
     hitTargets: Set<string>
   ): void {
-    // PERFORMANCE FIX: Use cached test shape instead of creating new one each frame
-    const radiusKey = Math.round(radius * 100); // Create key from radius (rounded to cm)
-    let testShape = this.cachedTestShapes.get(radiusKey);
-    if (!testShape) {
-      testShape = new RAPIER.Ball(radius);
-      this.cachedTestShapes.set(radiusKey, testShape);
-    }
-    
-    const testPos = { x: position.x, y: position.y, z: position.z };
+    // PHYSICS TIMING FIX: Queue the physics query instead of executing immediately
+    const testShape = RAPIER.ColliderDesc.capsule(radius * 0.5, radius).shape;
+    const testPos = { x: position.x, y: position.y + radius, z: position.z };
     const testRot = { w: 1.0, x: 0.0, y: 0.0, z: 0.0 };
     
-    // ULTRA SAFE: Use requestIdleCallback to ensure collision check happens outside physics step
-    if (typeof requestIdleCallback !== 'undefined') {
-      requestIdleCallback(() => {
-        if (this.isDestroyed) return;
-        
-        try {
-          this.world.intersectionsWithShape(testPos, testRot, testShape, (collider: RAPIER.Collider) => {
-      const userData = collider.parent()?.userData as any;
-      const rigidBody = collider.parent();
-      
-      if (!userData || !rigidBody) {
-        return true; // Continue checking
-      }
-      
-      // Handle dummy colliders (existing logic)
-      if (userData.isDummy) {
-        // Skip disabled rigidBodies (KO'd dummies)
-        const isEnabled = rigidBody.isEnabled();
-        
-        if (!isEnabled) {
-          return true; // Continue checking (dummy is KO'd)
-        }
-        
-        const targetId = userData.id;
-        if (!targetId || hitTargets.has(targetId)) {
-          return true; // Continue if already hit or no ID
-        }
-        
-        // Mark as hit to prevent multiple hits
-        hitTargets.add(targetId);
-        
-            // Process the hit (immediate - no more nested deferrals)
-            this.processHitOnTarget(targetId, hitType, sweepDistance, deltaTime);
-        
-        return true; // Continue checking for more targets
-      }
-      
-      // Handle player colliders (NEW PvP logic)
-      if (COMBAT_MODE_CONFIG.PVP_ENABLED && userData.isPlayer && userData.id !== 'localPlayer') {
-        // PvP hit detected - check if local player is attacking
-        const localCombatState = this.controller.getCombatState();
-        if (localCombatState.isAttacking) {
-          const targetId = userData.id;
-          if (!targetId || hitTargets.has(targetId)) {
-            return true; // Continue if already hit or no ID
-          }
-          
-          // Mark as hit to prevent multiple hits
-          hitTargets.add(targetId);
-          
-          // Process the PvP hit (immediate - no more nested deferrals)
-          this.processPlayerHit(targetId, hitType, sweepDistance);
-        }
-      }
-      
-      return true; // Continue checking
+    // Queue the physics query for safe execution outside physics step
+    const queryManager = PhysicsQueryManager.getInstance();
+    queryManager.queuePhysicsQuery({
+      id: `hitvol_${Date.now()}_${Math.random()}`,
+      position: testPos,
+      rotation: testRot,
+      shape: testShape,
+      hitTargets,
+      hitType,
+      sweepDistance,
+      deltaTime,
+      timestamp: Date.now(),
+      hitVolume: this
     });
-        } catch (error) {
-          console.warn('⚠️ HitVolume collision detection error (deferred):', error);
-        }
-      }, { timeout: 100 });
-    } else {
-      // Fallback: use double setTimeout for browsers without requestIdleCallback
-      setTimeout(() => {
-        setTimeout(() => {
-          if (this.isDestroyed) return;
-          
-          try {
-            this.world.intersectionsWithShape(testPos, testRot, testShape, (collider: RAPIER.Collider) => {
-              const userData = collider.parent()?.userData as any;
-              const rigidBody = collider.parent();
-              
-              if (!userData || !rigidBody) {
-                return true; // Continue checking
-              }
-              
-              // Handle dummy colliders (existing logic)
-              if (userData.isDummy) {
-                // Skip disabled rigidBodies (KO'd dummies)
-                const isEnabled = rigidBody.isEnabled();
-                
-                if (!isEnabled) {
-                  return true; // Continue checking (dummy is KO'd)
-                }
-                
-                const targetId = userData.id;
-                if (!targetId || hitTargets.has(targetId)) {
-                  return true; // Continue if already hit or no ID
-                }
-                
-                // Mark as hit to prevent multiple hits
-                hitTargets.add(targetId);
-                
-                // Process the hit (immediate - no more nested deferrals)
-                this.processHitOnTarget(targetId, hitType, sweepDistance, deltaTime);
-            
-                return true; // Continue checking for more targets
-              }
-              
-              // Handle player colliders (NEW PvP logic)
-              if (COMBAT_MODE_CONFIG.PVP_ENABLED && userData.isPlayer && userData.id !== 'localPlayer') {
-                // PvP hit detected - check if local player is attacking
-                const localCombatState = this.controller.getCombatState();
-                if (localCombatState.isAttacking) {
-                  const targetId = userData.id;
-                  if (!targetId || hitTargets.has(targetId)) {
-                    return true; // Continue if already hit or no ID
-                  }
-                  
-                  // Mark as hit to prevent multiple hits
-                  hitTargets.add(targetId);
-                  
-                  // Process the PvP hit (immediate - no more nested deferrals)
-                  this.processPlayerHit(targetId, hitType, sweepDistance);
-                }
-              }
-              
-              return true; // Continue checking
-            });
-          } catch (error) {
-            console.warn('⚠️ HitVolume collision detection error (deferred):', error);
-          }
-        }, 0);
-      }, 0);
-    }
   }
 
   /**
-   * Process hit on a specific target and apply damage
+   * Process hit on a dummy target
    */
-  private processHitOnTarget(
-    targetId: string,
-    _hitType: HitVolumeType,
-    _sweepDistance: number,
-    _deltaTime: number
-  ): void {
+  public processHitOnTarget(targetId: string, hitType: HitVolumeType, sweepDistance: number, deltaTime: number): void {
     const now = Date.now();
     
     // FRAME-LEVEL protection: Prevent multiple hits on same target in same frame
@@ -436,7 +462,7 @@ export class HitVolume {
   /**
    * Process PvP hit on a player target
    */
-  private processPlayerHit(playerId: string, hitType: HitVolumeType, _sweepDistance: number): void {
+  public processPlayerHit(playerId: string, hitType: HitVolumeType, _sweepDistance: number): void {
     const now = Date.now();
     
     // FRAME-LEVEL protection: Prevent multiple hits on same target in same frame

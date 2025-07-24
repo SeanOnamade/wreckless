@@ -3,11 +3,18 @@ export class GameMenu {
   private isMenuOpen = false;
   private boundKeydownHandler: (e: KeyboardEvent) => void;
   private boundContainerClickHandler: (e: MouseEvent) => void;
+  private boundForceCloseHandler: () => void; // Track the force close handler
   
   constructor() {
     // Bind event handlers for proper cleanup
     this.boundKeydownHandler = this.handleKeydown.bind(this);
     this.boundContainerClickHandler = this.handleContainerClick.bind(this);
+    this.boundForceCloseHandler = () => {
+      if (this.isMenuOpen) {
+        console.log('🔧 Force closing pause menu for main menu transition');
+        this.closeMenu();
+      }
+    };
     
     this.createMenuElements();
     this.setupEventListeners();
@@ -141,6 +148,9 @@ export class GameMenu {
     document.addEventListener('keydown', this.boundKeydownHandler);
     // Close menu when clicking outside
     this.menuContainer.addEventListener('click', this.boundContainerClickHandler);
+    
+    // CRITICAL FIX: Force close pause menu when transitioning to main menu
+    window.addEventListener('force-close-pause-menu', this.boundForceCloseHandler);
   }
   
   private toggleMenu() {
@@ -178,6 +188,7 @@ export class GameMenu {
     // Remove event listeners to prevent memory leaks
     document.removeEventListener('keydown', this.boundKeydownHandler);
     this.menuContainer.removeEventListener('click', this.boundContainerClickHandler);
+    window.removeEventListener('force-close-pause-menu', this.boundForceCloseHandler);
     
     if (this.menuContainer.parentNode) {
       this.menuContainer.parentNode.removeChild(this.menuContainer);

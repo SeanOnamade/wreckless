@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import type { PlayerClass } from '../kits/classKit';
 
-export type AnimationState = 'idle' | 'running' | 'jumping' | 'falling' | 'swing';
+export type AnimationState = 'idle' | 'running' | 'jumping' | 'falling' | 'swing' | 'blast' | 'blink';
 
 interface Character {
   model: THREE.Group;
@@ -112,6 +112,16 @@ export class CharacterSystem {
     // Add swing animation for grapple class
     if (characterClass === 'grapple') {
       animationNames.push('swing');
+    }
+    
+    // Add blast animation for blast class
+    if (characterClass === 'blast') {
+      animationNames.push('blast');
+    }
+    
+    // Add blink animation for blink class
+    if (characterClass === 'blink') {
+      animationNames.push('blink');
     }
     
     for (const animName of animationNames) {

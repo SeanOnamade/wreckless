@@ -20,7 +20,7 @@ export class LobbyScreen {
   private startButtonElement: HTMLButtonElement | null = null;
   private allPlayersData: Record<string, LobbyPlayerData> = {}; // Store all players' class selections
   private raceStarting: boolean = false; // Prevent duplicate race start requests
-  private networkingTimeouts: number[] = []; // Track timeouts for cleanup
+  private activeTimeouts: number[] = []; // Centralized timeout tracking
   private isDestroyed: boolean = false; // Track component destruction
   private animationReadyPlayers = new Set<string>(); // Track which players have loaded animations
   private allAnimationsReady = false; // Track if all players have loaded animations
@@ -73,10 +73,10 @@ export class LobbyScreen {
               Network.requestLobbyState();
             }
           }, 1000);
-          this.networkingTimeouts.push(requestTimeout);
+          this.activeTimeouts.push(requestTimeout);
         }
       }, 1000);
-      this.networkingTimeouts.push(testTimeout);
+      this.activeTimeouts.push(testTimeout);
     }
   }
   
@@ -124,29 +124,44 @@ export class LobbyScreen {
    * Destroy the lobby screen and clean up resources
    */
   public destroy(): void {
+    if (this.isDestroyed) return;
     this.isDestroyed = true;
     
-    this.hide();
+    console.log('🏢 Destroying LobbyScreen...');
+    
+    // Stop lobby updates
     this.stopLobbyUpdates();
     
-    // Clear all networking timeouts
-    this.networkingTimeouts.forEach(timeoutId => {
+    // Clear all networking timeouts to prevent memory leaks
+    this.activeTimeouts.forEach(timeoutId => {
       clearTimeout(timeoutId);
     });
-    this.networkingTimeouts = [];
+    this.activeTimeouts = [];
     
     // Remove event listeners
-    document.removeEventListener('keydown', this.keydownHandler);
+    window.removeEventListener('keydown', this.keydownHandler);
     window.removeEventListener('lobbyClassUpdate', this.lobbyClassUpdateHandler);
     window.removeEventListener('resetRaceStarting', this.resetRaceStartingHandler);
-    window.removeEventListener('multiplayerAnimationStatus', this.animationStatusHandler);
+    window.removeEventListener('animationLoadingStatus', this.animationStatusHandler);
     
-    // Remove DOM element
+    // Clear animation status
+    this.animationReadyPlayers.clear();
+    this.allAnimationsReady = false;
+    
+    // Clear player data
+    this.allPlayersData = {};
+    
+    // Remove from DOM
     if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }
     
-    console.log('🧹 LobbyScreen destroyed and cleaned up');
+    // Clear references to prevent memory leaks
+    this.playersListElement = null;
+    this.startButtonElement = null;
+    this.updateInterval = null;
+    
+    console.log('🏢 LobbyScreen destroyed');
   }
   
   /**
@@ -510,6 +525,18 @@ export class LobbyScreen {
         🎯 Choose Your Class
       </div>
       <div id="class-buttons" style="display: flex; gap: 10px; justify-content: center; margin-bottom: 15px;">
+        <button id="class-blink" class="class-btn" style="
+          background: linear-gradient(45deg, #4444ff, #6666ff);
+          color: white;
+          border: 2px solid rgba(102, 102, 255, 0.5);
+          border-radius: 8px;
+          padding: 8px 15px;
+          cursor: pointer;
+          font-family: monospace;
+          font-size: 12px;
+          font-weight: bold;
+          transition: all 0.2s ease;
+        ">⚡ BLINK</button>
         <button id="class-blast" class="class-btn" style="
           background: linear-gradient(45deg, #ff6600, #ff8800);
           color: white;
@@ -534,18 +561,6 @@ export class LobbyScreen {
           font-weight: bold;
           transition: all 0.2s ease;
         ">🪝 GRAPPLE</button>
-        <button id="class-blink" class="class-btn" style="
-          background: linear-gradient(45deg, #4444ff, #6666ff);
-          color: white;
-          border: 2px solid rgba(102, 102, 255, 0.5);
-          border-radius: 8px;
-          padding: 8px 15px;
-          cursor: pointer;
-          font-family: monospace;
-          font-size: 12px;
-          font-weight: bold;
-          transition: all 0.2s ease;
-        ">⚡ BLINK</button>
       </div>
       <div id="class-status" style="text-align: center; color: #888; font-size: 14px;">
         Select a class to continue
@@ -553,10 +568,17 @@ export class LobbyScreen {
     `;
     
     // Add event listeners for class buttons
+    const blinkBtn = container.querySelector('#class-blink') as HTMLButtonElement;
     const blastBtn = container.querySelector('#class-blast') as HTMLButtonElement;
     const grappleBtn = container.querySelector('#class-grapple') as HTMLButtonElement;
-    const blinkBtn = container.querySelector('#class-blink') as HTMLButtonElement;
     
+    blinkBtn?.addEventListener('click', () => {
+      // SFX: Play button click sound
+      window.dispatchEvent(new CustomEvent('sfxRequest', {
+        detail: { category: 'ui', filename: 'button_click.wav' }
+      }));
+      this.selectClass('blink');
+    });
     blastBtn?.addEventListener('click', () => {
       // SFX: Play button click sound
       window.dispatchEvent(new CustomEvent('sfxRequest', {
@@ -570,13 +592,6 @@ export class LobbyScreen {
         detail: { category: 'ui', filename: 'button_click.wav' }
       }));
       this.selectClass('grapple');
-    });
-    blinkBtn?.addEventListener('click', () => {
-      // SFX: Play button click sound
-      window.dispatchEvent(new CustomEvent('sfxRequest', {
-        detail: { category: 'ui', filename: 'button_click.wav' }
-      }));
-      this.selectClass('blink');
     });
   }
   

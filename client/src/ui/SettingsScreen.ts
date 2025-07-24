@@ -152,6 +152,10 @@ export class SettingsScreen {
     // Audio section
     const audioSection = this.createAudioSection();
     settingsContainer.appendChild(audioSection);
+
+    // UI section
+    const uiSection = this.createUISection();
+    settingsContainer.appendChild(uiSection);
     
     // Assemble the UI
     content.appendChild(title);
@@ -368,7 +372,272 @@ export class SettingsScreen {
       });
     });
     
+    // Music Attribution
+    const musicAttributionTitle = document.createElement('h3');
+    musicAttributionTitle.style.cssText = `
+      color: #FFAA00;
+      font-size: 16px;
+      font-weight: bold;
+      margin: 30px 0 10px 0;
+      border-bottom: 1px solid #333;
+      padding-bottom: 3px;
+    `;
+    musicAttributionTitle.textContent = '🎵 Music Attribution';
+    section.appendChild(musicAttributionTitle);
+    
+    const musicAttribution = document.createElement('div');
+    musicAttribution.style.cssText = `
+      background: rgba(40, 40, 40, 0.8);
+      border: 1px solid rgba(255, 170, 0, 0.3);
+      border-radius: 6px;
+      padding: 15px;
+      margin-bottom: 10px;
+    `;
+    
+    const musicText = document.createElement('p');
+    musicText.style.cssText = `
+      color: #cccccc;
+      font-size: 14px;
+      margin: 0;
+      line-height: 1.4;
+    `;
+    musicText.innerHTML = `
+      <strong style="color: #FFAA00;">Background Music:</strong><br>
+      "like a fire" by <strong>Kensuke Ushio</strong><br>
+      <em style="color: #999;">Used for non-commercial purposes</em>
+    `;
+    
+    musicAttribution.appendChild(musicText);
+    section.appendChild(musicAttribution);
+    
     return section;
+  }
+
+  /**
+   * Create the UI settings section
+   */
+  private createUISection(): HTMLDivElement {
+    const section = document.createElement('div');
+    section.style.cssText = `
+      margin-bottom: 30px;
+      padding: 25px;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(0, 230, 255, 0.3);
+      border-radius: 8px;
+    `;
+    
+    // Section title
+    const sectionTitle = document.createElement('h3');
+    sectionTitle.style.cssText = `
+      margin: 0 0 20px 0;
+      color: #00E6FF;
+      font-size: 18px;
+      font-weight: bold;
+    `;
+    sectionTitle.textContent = '🖼️ PORTRAIT STYLE';
+    
+    // Portrait style radio buttons
+    const portraitStyleGroup = document.createElement('div');
+    portraitStyleGroup.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      margin-top: 10px;
+    `;
+    
+    const currentStyle = this.getPortraitStyle();
+    
+    // Default (No Portrait) option
+    const defaultOption = this.createRadioOption(
+      'portrait-style',
+      'default',
+      '🎮 Default (No Portrait)',
+      'Clean HUD with no character portrait',
+      currentStyle === 'default'
+    );
+    
+    // TF2 Style (Static Portrait) option  
+    const tf2Option = this.createRadioOption(
+      'portrait-style', 
+      'tf2',
+      '🏆 TF2 Style (Static Portrait)',
+      'Compact HUD with static character image',
+      currentStyle === 'tf2'
+    );
+    
+    // 3D Style (Animated Portrait) option - RE-ENABLED with safety note
+    const threeDOption = this.createRadioOption(
+      'portrait-style',
+      '3d',
+      '🎭 3D (Animated Portrait)',
+      '⚠️ Experimental: Live 3D character (positioned to avoid HUD conflicts)',
+      currentStyle === '3d'
+    );
+    
+    portraitStyleGroup.appendChild(defaultOption);
+    portraitStyleGroup.appendChild(tf2Option);
+    portraitStyleGroup.appendChild(threeDOption);
+    
+    section.appendChild(sectionTitle);
+    section.appendChild(portraitStyleGroup);
+    
+    return section;
+  }
+
+  /**
+   * Create a radio button option
+   */
+  private createRadioOption(name: string, value: string, label: string, description: string, checked: boolean): HTMLDivElement {
+    const option = document.createElement('div');
+    option.style.cssText = `
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid ${checked ? '#00E6FF' : 'rgba(255, 255, 255, 0.2)'};
+      border-radius: 6px;
+      background: ${checked ? 'rgba(0, 230, 255, 0.1)' : 'rgba(0, 0, 0, 0.2)'};
+      cursor: pointer;
+      transition: all 0.2s ease;
+    `;
+    
+    // Radio input
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = name;
+    radio.value = value;
+    radio.checked = checked;
+    radio.style.cssText = `
+      margin: 2px 0 0 0;
+      accent-color: #00E6FF;
+    `;
+    
+    // Content container
+    const content = document.createElement('div');
+    content.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+    `;
+    
+    // Label
+    const labelElement = document.createElement('div');
+    labelElement.style.cssText = `
+      color: ${checked ? '#00E6FF' : '#ffffff'};
+      font-size: 14px;
+      font-weight: bold;
+    `;
+    labelElement.textContent = label;
+    
+    // Description
+    const desc = document.createElement('div');
+    desc.style.cssText = `
+      color: #cccccc;
+      font-size: 12px;
+      line-height: 1.4;
+    `;
+    desc.textContent = description;
+    
+    content.appendChild(labelElement);
+    content.appendChild(desc);
+    
+    option.appendChild(radio);
+    option.appendChild(content);
+    
+    // Click handler
+    option.addEventListener('click', () => {
+      // Update all radio buttons in the group
+      const allRadios = document.querySelectorAll(`input[name="${name}"]`) as NodeListOf<HTMLInputElement>;
+      allRadios.forEach(r => {
+        r.checked = (r.value === value);
+        const parentOption = r.closest('div');
+        if (parentOption) {
+          const isSelected = r.checked;
+          parentOption.style.border = `1px solid ${isSelected ? '#00E6FF' : 'rgba(255, 255, 255, 0.2)'}`;
+          parentOption.style.background = isSelected ? 'rgba(0, 230, 255, 0.1)' : 'rgba(0, 0, 0, 0.2)';
+          
+          const labelEl = parentOption.querySelector('div:nth-child(2) div:first-child') as HTMLElement;
+          if (labelEl) {
+            labelEl.style.color = isSelected ? '#00E6FF' : '#ffffff';
+          }
+        }
+      });
+      
+      // Apply the setting
+      this.setPortraitStyle(value);
+    });
+    
+    return option;
+  }
+
+  /**
+   * Get current portrait style (defaults to 'tf2')
+   */
+  private getPortraitStyle(): string {
+    // Check if user has the new portrait style set
+    const stored = localStorage.getItem('wreckless-portrait-style');
+    if (stored && (stored === 'default' || stored === 'tf2' || stored === '3d')) {
+      return stored;
+    }
+    
+    // If not set, infer from existing settings or default to tf2
+    const tf2Enabled = localStorage.getItem('tf2-hud-enabled') === 'true';
+    const animationsEnabled = localStorage.getItem('wreckless-character-animations') === 'true';
+    
+    if (tf2Enabled) {
+      return 'tf2';
+    } else if (animationsEnabled) {
+      return '3d';
+    } else {
+      // Default to TF2 style instead of default (no portrait)
+      localStorage.setItem('wreckless-portrait-style', 'tf2');
+      return 'tf2';
+    }
+  }
+
+  /**
+   * Set portrait style and update all related systems
+   */
+  private setPortraitStyle(style: string): void {
+    console.log(`🖼️ Setting portrait style to: ${style}`);
+    
+    // Store the new style
+    localStorage.setItem('wreckless-portrait-style', style);
+    
+    // Update related localStorage settings for compatibility
+    switch (style) {
+      case 'default':
+        // Default: No portraits at all
+        localStorage.setItem('tf2-hud-enabled', 'false');
+        localStorage.setItem('wreckless-character-animations', 'false');
+        break;
+        
+      case 'tf2':
+        // TF2 style: Static portraits with compact HUD
+        localStorage.setItem('tf2-hud-enabled', 'true');
+        localStorage.setItem('wreckless-character-animations', 'false');
+        break;
+        
+      case '3d':
+        // 3D style: Animated 3D portraits (right side)
+        localStorage.setItem('tf2-hud-enabled', 'false');
+        localStorage.setItem('wreckless-character-animations', 'true');
+        break;
+    }
+    
+    // Dispatch events to update systems
+    window.dispatchEvent(new CustomEvent('hudStyleChanged', {
+      detail: { tf2Style: style === 'tf2' }
+    }));
+
+    window.dispatchEvent(new CustomEvent('characterAnimationsSettingChanged', {
+      detail: { enabled: style === '3d' }
+    }));
+
+    window.dispatchEvent(new CustomEvent('portraitStyleChanged', {
+      detail: { style }
+    }));
   }
   
   /**
@@ -684,7 +953,7 @@ export class SettingsScreen {
         valueDisplay.textContent = `${Math.round(settings.sfxVolume * 100)}%`;
       }
     }
-    
+
     // Update music enabled checkbox
     const musicEnabledCheckbox = this.container.querySelector('#music-enabled') as HTMLInputElement;
     if (musicEnabledCheckbox) {
@@ -692,10 +961,17 @@ export class SettingsScreen {
     }
     
     // Update SFX enabled checkbox
-    const sfxEnabledCheckbox = this.container.querySelector('#sfx-enabled') as HTMLInputElement;
-    if (sfxEnabledCheckbox) {
-      sfxEnabledCheckbox.checked = settings.sfxEnabled;
+    const sfxToggle = this.container.querySelector('#sfx-enabled') as HTMLInputElement;
+    if (sfxToggle) {
+      sfxToggle.checked = settings.sfxEnabled;
     }
+
+    // Update portrait style radio buttons
+    const currentStyle = this.getPortraitStyle();
+    const portraitRadios = this.container.querySelectorAll('input[name="portrait-style"]') as NodeListOf<HTMLInputElement>;
+    portraitRadios.forEach(radio => {
+      radio.checked = radio.value === currentStyle;
+    });
   }
   
   /**

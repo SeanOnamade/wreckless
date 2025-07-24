@@ -1,4 +1,10 @@
 import './style.css';
+import { LoadingScreen } from './ui/LoadingScreen';
+
+// Initialize loading screen immediately
+const loadingScreen = new LoadingScreen();
+loadingScreen.updateStatus('Initializing game engine...');
+
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import initPhysics from './physics';
@@ -11,6 +17,7 @@ import { LapHUD } from './hud/Hud';
 import { GameHUD } from './hud/GameHUD';
 import { AbilityManager } from './kits/useAbility';
 import { setPlayerClass, getCurrentPlayerKit } from './kits/classKit';
+import { type PlayerClass } from './kits/classKit';
 import { AbilityHUD } from './kits/AbilityHUD';
 import { MeleeCombat, type MeleeTarget } from './combat';
 import { TargetDummy } from './combat/TargetDummy';
@@ -69,6 +76,8 @@ import { GameMenu } from './menu';
 import { AudioManager } from './audio/AudioManager';
 
 import { DummyPhysicsManager } from './combat/DummyPhysicsManager';
+
+// Minimal crash prevention - keep animation loops synchronized
 
 // Character Animation System
 import { AutoCharacterLoader } from './player/AutoCharacterLoader';
@@ -265,7 +274,7 @@ let movementTrail: TrailSystem | null = null;
 const screenFlash = new ScreenFlash();
 
 // Initialize pause menu system
-const gameMenu = new GameMenu();
+new GameMenu(); // Self-initializing menu system
 
 // Handle reset event from menu
 window.addEventListener('game-reset', () => {
@@ -386,7 +395,7 @@ let audioManager: AudioManager | null = null;
 // Character Animation System
 let autoCharacterLoader: AutoCharacterLoader | null = null;
 
-initPhysics(scene, camera).then((world) => {
+initPhysics(scene, camera, loadingScreen).then((world) => {
   physicsWorld = world;
   
   // Set up player respawn event handler (now that physicsWorld is available)
@@ -423,11 +432,24 @@ initPhysics(scene, camera).then((world) => {
   // Initialize ability HUD
   new AbilityHUD(abilityManager); // Self-initializing UI component
   
-  // Initialize automatic character loader (main system)
-  autoCharacterLoader = new AutoCharacterLoader(scene, camera as THREE.PerspectiveCamera);
+  // Initialize AutoCharacterLoader system for character portraits and animations
+  loadingScreen.updateStatus('Initializing character system...');
+  autoCharacterLoader = new AutoCharacterLoader();
   
-  // Preload all character animations on startup for instant access
-  console.log('🎭 Starting animation preload for all characters...');
+  // Track animation loading progress from startup preload
+  window.addEventListener('animationLoadingProgress', (event: Event) => {
+    const customEvent = event as CustomEvent<{ loaded: number, total: number, isComplete: boolean }>;
+    const { loaded, total, isComplete } = customEvent.detail;
+    
+    if (isComplete) {
+      loadingScreen.setStepComplete('character-animations', 'Character animations ready');
+    } else {
+      loadingScreen.updateStatus(`Loading character animations... (${loaded}/${total})`);
+    }
+  });
+  
+  // Preload all character animations ONCE during startup
+  console.log('🎭 Starting one-time animation preload...');
   autoCharacterLoader.preloadAllCharacterAnimations();
   
   // Legacy systems DISABLED to prevent conflicts
@@ -435,25 +457,24 @@ initPhysics(scene, camera).then((world) => {
   // simpleTest = new SimpleCharacterTest(scene, camera as THREE.PerspectiveCamera);
   console.log('🚫 Legacy character systems disabled - only auto-loader active');
   
-  // Connect auto-loader to class selection events  
+  // Connect auto-loader to class selection events (no duplicate loading)
   window.addEventListener('characterClassSelected', async (event: Event) => {
     const customEvent = event as CustomEvent<{ playerClass: string }>;
     const { playerClass } = customEvent.detail;
     
     if (autoCharacterLoader) {
-      console.log(`🎭 Auto-loading character for: ${playerClass} (legacy system disabled)`);
+      console.log(`🎭 Using cached animations for: ${playerClass}`);
       
-      // Legacy systems already disabled at initialization
-      
-      await autoCharacterLoader.loadCharacterForClass(playerClass);
+      // Use cached animations - no duplicate loading!
+      await autoCharacterLoader.loadCharacterForClass(playerClass as PlayerClass);
     }
   });
 
-  // Track animation loading state for race start blocking
+  // Track animation loading state for race start coordination
   let animationsLoaded = false;
   let pendingRaceStart: (() => void) | null = null;
 
-  // Listen for animation loading progress
+  // Listen for animation loading completion (from startup preload)
   window.addEventListener('animationLoadingProgress', (event: Event) => {
     const customEvent = event as CustomEvent<{ loaded: number, total: number, isComplete: boolean }>;
     const { isComplete } = customEvent.detail;
@@ -461,13 +482,13 @@ initPhysics(scene, camera).then((world) => {
     animationsLoaded = isComplete;
     
     if (isComplete && pendingRaceStart) {
-      console.log('🎭 Animations loaded! Starting pending race...');
+      console.log('🎭 Cached animations ready! Starting race...');
       pendingRaceStart();
       pendingRaceStart = null;
     }
   });
 
-  // Block race start until animations are loaded (unless animations are disabled)
+  // Race start coordination (using cached animations)
   window.addEventListener('raceStartRequest', (event: Event) => {
     const customEvent = event as CustomEvent<{ callback: () => void }>;
     const { callback } = customEvent.detail;
@@ -477,136 +498,34 @@ initPhysics(scene, camera).then((world) => {
     
     if (animationsLoaded || !animationsEnabled) {
       console.log(animationsEnabled ? 
-        '🎭 Animations already loaded - starting race immediately' : 
+        '🎭 Cached animations ready - starting race immediately' : 
         '🚫 Animations disabled - starting race immediately');
       callback();
     } else {
-      console.log('🎭 Animations still loading - race will start when complete');
+      console.log('🎭 Waiting for animation cache to complete...');
       pendingRaceStart = callback;
     }
   });
+  
+  // Load racing dummies from saved positions
+  loadingScreen.updateStatus('Loading track elements...');
+  if (dummyLoader) {
+    dummyLoader.loadDummies().then((loadedDummies) => {
+      targetDummies = loadedDummies;
+      console.log('✅ Track elements loaded');
+      // Note: Dummies are lightweight, no need for separate loading step
+    }).catch(error => {
+      console.error('Failed to load dummies:', error);
+    });
+  }
 
-  // Preload animations when class is selected (even before race starts)
-  window.addEventListener('characterClassSelected', async (event: Event) => {
-    const customEvent = event as CustomEvent<{ playerClass: string }>;
-    const { playerClass } = customEvent.detail;
-    
-    // Check if animations are enabled
-    const animationsEnabled = autoCharacterLoader?.isCharacterSystemActive() ?? true;
-    
-    if (!animationsEnabled) {
-      // If animations are disabled, immediately mark as loaded
-      animationsLoaded = true;
-      console.log(`🚫 Animations disabled - skipping preload for ${playerClass}`);
-    } else {
-      // Reset animation loaded state when new class is selected
-      animationsLoaded = false;
-      
-      if (autoCharacterLoader) {
-        // Start preloading animations immediately when class is selected
-        autoCharacterLoader.preloadAnimationsForClass(playerClass);
-        console.log(`📦 Started preloading animations for ${playerClass} in background`);
-      }
-    }
-  });
+  // Initialize other systems (all lightweight)
+  AudioManager.getInstance(); // Audio is instant
+  new GameMenu(); // UI is instant
   
-  // Auto-character debug commands
-  (window as any).__autoChar = {
-    status: () => {
-      const status = autoCharacterLoader?.getStatus();
-      const loadingComplete = autoCharacterLoader?.isLoadingComplete() || false;
-      console.log('🎭 Auto Character Status:', status);
-      console.log(`🎭 Animations Loaded: ${animationsLoaded ? 'Yes' : 'No'}`);
-      console.log(`🎭 Loading Complete: ${loadingComplete ? 'Yes' : 'No'}`);
-      return { ...status, animationsLoaded, loadingComplete };
-    },
-    load: (className: string) => autoCharacterLoader?.loadCharacterForClass(className),
-    testVelocity: () => {
-      console.log('🧪 Animation velocity thresholds:');
-      console.log('  Running: speed > 1 (total velocity magnitude)');
-      console.log('  Jumping: velocity.y > 1 (upward velocity)'); 
-      console.log('  Falling: velocity.y < -1 (downward velocity)');
-      console.log('  Idle: everything else');
-      console.log('💡 Try running around, jumping, or falling to see animations change!');
-      console.log('🎯 Animation logs will show EVERY frame when character is loaded');
-    },
-    forceAnim: (animName: string) => {
-      if (autoCharacterLoader) {
-        const character = (autoCharacterLoader as any).character;
-        if (character && character.animations.has(animName)) {
-          const action = character.animations.get(animName);
-          if (character.currentAnimation) character.currentAnimation.fadeOut(0.2);
-          character.currentAnimation = action;
-          action.reset().fadeIn(0.2).play();
-          console.log(`🎭 Forced animation: ${animName}`);
-                 } else {
-           console.log(`🚫 Animation ${animName} not found or no character loaded`);
-         }
-       }
-         },
-    toggleDebug: () => {
-      if (autoCharacterLoader) {
-        (autoCharacterLoader as any).debugMode = !(autoCharacterLoader as any).debugMode;
-        const state = (autoCharacterLoader as any).debugMode ? 'ENABLED' : 'DISABLED';
-        console.log(`🐛 Animation debug logging: ${state}`);
-      }
-    },
-    makeVisible: () => {
-      if (autoCharacterLoader) {
-        const character = (autoCharacterLoader as any).character;
-        if (character && character.model) {
-          // Force character to a very visible position (in front of camera)
-          character.model.position.set(0, 0, -5);
-          character.model.scale.setScalar(2.0);
-          character.model.rotation.y = Math.PI;
-          console.log('🎯 Character forced to visible position: (0, 0, -5) scale: 2.0');
-        } else {
-          console.log('🚫 No character loaded to make visible');
-        }
-      }
-    },
-    getPosition: () => {
-      if (autoCharacterLoader) {
-        const character = (autoCharacterLoader as any).character;
-        if (character && character.model) {
-          const pos = character.model.position;
-          console.log(`🎯 Character position: (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})`);
-          console.log(`📏 Character scale: ${character.model.scale.x.toFixed(1)}`);
-          return { position: pos, scale: character.model.scale.x };
-        }
-      }
-      console.log('🚫 No character loaded');
-      return null;
-    },
-    preload: (className: string = 'grapple') => {
-      if (autoCharacterLoader) {
-        autoCharacterLoader.preloadAnimationsForClass(className);
-        console.log(`🎭 Starting preload for ${className} - animations will load in background`);
-      }
-    },
-    testLoadingUI: () => {
-      if (autoCharacterLoader) {
-        console.log('🎭 Testing loading UI with full load sequence...');
-        autoCharacterLoader.loadCharacterForClass('grapple');
-      }
-    },
-    togglePortrait: () => {
-      if (autoCharacterLoader) {
-        autoCharacterLoader.togglePortraitVisibility();
-      }
-    },
-    testAnim: (animName: string) => {
-      if (autoCharacterLoader) {
-        autoCharacterLoader.testAnimation(animName);
-      } else {
-        console.log('🚫 No character loader available');
-      }
-    }
-  };
-  console.log('🎮 Auto character system ready!');
-  console.log('🔧 Commands: __autoChar.status(), .testLoadingUI(), .getPosition(), .preload("grapple")');
-  console.log('🖼️ Portrait: __autoChar.togglePortrait(), .testAnim("falling")');
+  console.log('✅ All systems initialized');
   
+  // Initialize essential game systems
   // Initialize round system first
   roundSystem = new RaceRoundSystem({
     dummyKOPoints: 10,
@@ -625,7 +544,7 @@ initPhysics(scene, camera).then((world) => {
   // Initialize Audio System
   audioManager = AudioManager.getInstance();
   
-
+  // CORE FIX: Consolidated animation loops prevent timing conflicts
   
   // Expose physics manager for debugging
   (window as any).dummyPhysicsManager = DummyPhysicsManager.getInstance();
@@ -651,42 +570,6 @@ initPhysics(scene, camera).then((world) => {
   document.addEventListener('click', startWindOnInteraction);
   document.addEventListener('keydown', startWindOnInteraction);
   
-  // CRASH PREVENTION: Periodic cleanup to prevent resource buildup  
-  setInterval(() => {
-    try {
-      const stats = TargetDummy.getAnimationStats();
-      
-      // Log animation status occasionally
-      if (import.meta.env.DEV) {
-        console.log(`🎬 Animation Stats: ${stats.global}/${stats.limit} global frames, ${stats.rate}/s max rate`);
-      }
-      
-      // Aggressive cleanup if animation frames are building up
-      if (stats.global > stats.limit * 0.8) {
-        console.warn(`⚠️ High animation frame usage (${stats.global}/${stats.limit}) - cleaning up`);
-        TargetDummy.cleanupGlobalAnimations();
-      }
-      
-      // Check individual dummies
-      if (targetDummies) {
-        targetDummies.forEach(dummy => {
-          if ('activeAnimationFrames' in dummy) {
-            const frames = (dummy as any).activeAnimationFrames;
-            if (frames && frames.size > 6) {
-              console.warn(`⚠️ Dummy ${(dummy as any).id}: ${frames.size} active animation frames`);
-            }
-          }
-        });
-      }
-    } catch (error) {
-      console.warn('Cleanup monitoring error:', error);
-    }
-  }, 10000); // Check every 10 seconds (more frequent)
-  
-  // Expose AudioManager to window for console testing
-  (window as any).AudioManager = AudioManager;
-  (window as any).audioManager = audioManager;
-  
   // Immediate SFX Event System - audio plays instantly, physics operations still deferred
   
   // Play SFX immediately - audio doesn't need physics safety delays
@@ -711,9 +594,6 @@ initPhysics(scene, camera).then((world) => {
     audioManager?.stopSFX(category as any, filename);
   });
   
-  // SFX queue system removed - audio now plays immediately
-  // Only physics operations use the DummyPhysicsManager for safety
-  
   console.log('🎵 Audio system initialized - immediate SFX, deferred physics');
   
   // Create HomeScreen UI component
@@ -736,8 +616,8 @@ initPhysics(scene, camera).then((world) => {
     settingsScreen: settingsScreen
   });
   
-  console.log('🏠 Day 6 Sprint: Game state management initialized');
-
+  console.log('🏠 Game state management initialized');
+  
   // Initialize multiplayer manager for online mode
   if (window.location.hash.includes('#online')) {
     multiplayerManager = new MultiplayerManager(scene);
@@ -891,14 +771,19 @@ initPhysics(scene, camera).then((world) => {
   setupVisualFeedback(camera, renderer);
   
   // Load racing dummies from saved positions
+  loadingScreen.updateStatus('Loading combat dummies...');
   if (dummyLoader) {
     dummyLoader.loadDummies().then((loadedDummies) => {
       targetDummies = loadedDummies;
+      loadingScreen.setStepComplete('dummy-models', 'Combat dummies loaded');
       
       // Pass loaded dummies to placement manager for editing
       if (dummyPlacementManager) {
         dummyPlacementManager.setLoadedDummies(loadedDummies);
       }
+    }).catch(error => {
+      console.error('Failed to load dummies:', error);
+      loadingScreen.setStepComplete('dummy-models', 'Using default dummy positions');
     });
   }
   
@@ -935,11 +820,11 @@ initPhysics(scene, camera).then((world) => {
   if (import.meta.env.DEV) {
     console.log('🎮 Ability System initialized:');
     console.log('  ⚡ Press E to use ability');
-      console.log('  🔥 Press 1 for Blast class');
-  console.log('  🪝 Press 2 for Grapple class');
-  console.log('  ✨ Press 3 for Blink class');
-  console.log('  🚀 Press L to toggle Rocket Jump / Legacy Blast');
-  console.log('  📋 Press C to copy combat log to clipboard');
+    console.log('  ✨ Press 1 for Blink class');
+    console.log('  🔥 Press 2 for Blast class');
+    console.log('  🪝 Press 3 for Grapple class');
+    console.log('  🚀 Press L to toggle Rocket Jump / Legacy Blast');
+    console.log('  📋 Press C to copy combat log to clipboard');
     console.log('🗡️ Melee Combat initialized:');
     console.log('  🖱️ Left Click (LMB) to melee attack');
     console.log('  🎯 Target dummies spawned for testing');
@@ -1006,14 +891,14 @@ initPhysics(scene, camera).then((world) => {
       event.stopPropagation();
       
       if (event.code === 'Digit1') {
-        setPlayerClass('blast');
-        console.log('🔥 Switched to Blast class');
-      } else if (event.code === 'Digit2') {
-        setPlayerClass('grapple');
-        console.log('🪝 Switched to Grapple class');
-      } else if (event.code === 'Digit3') {
         setPlayerClass('blink');
         console.log('✨ Switched to Blink class');
+      } else if (event.code === 'Digit2') {
+        setPlayerClass('blast');
+        console.log('🔥 Switched to Blast class');
+      } else if (event.code === 'Digit3') {
+        setPlayerClass('grapple');
+        console.log('🪝 Switched to Grapple class');
       }
     }
   };
@@ -1053,54 +938,34 @@ initPhysics(scene, camera).then((world) => {
   animate();
 });
 
-// Add cleanup for round system components on page unload
+// CRITICAL FIX: Add cleanup for abilityManager to prevent infinite animation loops
 window.addEventListener('beforeunload', () => {
-  try {
-    // Cleanup ability event listeners
-    if ((window as any).cleanupAbilityListeners) {
-      (window as any).cleanupAbilityListeners();
-    }
-    
-    // Cleanup other systems
-    roundSystem?.destroy();
-    _scoreHUD?.destroy();
-    _roundStartUI?.destroy();
-    _roundEndUI?.destroy();
-    multiplayerManager?.destroy();
-    // Day 6 Sprint: Cleanup GameStateManager and UI
-    gameStateManager?.destroy();
-    homeScreen?.destroy();
-    classSelection?.destroy();
-    lobbyScreen?.destroy();
-    settingsScreen?.destroy();
-    gameMenu?.destroy();
-    
-    // Cleanup Audio System
-    audioManager?.destroy();
-    
-    // Cleanup FX effects to prevent memory leaks
-    blastShakeEffect?.cleanup();
-    blinkScreenFlash?.cleanup();
-    blastExplosionRing?.cleanup();
-    blinkRingEffect?.cleanup();
-    grappleLatchRing?.cleanup();
-    
-    console.log('🧹 All systems cleaned up on page unload');
-  } catch (error) {
-    console.error('Error during cleanup:', error);
+  console.log('🧹 Page unloading - cleaning up resources...');
+  if (abilityManager) {
+    abilityManager.dispose();
+  }
+  if (autoCharacterLoader) {
+    autoCharacterLoader.dispose();
+  }
+  TargetDummy.cleanupGlobalAnimations();
+});
+
+// CRITICAL FIX: Add emergency cleanup on visibility change (tab switching, etc.)
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    console.log('🧹 Page hidden - cleaning up animation resources...');
+    TargetDummy.cleanupGlobalAnimations();
   }
 });
 
-// Also cleanup on visibility change (when tab becomes hidden)
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    // Pause timers when tab is hidden to prevent weird behavior
-    const roundInfo = roundSystem?.getRoundInfo();
-    if (roundInfo?.state === 'active') {
-      console.log('⏸️ Tab hidden during active round - timer behavior may be affected');
-    }
+console.log('🎮 Game initialized successfully');
+
+// Fallback: Force hide loading screen after 10 seconds if still visible
+setTimeout(() => {
+  if (loadingScreen) {
+    loadingScreen.forceHide();
   }
-});
+}, 10000);
 
 // Visual feedback state
 let screenShakeIntensity = 0;
@@ -1210,6 +1075,11 @@ function animate() {
         autoCharacterLoader.update(deltaTime, playerPosition, playerVelocity, camera, grounded, horizontalSpeed);
       }
       
+      // Update ability manager AFTER physics step (CRITICAL FIX)
+      if (abilityManager) {
+        abilityManager.updateAbilities(deltaTime);
+      }
+      
       // Legacy systems disabled - only auto-loader active
     }
     
@@ -1279,61 +1149,38 @@ function animate() {
       console.error('⚠️ Ability effects update error:', error);
     }
 
-    // Update dummy rotation animations with MAXIMUM isolation from physics
-    // Use requestIdleCallback to ensure dummy updates never conflict with physics
-    if (typeof requestIdleCallback !== 'undefined') {
-      requestIdleCallback(() => {
+    // Update dummy rotation animations with proper isolation from physics
+    if (targetDummies && targetDummies.length > 0) {
+      // Use single deferred update instead of complex nested fallbacks
+      const updateDummies = () => {
         try {
-          if (targetDummies && targetDummies.length > 0) {
-            targetDummies.forEach((dummy, index) => {
-              try {
-                // Check if dummy has update method (TargetDummy or RacingTargetDummy)
-                if ('update' in dummy && typeof dummy.update === 'function') {
-                  (dummy as any).update(deltaTime);
-                }
-              } catch (dummyError) {
-                // Handle individual dummy errors without crashing the whole system
-                if (dummyError instanceof Error && dummyError.message.includes('recursive')) {
-                  console.warn(`⚠️ Dummy ${index} recursive error (skipping this frame):`, dummyError.message);
-                } else {
-                  console.warn(`⚠️ Dummy ${index} update error:`, dummyError);
-                }
+          targetDummies.forEach((dummy, index) => {
+            try {
+              // Check if dummy has update method (TargetDummy or RacingTargetDummy)
+              if ('update' in dummy && typeof dummy.update === 'function') {
+                (dummy as any).update(deltaTime);
               }
-            });
-          }
+            } catch (dummyError) {
+              // Handle individual dummy errors without crashing the whole system
+              if (dummyError instanceof Error && dummyError.message.includes('recursive')) {
+                console.warn(`⚠️ Dummy ${index} recursive error (skipping this frame):`, dummyError.message);
+              } else {
+                console.warn(`⚠️ Dummy ${index} update error:`, dummyError);
+              }
+            }
+          });
         } catch (error) {
           // Catch-all for dummy system errors
           console.warn('⚠️ Dummy animation system error:', error);
         }
-      });
-    } else {
-      // Fallback: defer with double setTimeout for maximum safety
-      setTimeout(() => {
-        setTimeout(() => {
-          try {
-            if (targetDummies && targetDummies.length > 0) {
-              targetDummies.forEach((dummy, index) => {
-                try {
-                  // Check if dummy has update method (TargetDummy or RacingTargetDummy)
-                  if ('update' in dummy && typeof dummy.update === 'function') {
-                    (dummy as any).update(deltaTime);
-                  }
-                } catch (dummyError) {
-                  // Handle individual dummy errors without crashing the whole system
-                  if (dummyError instanceof Error && dummyError.message.includes('recursive')) {
-                    console.warn(`⚠️ Dummy ${index} recursive error (skipping this frame):`, dummyError.message);
-                  } else {
-                    console.warn(`⚠️ Dummy ${index} update error:`, dummyError);
-                  }
-                }
-              });
-            }
-          } catch (error) {
-            // Catch-all for dummy system errors
-            console.warn('⚠️ Dummy animation system error:', error);
-          }
-        }, 16);
-      }, 0);
+      };
+      
+      // Simple deferred execution to avoid physics conflicts
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(updateDummies, { timeout: 100 });
+      } else {
+        setTimeout(updateDummies, 16); // ~1 frame delay
+      }
     }
 
     // Update UI and checkpoint system
@@ -1382,7 +1229,31 @@ function animate() {
     
   } catch (error) {
     console.error('⚠️ Critical animation loop error:', error);
-    // Continue animation loop even if error occurs
+    
+    // CRITICAL FIX: Emergency cleanup on animation loop errors
+    if (error instanceof Error && error.message.includes('recursive')) {
+      console.error('🚨 RECURSIVE ERROR DETECTED - Emergency cleanup!');
+      
+      // Minimal cleanup to prevent infinite recursion
+      if (abilityManager) {
+        try {
+          abilityManager.dispose();
+        } catch (cleanupError) {
+          console.error('Error disposing abilityManager:', cleanupError);
+        }
+      }
+      
+      // Clean up dummy animations
+      TargetDummy.cleanupGlobalAnimations();
+      
+      console.log('🛑 Animation loop STOPPED due to recursive error');
+      console.log('🛠️ Refresh the page to restart the game');
+      
+      return; // Exit without restarting
+    }
+    
+    // Only restart animation loop for non-recursive errors
+    console.log('🔄 Restarting animation loop after error...');
     requestAnimationFrame(animate);
   }
 }

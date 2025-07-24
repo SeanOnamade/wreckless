@@ -230,8 +230,6 @@ function performGrappleRaycast(world: RAPIER.World, origin: THREE.Vector3, direc
       distance: hit.timeOfImpact + 0.5 // Add back offset
     };
     
-    // Target detection successful
-    
     return result;
   }
   
@@ -425,28 +423,33 @@ function releaseSwing(reason: string, context: GrappleAbilityContext): void {
   ropeSmoothing.lastVelocity.set(0, 0, 0);
   ropeSmoothing.lastUpdateTime = 0;
   
-  // Capture current momentum before notifying controller
-  const currentVel = context.playerBody.linvel();
-  let releaseVelocity = new THREE.Vector3(currentVel.x, currentVel.y, currentVel.z);
-  
-  // SWING ARC MOMENTUM BOOST: Add extra upward momentum at bottom of swing arc
-  if (swingState.anchorPoint && swingState.isSwinging) {
-    const playerPos = context.playerBody.translation();
-    const playerPosition = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
-    const anchorPoint = swingState.anchorPoint as THREE.Vector3; // Explicit type assertion
-    const heightDiff = anchorPoint.y - playerPosition.y;
-    const horizontalSpeed = Math.sqrt(currentVel.x * currentVel.x + currentVel.z * currentVel.z);
+  // Capture current momentum before notifying controller (with null check)
+  let releaseVelocity = new THREE.Vector3(0, 0, 0);
+  if (context.playerBody) {
+    const currentVel = context.playerBody.linvel();
+    releaseVelocity = new THREE.Vector3(currentVel.x, currentVel.y, currentVel.z);
     
-    // If player is below anchor point and has significant horizontal speed (bottom of arc)
-    if (heightDiff > swingState.ropeLength * 0.7 && horizontalSpeed > 5.0) {
-      const arcBoost = Math.min(horizontalSpeed * 0.4, 15.0); // Convert some horizontal speed to upward
-      releaseVelocity.y += arcBoost;
+    // SWING ARC MOMENTUM BOOST: Add extra upward momentum at bottom of swing arc
+    if (swingState.anchorPoint && swingState.isSwinging) {
+      const playerPos = context.playerBody.translation();
+      const playerPosition = new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z);
+      const anchorPoint = swingState.anchorPoint as THREE.Vector3; // Explicit type assertion
+      const heightDiff = anchorPoint.y - playerPosition.y;
+      const horizontalSpeed = Math.sqrt(currentVel.x * currentVel.x + currentVel.z * currentVel.z);
       
-      // Dispatch swing bottom event for combat system
-      window.dispatchEvent(new CustomEvent('grappleSwingBottom', {
-        detail: { timestamp: Date.now(), horizontalSpeed }
-      }));
+      // If player is below anchor point and has significant horizontal speed (bottom of arc)
+      if (heightDiff > swingState.ropeLength * 0.7 && horizontalSpeed > 5.0) {
+        const arcBoost = Math.min(horizontalSpeed * 0.4, 15.0); // Convert some horizontal speed to upward
+        releaseVelocity.y += arcBoost;
+        
+        // Dispatch swing bottom event for combat system
+        window.dispatchEvent(new CustomEvent('grappleSwingBottom', {
+          detail: { timestamp: Date.now(), horizontalSpeed }
+        }));
+      }
     }
+  } else {
+    console.warn('⚠️ Grapple release: playerBody is null during cleanup (likely during respawn)');
   }
   
   // Send swing momentum to controller (like blast impulse)

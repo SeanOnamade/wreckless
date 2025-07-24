@@ -81,7 +81,7 @@ export class DummyPhysicsManager {
       try {
         if (rigidBody && rigidBody.isValid()) {
           rigidBody.setTranslation(translation, wake);
-          console.log(`📍 Dummy ${dummyId} position updated (deferred)`);
+          
         }
       } catch (error) {
         console.warn(`⚠️ Error updating dummy ${dummyId} position:`, error);

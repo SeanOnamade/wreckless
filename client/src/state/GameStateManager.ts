@@ -495,6 +495,9 @@ export class GameStateManager {
     this.lobbyScreen?.hide();
     this.settingsScreen?.hide();
     
+    // CRITICAL FIX: Also hide pause menu during any state transition
+    window.dispatchEvent(new CustomEvent('force-close-pause-menu'));
+    
     // Also hide existing round UI when showing menu screens
     if (this.roundStartUI?.hide) {
       this.roundStartUI.hide();
@@ -540,6 +543,9 @@ export class GameStateManager {
     window.addEventListener('main-menu-requested', () => {
       if (this.currentState === 'race') {
         console.log('🏠 Main menu requested from pause menu');
+        
+        // CRITICAL FIX: Ensure pause screen is closed when going to main menu
+        window.dispatchEvent(new CustomEvent('force-close-pause-menu'));
         
         // Reset context
         this.context = {};

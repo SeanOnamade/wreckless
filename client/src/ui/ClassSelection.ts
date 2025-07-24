@@ -10,11 +10,30 @@ const CHARACTER_DESCRIPTIONS = {
   },
   blast: {
     title: 'Blast',
-    description: `Blast is a chaotic genius from the modern era — a one-man fireworks factory who duct-taped together a functioning time machine in a Texas garage using explosives, pressure valves, and vibes. He time-traveled for the hell of it and landed himself in the cellblock of infinity. He has no intention of escaping. Every blast-jump he makes is another chance to laugh in the face of physics. Loud, reckless, and borderline unhinged, Blast sees the time prison as just another playground.`
+    description: `Blast is a chaotic genius from the modern era — a one-man fireworks factory who duct-taped together a functioning time machine in a Texas garage using explosives, pressure valves, and vibes. He time-traveled for the hell of it and landed himself in the Cellblock of Infinity. He has no intention of escaping. Every blast-jump he makes is another chance to laugh in the face of physics. Loud, reckless, and borderline unhinged, Blast sees the time prison as just another playground.`
   },
   grapple: {
     title: 'Swing',
     description: `Swing is a steampunk runaway from the 1800s, a curious inventor who built a grappling timepiece out of brass and leather to explore the ages. Idealistic and full of wonder, he entered the timestream to see a better future — and got stuck in its worst nightmare. He swings through the prison using arc-powered hookshots and whirring winches, hoping to find a way out… or at least chronicle the madness before it collapses. He's the hopeful heart of the trio.`
+  }
+};
+
+// Character ratings for the modal
+const CHARACTER_RATINGS = {
+  blink: {
+    difficulty: { stars: 1, label: 'Easy' },
+    mobility: { stars: 3, label: '' },
+    damage: { stars: 3, label: '30-50 HP', detail: 'Crits after a blink' }
+  },
+  blast: {
+    difficulty: { stars: 3, label: '' },
+    mobility: { stars: 4, label: '' },
+    damage: { stars: 4, label: '60 HP', detail: 'Consistent damage' }
+  },
+  grapple: {
+    difficulty: { stars: 5, label: '' },
+    mobility: { stars: 5, label: '' },
+    damage: { stars: 5, label: '25-70 HP', detail: 'Crits when swinging' }
   }
 };
 
@@ -222,13 +241,13 @@ export class ClassSelection {
     `;
     
     // Create class cards
-    const blastCard = this.createClassCard('blast', '🚀', '#ff6666', '1');
-    const grappleCard = this.createClassCard('grapple', '🪝', '#66ff66', '2');
-    const blinkCard = this.createClassCard('blink', '⚡', '#6666ff', '3');
+    const blinkCard = this.createClassCard('blink', '⚡', '#6666ff', '1');
+    const blastCard = this.createClassCard('blast', '🚀', '#ff6666', '2');
+    const grappleCard = this.createClassCard('grapple', '🪝', '#66ff66', '3');
     
+    classContainer.appendChild(blinkCard);
     classContainer.appendChild(blastCard);
     classContainer.appendChild(grappleCard);
-    classContainer.appendChild(blinkCard);
     
     // Back button
     const backButton = this.createButton('🏠 BACK TO MENU', '#666666', 'white');
@@ -247,7 +266,6 @@ export class ClassSelection {
     `;
     instructions.innerHTML = `
       <div style="margin-bottom: 10px; color: #00E6FF;">Click a class or press 1/2/3 keys</div>
-      <div style="font-size: 12px; color: #888;">You can change classes during gameplay with number keys</div>
     `;
     
     // Assemble the UI
@@ -510,13 +528,13 @@ export class ClassSelection {
     // Class selection hotkeys
     if (e.key === '1') {
       e.preventDefault();
-      this.handleClassSelect('blast');
+      this.handleClassSelect('blink');
     } else if (e.key === '2') {
       e.preventDefault();
-      this.handleClassSelect('grapple');
+      this.handleClassSelect('blast');
     } else if (e.key === '3') {
       e.preventDefault();
-      this.handleClassSelect('blink');
+      this.handleClassSelect('grapple');
     }
   }
 
@@ -653,9 +671,22 @@ export class ClassSelection {
       text-align: left;
     `;
     
+    // Ratings section placeholder (will be populated in showCharacterModal)
+    const ratingsContainer = document.createElement('div');
+    ratingsContainer.id = 'character-ratings';
+    ratingsContainer.style.cssText = `
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    `;
+
     // Assemble the modal
     textContainer.appendChild(title);
     textContainer.appendChild(description);
+    textContainer.appendChild(ratingsContainer);
     contentContainer.appendChild(imageContainer);
     contentContainer.appendChild(textContainer);
     modalContent.appendChild(closeButton);
@@ -678,6 +709,81 @@ export class ClassSelection {
   }
 
   /**
+   * Create star rating display
+   */
+  private createStarRating(rating: { stars: number; label: string; detail?: string }): HTMLDivElement {
+    const container = document.createElement('div');
+    container.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 8px;
+    `;
+    
+    // Star display
+    const stars = document.createElement('span');
+    const maxStars = 5;
+    let starDisplay = '';
+    
+    for (let i = 1; i <= maxStars; i++) {
+      if (i <= rating.stars) {
+        starDisplay += '⭐';
+      } else {
+        starDisplay += '☆';
+      }
+    }
+    
+    stars.textContent = starDisplay;
+    stars.style.cssText = `
+      font-size: 16px;
+      letter-spacing: 1px;
+    `;
+    
+    // Label and detail container
+    const textContainer = document.createElement('div');
+    textContainer.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    `;
+    
+    // Only add label if it's not empty
+    if (rating.label.trim()) {
+      const label = document.createElement('span');
+      label.textContent = rating.label;
+      label.style.cssText = `
+        color: #00E6FF;
+        font-size: 14px;
+        font-weight: bold;
+        text-align: center;
+      `;
+      textContainer.appendChild(label);
+    }
+    
+    // Add detail if present
+    if (rating.detail) {
+      const detail = document.createElement('span');
+      detail.textContent = rating.detail;
+      detail.style.cssText = `
+        color: #999;
+        font-size: 12px;
+        font-style: italic;
+        text-align: center;
+      `;
+      textContainer.appendChild(detail);
+    }
+    
+    container.appendChild(stars);
+    if (textContainer.children.length > 0) {
+      container.appendChild(textContainer);
+    }
+    
+    return container;
+  }
+
+  /**
    * Show the character modal
    */
   public showCharacterModal(className: PlayerClass): void {
@@ -691,17 +797,82 @@ export class ClassSelection {
       const description = this.characterModal.querySelector('p')!;
       const portraitImage = this.characterModal.querySelector('img')!;
       const fallbackDiv = this.characterModal.querySelector('div[style*="display: none"]')! as HTMLDivElement;
+      const ratingsContainer = this.characterModal.querySelector('#character-ratings')! as HTMLDivElement;
       
       // Map class names to portrait file names
       const portraitMap = {
+        blink: 'blink_portrait.png',
         blast: 'blast_portrait.png',
-        grapple: 'swing_portrait.png', // grapple class uses swing portrait
-        blink: 'blink_portrait.png'
+        grapple: 'swing_portrait.png' // grapple class uses swing portrait
       };
       
       // Update text content
       title.textContent = characterData.title;
       description.textContent = characterData.description;
+      
+      // Update ratings
+      const ratings = CHARACTER_RATINGS[className];
+      ratingsContainer.innerHTML = ''; // Clear existing ratings
+      
+      // Add difficulty rating
+      const difficultySection = document.createElement('div');
+      difficultySection.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      `;
+      const difficultyHeader = document.createElement('div');
+      difficultyHeader.style.cssText = `
+        color: #FF6B6B;
+        font-size: 14px;
+        font-weight: bold;
+        text-align: center;
+      `;
+      difficultyHeader.textContent = '🎯 Difficulty';
+      difficultySection.appendChild(difficultyHeader);
+      difficultySection.appendChild(this.createStarRating(ratings.difficulty));
+      ratingsContainer.appendChild(difficultySection);
+      
+      // Add mobility rating
+      const mobilitySection = document.createElement('div');
+      mobilitySection.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      `;
+      const mobilityHeader = document.createElement('div');
+      mobilityHeader.style.cssText = `
+        color: #4ECDC4;
+        font-size: 14px;
+        font-weight: bold;
+        text-align: center;
+      `;
+      mobilityHeader.textContent = '🚀 Mobility';
+      mobilitySection.appendChild(mobilityHeader);
+      mobilitySection.appendChild(this.createStarRating(ratings.mobility));
+      ratingsContainer.appendChild(mobilitySection);
+      
+      // Add damage rating
+      const damageSection = document.createElement('div');
+      damageSection.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      `;
+      const damageHeader = document.createElement('div');
+      damageHeader.style.cssText = `
+        color: #FFE66D;
+        font-size: 14px;
+        font-weight: bold;
+        text-align: center;
+      `;
+      damageHeader.textContent = '⚔️ Damage';
+      damageSection.appendChild(damageHeader);
+      damageSection.appendChild(this.createStarRating(ratings.damage));
+      ratingsContainer.appendChild(damageSection);
       
       // Load character portrait
       const portraitPath = `/assets/${portraitMap[className]}`;

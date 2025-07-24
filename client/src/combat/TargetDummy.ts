@@ -37,6 +37,7 @@ export class TargetDummy implements MeleeTarget {
   
   // MEMORY LEAK FIX: Track animation frames for cleanup
   private activeAnimationFrames: Set<number> = new Set();
+  private activePoolContexts: Set<number> = new Set(); // Track which pool contexts this dummy is using
   private isDestroyed = false;
   private isInitialized = false;
   
@@ -49,13 +50,73 @@ export class TargetDummy implements MeleeTarget {
   private static readonly MAX_ANIMATIONS_PER_SECOND = 10; // Rate limiting
   private static lastAnimationTime = 0;
   
+  // ANIMATION FRAME POOLING: Reuse animation contexts to prevent memory buildup
+  private static animationPool: Array<{
+    id: number;
+    inUse: boolean;
+    startTime: number;
+    cleanup: () => void;
+  }> = [];
+  private static readonly MAX_POOL_SIZE = 50;
+  private static nextPoolId = 0; // BUGFIX: Use unique counter instead of array length
+
   // Note: Scale values finalized - stopwatch: 1.8x, hourglass: 0.4x, chronoshard: 5.6x
+
+  /**
+   * Get an animation context from the pool or create a new one
+   */
+  private static getPooledAnimationContext(): { id: number; startTime: number } | null {
+    // First try to reuse an existing context
+    for (const context of TargetDummy.animationPool) {
+      if (!context.inUse) {
+        context.inUse = true;
+        context.startTime = Date.now();
+        return { id: context.id, startTime: context.startTime };
+      }
+    }
+    
+    // If pool is full, deny the animation request
+    if (TargetDummy.animationPool.length >= TargetDummy.MAX_POOL_SIZE) {
+      return null;
+    }
+    
+    // Create new context with unique ID
+    const context = {
+      id: TargetDummy.nextPoolId++, // BUGFIX: Use unique counter
+      inUse: true,
+      startTime: Date.now(),
+      cleanup: () => {}
+    };
+    TargetDummy.animationPool.push(context);
+    return { id: context.id, startTime: context.startTime };
+  }
+
+  /**
+   * Return an animation context to the pool
+   */
+  private static returnPooledAnimationContext(contextId: number): void {
+    // BUGFIX: Find context by ID, don't use ID as array index
+    const context = TargetDummy.animationPool.find(ctx => ctx.id === contextId);
+    if (context) {
+      context.inUse = false;
+      context.cleanup();
+      context.cleanup = () => {};
+    }
+  }
+  
+  /**
+   * Return an animation context and untrack it from this dummy
+   */
+  private returnAndUntrackPoolContext(contextId: number): void {
+    this.activePoolContexts.delete(contextId);
+    TargetDummy.returnPooledAnimationContext(contextId);
+  }
 
   /**
    * Global cleanup method to clear stuck animation frames
    */
   public static cleanupGlobalAnimations(): void {
-    console.log(`🧹 Cleaning up ${TargetDummy.globalAnimationFrames.size} global animation frames`);
+
     TargetDummy.globalAnimationFrames.forEach(frameId => {
       cancelAnimationFrame(frameId);
     });
@@ -405,6 +466,15 @@ export class TargetDummy implements MeleeTarget {
       return; // Silent skip - dummy overloaded
     }
     
+    // ANIMATION POOLING: Get a pooled animation context
+    const animContext = TargetDummy.getPooledAnimationContext();
+    if (!animContext) {
+      return; // Pool exhausted - skip animation
+    }
+    
+    // Track this context for cleanup
+    this.activePoolContexts.add(animContext.id);
+    
     TargetDummy.lastAnimationTime = now;
     
     // Keep hit ring effect but no color/scale changes to the dummy itself
@@ -415,12 +485,14 @@ export class TargetDummy implements MeleeTarget {
       ringMaterial.opacity = 0.8;
       ringMaterial.emissiveIntensity = 1.0;
       
-      // Animate ring expansion with frame tracking
-      const startTime = Date.now();
+      // Animate ring expansion with pooled frame tracking
       const animateHitRing = () => {
-        if (this.isDestroyed || !this.hitRing) return; // Guard against destruction
+        if (this.isDestroyed || !this.hitRing) {
+          this.returnAndUntrackPoolContext(animContext.id);
+          return; // Guard against destruction
+        }
         
-        const elapsed = Date.now() - startTime;
+        const elapsed = Date.now() - animContext.startTime;
         const progress = Math.min(elapsed / 300, 1); // 300ms animation
         
         const scale = 0.1 + (2.0 * progress); // Expand from 0.1 to 2.1
@@ -432,16 +504,38 @@ export class TargetDummy implements MeleeTarget {
         ringMaterial.emissiveIntensity = intensity;
         
         if (progress < 1) {
-          const nextFrameId = requestAnimationFrame(animateHitRing);
-          this.activeAnimationFrames.add(nextFrameId);
-          TargetDummy.globalAnimationFrames.add(nextFrameId);
+          const frameId = requestAnimationFrame(animateHitRing);
+          this.activeAnimationFrames.add(frameId);
+          TargetDummy.globalAnimationFrames.add(frameId);
+          
+          // Set cleanup function for the pooled context
+          const poolContext = TargetDummy.animationPool.find(ctx => ctx.id === animContext.id);
+          if (poolContext) {
+            poolContext.cleanup = () => {
+              cancelAnimationFrame(frameId);
+              this.activeAnimationFrames.delete(frameId);
+              TargetDummy.globalAnimationFrames.delete(frameId);
+            };
+          }
         } else {
           this.hitRing.visible = false;
+          this.returnAndUntrackPoolContext(animContext.id);
         }
       };
-      const frameId = requestAnimationFrame(animateHitRing);
-      this.activeAnimationFrames.add(frameId);
-      TargetDummy.globalAnimationFrames.add(frameId);
+      
+      const initialFrameId = requestAnimationFrame(animateHitRing);
+      this.activeAnimationFrames.add(initialFrameId);
+      TargetDummy.globalAnimationFrames.add(initialFrameId);
+      
+      // Set initial cleanup function
+      const poolContext = TargetDummy.animationPool.find(ctx => ctx.id === animContext.id);
+      if (poolContext) {
+        poolContext.cleanup = () => {
+          cancelAnimationFrame(initialFrameId);
+          this.activeAnimationFrames.delete(initialFrameId);
+          TargetDummy.globalAnimationFrames.delete(initialFrameId);
+        };
+      }
     }
 
     // Keep sparkle particles effect
@@ -465,8 +559,22 @@ export class TargetDummy implements MeleeTarget {
       return; // Save dummy animation frames
     }
     
+    // ANIMATION POOLING: Limit sparkle animations by pooling
+    const sparkleContexts: Array<{ id: number; startTime: number }> = [];
+    
     this.sparkles.forEach((sparkle, index) => {
       if (this.isDestroyed) return; // Check for each sparkle
+      
+      // Try to get a pooled context for this sparkle
+      const animContext = TargetDummy.getPooledAnimationContext();
+      if (!animContext) {
+        return; // Pool exhausted - skip this sparkle
+      }
+      
+      // Track this context for cleanup
+      this.activePoolContexts.add(animContext.id);
+      
+      sparkleContexts.push(animContext);
       
       sparkle.visible = true;
       
@@ -484,12 +592,14 @@ export class TargetDummy implements MeleeTarget {
       const sparkleMaterial = sparkle.material as THREE.MeshBasicMaterial;
       sparkleMaterial.opacity = 1.0;
       
-      // Animate sparkles with frame tracking
-      const startTime = Date.now();
+      // Animate sparkles with pooled frame tracking
       const animateSparkle = () => {
-        if (this.isDestroyed) return; // Guard against destruction
+        if (this.isDestroyed) {
+          this.returnAndUntrackPoolContext(animContext.id);
+          return; // Guard against destruction
+        }
         
-        const elapsed = Date.now() - startTime;
+        const elapsed = Date.now() - animContext.startTime;
         const progress = Math.min(elapsed / 400, 1); // 400ms animation
         
         // Float upward
@@ -499,15 +609,38 @@ export class TargetDummy implements MeleeTarget {
         sparkleMaterial.opacity = 1.0 * (1 - progress);
         
         if (progress < 1) {
-          const nextFrameId = requestAnimationFrame(animateSparkle);
-          this.activeAnimationFrames.add(nextFrameId);
-          TargetDummy.globalAnimationFrames.add(nextFrameId);
+          const frameId = requestAnimationFrame(animateSparkle);
+          this.activeAnimationFrames.add(frameId);
+          TargetDummy.globalAnimationFrames.add(frameId);
+          
+          // Set cleanup function for the pooled context
+          const poolContext = TargetDummy.animationPool.find(ctx => ctx.id === animContext.id);
+          if (poolContext) {
+            poolContext.cleanup = () => {
+              cancelAnimationFrame(frameId);
+              this.activeAnimationFrames.delete(frameId);
+              TargetDummy.globalAnimationFrames.delete(frameId);
+            };
+          }
         } else {
           sparkle.visible = false;
+          this.returnAndUntrackPoolContext(animContext.id);
         }
       };
-      const frameId = requestAnimationFrame(animateSparkle);
-      this.activeAnimationFrames.add(frameId);
+      
+      const initialFrameId = requestAnimationFrame(animateSparkle);
+      this.activeAnimationFrames.add(initialFrameId);
+      TargetDummy.globalAnimationFrames.add(initialFrameId);
+      
+      // Set initial cleanup function
+      const poolContext = TargetDummy.animationPool.find(ctx => ctx.id === animContext.id);
+      if (poolContext) {
+        poolContext.cleanup = () => {
+          cancelAnimationFrame(initialFrameId);
+          this.activeAnimationFrames.delete(initialFrameId);
+          TargetDummy.globalAnimationFrames.delete(initialFrameId);
+        };
+      }
     });
   }
 
@@ -559,33 +692,64 @@ export class TargetDummy implements MeleeTarget {
         ringMaterial.opacity = 1.0;
         ringMaterial.emissiveIntensity = 1.5;
         
-        // Animate explosion ring with frame tracking
-        const startTime = Date.now();
-        const animateKORing = () => {
-          if (this.isDestroyed || !this.koRing) return; // Guard against destruction
+        // ANIMATION POOLING: Get pooled context for KO ring
+        const animContext = TargetDummy.getPooledAnimationContext();
+        if (animContext) {
+          // Track this context for cleanup
+          this.activePoolContexts.add(animContext.id);
           
-          const elapsed = Date.now() - startTime;
-          const progress = Math.min(elapsed / 600, 1); // 600ms animation
+          // Animate explosion ring with pooled frame tracking
+          const animateKORing = () => {
+            if (this.isDestroyed || !this.koRing) {
+              this.returnAndUntrackPoolContext(animContext.id);
+              return; // Guard against destruction
+            }
+            
+            const elapsed = Date.now() - animContext.startTime;
+            const progress = Math.min(elapsed / 600, 1); // 600ms animation
+            
+            const scale = 0.1 + (3.5 * progress); // Large explosion ring
+            this.koRing.scale.set(scale, scale, scale);
+            
+            const opacity = 1.0 * (1 - Math.pow(progress, 1.5)); // Fade out
+            const intensity = 1.5 * (1 - progress);
+            ringMaterial.opacity = opacity;
+            ringMaterial.emissiveIntensity = intensity;
+            
+            if (progress < 1) {
+              const frameId = requestAnimationFrame(animateKORing);
+              this.activeAnimationFrames.add(frameId);
+              TargetDummy.globalAnimationFrames.add(frameId);
+              
+              // Set cleanup function for the pooled context
+              const poolContext = TargetDummy.animationPool.find(ctx => ctx.id === animContext.id);
+              if (poolContext) {
+                poolContext.cleanup = () => {
+                  cancelAnimationFrame(frameId);
+                  this.activeAnimationFrames.delete(frameId);
+                  TargetDummy.globalAnimationFrames.delete(frameId);
+                };
+              }
+            } else {
+              this.koRing.visible = false;
+              this.returnAndUntrackPoolContext(animContext.id);
+            }
+          };
           
-          const scale = 0.1 + (3.5 * progress); // Large explosion ring
-          this.koRing.scale.set(scale, scale, scale);
+          const initialFrameId = requestAnimationFrame(animateKORing);
+          this.activeAnimationFrames.add(initialFrameId);
+          TargetDummy.globalAnimationFrames.add(initialFrameId);
           
-          const opacity = 1.0 * (1 - Math.pow(progress, 1.5)); // Fade out
-          const intensity = 1.5 * (1 - progress);
-          ringMaterial.opacity = opacity;
-          ringMaterial.emissiveIntensity = intensity;
-          
-                  if (progress < 1) {
-          const nextFrameId = requestAnimationFrame(animateKORing);
-          this.activeAnimationFrames.add(nextFrameId);
-          TargetDummy.globalAnimationFrames.add(nextFrameId);
-        } else {
-          this.koRing.visible = false;
+          // Set initial cleanup function
+          const poolContext = TargetDummy.animationPool.find(ctx => ctx.id === animContext.id);
+          if (poolContext) {
+            poolContext.cleanup = () => {
+              cancelAnimationFrame(initialFrameId);
+              this.activeAnimationFrames.delete(initialFrameId);
+              TargetDummy.globalAnimationFrames.delete(initialFrameId);
+            };
+          }
         }
-      };
-      const frameId = requestAnimationFrame(animateKORing);
-      this.activeAnimationFrames.add(frameId);
-      TargetDummy.globalAnimationFrames.add(frameId);
       }
       
       // ULTRA SAFE: Use centralized physics manager to prevent recursive errors
@@ -619,16 +783,27 @@ export class TargetDummy implements MeleeTarget {
     // Reset health
     this.currentHealth = this.maxHealth;
     
-    // Reset position and rotation immediately
-    this.mesh.position.copy(this.basePosition); // Use basePosition for respawn
-    this.mesh.rotation.z = 0;
+    // Reset position and rotation immediately with corruption protection
+    if (this.mesh) {
+      this.mesh.position.copy(this.basePosition); // Use basePosition for respawn
+      this.mesh.rotation.set(0, 0, 0); // Clear all rotation
+      
+      // SIMPLE FIX: Use correct scale for this dummy type instead of 1,1,1
+      const expectedScale = this.getExpectedScale();
+      this.mesh.scale.set(expectedScale.x, expectedScale.y, expectedScale.z);
+      
+      this.mesh.visible = true;
+    }
     
-    // Simply show the mesh again - no color/scale changes
-    this.mesh.visible = true;
-    
-    // Re-enable collision using centralized physics manager
-    const physicsManager = DummyPhysicsManager.getInstance();
-    physicsManager.queueEnableRigidBody(this.rigidBody, this.id);
+    // CRITICAL FIX: Recreate physics body if it's null (prevents corruption)
+    if (!this.rigidBody) {
+      console.warn(`⚠️ RigidBody null during respawn for ${this.id} - recreating physics body`);
+      this.createPhysicsBody();
+    } else {
+      // Re-enable collision using centralized physics manager
+      const physicsManager = DummyPhysicsManager.getInstance();
+      physicsManager.queueEnableRigidBody(this.rigidBody, this.id);
+    }
 
     // Keep respawn ring effect but no changes to dummy appearance
     if (this.respawnRing) {
@@ -638,31 +813,64 @@ export class TargetDummy implements MeleeTarget {
       ringMaterial.opacity = 0.8;
       ringMaterial.emissiveIntensity = 1.2;
       
-      // Animate respawn ring (contracts inward) with frame tracking
-      const startTime = Date.now();
-      const animateRespawnRing = () => {
-        if (this.isDestroyed || !this.respawnRing) return; // Guard against destruction
+      // ANIMATION POOLING: Get pooled context for respawn ring
+      const animContext = TargetDummy.getPooledAnimationContext();
+      if (animContext) {
+        // Track this context for cleanup
+        this.activePoolContexts.add(animContext.id);
         
-        const elapsed = Date.now() - startTime;
-        const progress = Math.min(elapsed / 400, 1); // 400ms animation
+        // Animate respawn ring (contracts inward) with pooled frame tracking
+        const animateRespawnRing = () => {
+          if (this.isDestroyed || !this.respawnRing) {
+            this.returnAndUntrackPoolContext(animContext.id);
+            return; // Guard against destruction
+          }
+          
+          const elapsed = Date.now() - animContext.startTime;
+          const progress = Math.min(elapsed / 400, 1); // 400ms animation
+          
+          const scale = 3.0 - (2.7 * progress); // Contract from 3.0 to 0.3
+          this.respawnRing.scale.set(scale, scale, scale);
+          
+          const opacity = 0.8 * (1 - progress);
+          const intensity = 1.2 * (1 - progress);
+          ringMaterial.opacity = opacity;
+          ringMaterial.emissiveIntensity = intensity;
+          
+          if (progress < 1) {
+            const frameId = requestAnimationFrame(animateRespawnRing);
+            this.activeAnimationFrames.add(frameId);
+            TargetDummy.globalAnimationFrames.add(frameId);
+            
+            // Set cleanup function for the pooled context
+            const poolContext = TargetDummy.animationPool.find(ctx => ctx.id === animContext.id);
+            if (poolContext) {
+              poolContext.cleanup = () => {
+                cancelAnimationFrame(frameId);
+                this.activeAnimationFrames.delete(frameId);
+                TargetDummy.globalAnimationFrames.delete(frameId);
+              };
+            }
+          } else {
+            this.respawnRing.visible = false;
+            this.returnAndUntrackPoolContext(animContext.id);
+          }
+        };
         
-        const scale = 3.0 - (2.7 * progress); // Contract from 3.0 to 0.3
-        this.respawnRing.scale.set(scale, scale, scale);
+        const initialFrameId = requestAnimationFrame(animateRespawnRing);
+        this.activeAnimationFrames.add(initialFrameId);
+        TargetDummy.globalAnimationFrames.add(initialFrameId);
         
-        const opacity = 0.8 * (1 - progress);
-        const intensity = 1.2 * (1 - progress);
-        ringMaterial.opacity = opacity;
-        ringMaterial.emissiveIntensity = intensity;
-        
-        if (progress < 1) {
-          const nextFrameId = requestAnimationFrame(animateRespawnRing);
-          this.activeAnimationFrames.add(nextFrameId);
-        } else {
-          this.respawnRing.visible = false;
+        // Set initial cleanup function
+        const poolContext = TargetDummy.animationPool.find(ctx => ctx.id === animContext.id);
+        if (poolContext) {
+          poolContext.cleanup = () => {
+            cancelAnimationFrame(initialFrameId);
+            this.activeAnimationFrames.delete(initialFrameId);
+            TargetDummy.globalAnimationFrames.delete(initialFrameId);
+          };
         }
-      };
-      const frameId = requestAnimationFrame(animateRespawnRing);
-      this.activeAnimationFrames.add(frameId);
+      }
     }
   }
 
@@ -690,12 +898,22 @@ export class TargetDummy implements MeleeTarget {
     }
     
     // Reset visual state - just ensure dummy is visible and positioned correctly
-    this.mesh.visible = true;
-    this.mesh.position.copy(this.basePosition); // Use basePosition for reset
+    if (this.mesh) {
+      this.mesh.visible = true;
+      this.mesh.position.copy(this.basePosition); // Use basePosition for reset
+      
+      // SIMPLE FIX: Use correct scale for this dummy type instead of 1,1,1
+      const expectedScale = this.getExpectedScale();
+      this.mesh.scale.set(expectedScale.x, expectedScale.y, expectedScale.z);
+      this.mesh.rotation.set(0, 0, 0);
+    }
     
-    // Re-enable collision if disabled
-    if (!this.rigidBody.isEnabled()) {
+    // Re-enable collision if disabled (with null check)
+    if (this.rigidBody && !this.rigidBody.isEnabled()) {
       this.rigidBody.setEnabled(true);
+    } else if (!this.rigidBody) {
+      console.warn(`⚠️ RigidBody null during reset for ${this.id} - recreating physics body`);
+      this.createPhysicsBody();
     }
     
     // Add to combat log for round resets
@@ -713,12 +931,19 @@ export class TargetDummy implements MeleeTarget {
     // Mark as destroyed first to prevent any ongoing operations
     this.isDestroyed = true;
     
-    // Cancel all active animation frames
+    // Cancel all active animation frames and track which pool contexts to clean
+    const frameIdsToClean = Array.from(this.activeAnimationFrames);
     this.activeAnimationFrames.forEach(frameId => {
       cancelAnimationFrame(frameId);
       TargetDummy.globalAnimationFrames.delete(frameId); // Clean up global tracking
     });
     this.activeAnimationFrames.clear();
+    
+    // BUGFIX: Clean up only this dummy's pool contexts
+    this.activePoolContexts.forEach(contextId => {
+      TargetDummy.returnPooledAnimationContext(contextId);
+    });
+    this.activePoolContexts.clear();
     
     // Clear timers
     if (this.respawnTimer) {
@@ -839,10 +1064,16 @@ export class TargetDummy implements MeleeTarget {
     // Don't update if destroyed or not initialized
     if (this.isDestroyed || !this.isInitialized || !this.mesh) return;
     
+    // SAFETY: Don't animate if physics body is null (prevents corruption)
+    if (!this.rigidBody) return;
+    
     // PERFORMANCE: Skip animations if system is overloaded
     if (TargetDummy.globalAnimationFrames.size >= TargetDummy.MAX_GLOBAL_ANIMATION_FRAMES - 10) {
       return; // Skip all dummy animations when system stressed
     }
+    
+    // SIMPLE FIX: Remove aggressive scale corruption check that was causing size changes
+    // The scale is set correctly during initialization and shouldn't change during gameplay
     
     // Only animate if dummy is alive and visible
     if (this.currentHealth > 0 && this.mesh.visible) {
@@ -858,17 +1089,39 @@ export class TargetDummy implements MeleeTarget {
       this.floatOffset += this.floatSpeed * deltaTime * 0.3; // Slower floating
       const floatAmount = Math.sin(this.floatOffset) * 0.15; // Reduced amplitude
       
-      // Apply basic floating
-      this.mesh.position.copy(this.basePosition);
-      this.mesh.position.y += floatAmount;
-      
-      // REMOVED: Glow pulsing to reduce computational load
+      // Apply basic floating (with corruption protection)
+      if (this.basePosition) {
+        this.mesh.position.copy(this.basePosition);
+        this.mesh.position.y += floatAmount;
+      } else {
+        this.mesh.position.copy(this.position);
+      }
     }
   }
 
-
-
-
+  /**
+   * Get the expected scale for the current dummy model type.
+   */
+  private getExpectedScale(): THREE.Vector3 {
+    // Optimized scales for visual consistency and gameplay balance (same as in createVisualMesh)
+    const modelScales = {
+      stopwatch: 1.8,   // Balanced size
+      hourglass: 0.4,   // Smaller, more delicate
+      chronoshard: 5.6  // Larger, more imposing (+0.2 from 5.4)
+    };
+    
+    const baseScale = modelScales[this.modelType];
+    
+    // Normalize aspect ratios - make all models roughly the same height/width ratio (same as in createVisualMesh)
+    const aspectNormalization = {
+      stopwatch: { x: baseScale * 1.0, y: baseScale * 1.0, z: baseScale * 1.0 },   // Square proportions
+      hourglass: { x: baseScale * 1.2, y: baseScale * 1.0, z: baseScale * 1.2 },   // Slightly wider for visibility
+      chronoshard: { x: baseScale * 0.8, y: baseScale * 1.0, z: baseScale * 0.8 }  // Narrower to balance large scale
+    };
+    
+    const normalizedScale = aspectNormalization[this.modelType];
+    return new THREE.Vector3(normalizedScale.x, normalizedScale.y, normalizedScale.z);
+  }
 
 
 } 

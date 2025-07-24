@@ -135,7 +135,11 @@ export class DummyLoader {
 export class RacingTargetDummy implements MeleeTarget {
   public id: string;
   public position: THREE.Vector3;
-  public rigidBody: RAPIER.RigidBody;
+  
+  // Use a getter to always access the current rigidBody from the underlying TargetDummy
+  public get rigidBody(): RAPIER.RigidBody {
+    return this.targetDummy.rigidBody;
+  }
   
   private targetDummy: TargetDummy;
   private speedBoostConfig: SpeedBoostConfig;
@@ -154,10 +158,9 @@ export class RacingTargetDummy implements MeleeTarget {
     // Create underlying TargetDummy
     this.targetDummy = new TargetDummy(scene, world, position, id);
     
-    // Copy properties from underlying dummy
+    // Copy properties from underlying dummy (but NOT rigidBody - use getter instead)
     this.id = this.targetDummy.id;
     this.position = this.targetDummy.position;
-    this.rigidBody = this.targetDummy.rigidBody;
     
     this.speedBoostConfig = speedBoostConfig;
     
@@ -170,7 +173,11 @@ export class RacingTargetDummy implements MeleeTarget {
    * Update dummy state from server (online mode)
    */
   updateFromServerState(serverState: any): void {
-    if (this.isDestroyed) return; // Guard against updates after destruction
+    // CRITICAL FIX: Prevent operations on destroyed dummies
+    if (this.isDestroyed) {
+      console.warn(`⚠️ Attempted to update destroyed dummy ${this.id} from server state`);
+      return;
+    }
     
     const healthStatus = this.targetDummy.getHealthStatus();
     
@@ -312,6 +319,12 @@ export class RacingTargetDummy implements MeleeTarget {
   private hideTarget(): void {
     if (this.isDestroyed) return; // Guard against destruction
     
+    // SAFETY: Check if rigidBody is valid before queuing physics operation
+    if (!this.rigidBody) {
+      console.warn(`⚠️ Cannot hide target ${this.id}: rigidBody is null`);
+      return;
+    }
+    
     // ULTRA SAFE: Use centralized physics manager to prevent recursive errors
     const physicsManager = DummyPhysicsManager.getInstance();
     physicsManager.queueSetTranslation(
@@ -327,6 +340,12 @@ export class RacingTargetDummy implements MeleeTarget {
    */
   private showTarget(): void {
     if (this.isDestroyed) return; // Guard against destruction
+    
+    // SAFETY: Check if rigidBody is valid before queuing physics operation
+    if (!this.rigidBody) {
+      console.warn(`⚠️ Cannot show target ${this.id}: rigidBody is null`);
+      return;
+    }
     
     // ULTRA SAFE: Use centralized physics manager to prevent recursive errors
     const physicsManager = DummyPhysicsManager.getInstance();

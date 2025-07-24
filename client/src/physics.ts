@@ -1,38 +1,44 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { SPAWN_POS, loadExternalTrack } from './track/ExternalTrack';
 import { FirstPersonController } from './controller';
-import { loadExternalTrack, SPAWN_POS } from './track/ExternalTrack';
 import { DeveloperTools } from './dev/DeveloperTools';
+import type { LoadingScreen } from './ui/LoadingScreen';
 
 export interface PhysicsWorld {
   world: RAPIER.World;
   playerBody: RAPIER.RigidBody;
-  playerController: RAPIER.KinematicCharacterController;
   fpsController: FirstPersonController;
   devTools: DeveloperTools;
   step: (deltaTime: number) => void;
 }
 
-export default async function initPhysics(scene: THREE.Scene, camera: THREE.Camera): Promise<PhysicsWorld> {
-  // Initialize Rapier
-  await RAPIER.init();
+export default async function initPhysics(scene: THREE.Scene, camera: THREE.Camera, loadingScreen?: LoadingScreen): Promise<PhysicsWorld> {
+  // Initialize RAPIER physics engine
+  const rapier = await import('@dimforge/rapier3d-compat');
+  await rapier.init();
   
-  // Create physics world (fixed deprecation warning)
-  // Note: Gravity mainly affects dynamic bodies, not kinematic character controller
-  const world = new RAPIER.World({ x: 0.0, y: -25.0, z: 0.0 }); // Balanced gravity
+  if (loadingScreen) {
+    loadingScreen.setStepComplete('physics-engine', 'Physics engine loaded');
+  }
+
+  // Create physics world
+  const gravity = { x: 0.0, y: -9.81, z: 0.0 };
+  const world = new rapier.World(gravity);
+
+  // Initialize track loader and load model
+  loadingScreen?.updateStatus('Loading race track...');
   
-  // Ground physics collider removed - only track and ceiling provide collision surfaces
-  // This allows for proper floating track effect without invisible ground collision
-  
-  // Create external track with error handling
   try {
     await loadExternalTrack(scene, world);
+    loadingScreen?.setStepComplete('race-track', 'Race track loaded');
     console.log('✅ Track loaded successfully');
   } catch (error) {
     console.error('❌ Track loading failed:', error);
-    console.warn('⚠️ Continuing without external track - using ground plane only');
+    console.warn('⚠️ Continuing without external track');
+    loadingScreen?.setStepComplete('race-track', 'Using fallback track');
   }
-  
+
   // Create player capsule
   const capsuleRadius = 0.5;
   const capsuleHeight = 1.0; // Half height
@@ -82,7 +88,6 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   return {
     world,
     playerBody,
-    playerController,
     fpsController,
     devTools,
     step

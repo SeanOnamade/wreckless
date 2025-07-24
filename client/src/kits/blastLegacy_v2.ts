@@ -36,6 +36,8 @@ interface ActiveProjectile {
   hasExploded: boolean;
   lastPosition: THREE.Vector3;
   stuckFrames: number;
+  hasContacts?: boolean;
+  needsContactCheck?: boolean;
 }
 
 // Global state for active projectiles
@@ -181,15 +183,14 @@ export function updateBlast(): void {
       explodeReason = `low velocity (${speed.toFixed(1)} m/s)`;
     }
     
-    // Method 3: Use Rapier collision detection (most responsive)
-    let numContacts = 0;
-    projectile.world.contactPairsWith(projectile.body.collider(0)!, (_collider2) => {
-      numContacts++;
-      return true; // Continue checking
-    });
-    if (numContacts > 0 && age > 0.02) { // Even faster collision response (20ms)
+    // Method 3: Contact detection - DEFERRED RAPIER QUERIES ONLY
+    if (!projectile.hasContacts && age > 0.02) {
+      projectile.needsContactCheck = true;
+    }
+    
+    if (projectile.hasContacts) {
       shouldExplode = true;
-      explodeReason = `contact detected (${numContacts} contacts)`;
+      explodeReason = `contact detected`;
     }
     
     // Method 4: Check if projectile went below reasonable height (hit ground)
@@ -213,6 +214,28 @@ export function updateBlast(): void {
   for (const projectile of projectilesToRemove) {
     activeProjectiles.delete(projectile);
   }
+  
+  // MINIMAL CRASH FIX: Only defer the specific problematic contactPairsWith call
+  setTimeout(() => {
+    for (const projectile of activeProjectiles) {
+      if (projectile.needsContactCheck && !projectile.hasExploded) {
+        try {
+          let numContacts = 0;
+          projectile.world.contactPairsWith(projectile.body.collider(0)!, (_collider2) => {
+            numContacts++;
+            return false; // Stop after first contact
+          });
+          
+          if (numContacts > 0) {
+            projectile.hasContacts = true; // Will explode on next frame
+          }
+        } catch (error) {
+          // If this specific query fails, rely on other collision methods
+        }
+        projectile.needsContactCheck = false; // Done checking
+      }
+    }
+  }, 0);
 }
 
 /**

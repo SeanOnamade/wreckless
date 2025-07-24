@@ -26,6 +26,8 @@ interface ActiveProjectile {
   hasExploded: boolean;
   lastPosition: THREE.Vector3;
   stuckFrames: number;
+  hasContacts?: boolean;
+  needsContactCheck?: boolean;
 }
 
 // Global state for active projectiles
@@ -134,10 +136,10 @@ export function updateBlast(): void {
       continue;
     }
     
-    // Collision detection - multiple methods
+    // Collision detection - streamlined approach
     let shouldExplode = false;
     
-    // Method 1: Stuck detection
+    // Method 1: Stuck detection (most reliable)
     const distanceMoved = currentPosition.distanceTo(projectile.lastPosition);
     if (distanceMoved < 0.1 && age > 0.1) {
       projectile.stuckFrames++;
@@ -148,34 +150,17 @@ export function updateBlast(): void {
       projectile.stuckFrames = 0;
     }
     
-    // Method 2: Velocity check
-    const velocity = projectile.body.linvel();
-    const speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z);
-    if (speed < 2.0 && age > 0.2) {
+    // Method 2: Ground check (simple and reliable)
+    if (currentPosition.y < -1.0) {
       shouldExplode = true;
     }
     
-    // Method 3: Contact detection (20ms response time) - DEFERRED FOR SAFETY
-    // CRASH PREVENTION: Defer collision detection to avoid recursive Rapier access
-    setTimeout(() => {
-      if (!projectile.hasExploded && activeProjectiles.has(projectile)) {
-    let numContacts = 0;
-        try {
-    projectile.world.contactPairsWith(projectile.body.collider(0)!, (_collider2) => {
-      numContacts++;
-      return true;
-    });
-    if (numContacts > 0 && age > 0.02) {
-            explodeProjectile(projectile);
-          }
-        } catch (error) {
-          console.warn('Collision detection error (deferred):', error);
+    // Method 3: Contact detection - deferred for safety
+    if (!projectile.hasContacts && age > 0.02) {
+      projectile.needsContactCheck = true;
     }
-      }
-    }, 0);
     
-    // Method 4: Ground check
-    if (currentPosition.y < -1.0) {
+    if (projectile.hasContacts) {
       shouldExplode = true;
     }
     
@@ -193,6 +178,28 @@ export function updateBlast(): void {
   for (const projectile of projectilesToRemove) {
     activeProjectiles.delete(projectile);
   }
+  
+  // MINIMAL CRASH FIX: Only defer the specific problematic contactPairsWith call
+  setTimeout(() => {
+    for (const projectile of activeProjectiles) {
+      if (projectile.needsContactCheck && !projectile.hasExploded) {
+        try {
+          let numContacts = 0;
+          projectile.world.contactPairsWith(projectile.body.collider(0)!, (_collider2) => {
+            numContacts++;
+            return false; // Stop after first contact
+          });
+          
+          if (numContacts > 0) {
+            projectile.hasContacts = true; // Will explode on next frame
+          }
+        } catch (error) {
+          // If this specific query fails, rely on other collision methods
+        }
+        projectile.needsContactCheck = false; // Done checking
+      }
+    }
+  }, 0);
 }
 
 // Wall collision check function removed since it was causing issues

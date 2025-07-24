@@ -45,27 +45,62 @@ export interface AbilityCooldownState {
  */
 export class AbilityManager {
   private context: AbilityContext | null = null;
-  private cooldownState: AbilityCooldownState;
+  private cooldownState: AbilityCooldownState = {
+    isReady: true,
+    remainingTime: 0,
+    progress: 1,
+    className: 'grapple'
+  };
+  
+  // Event handlers and state management
   private keyDownHandler: (event: KeyboardEvent) => void;
-  private keyUpHandler: (event: KeyboardEvent) => void; // Store bound reference
-  private classChangeHandler: (event: CustomEvent) => void; // Store bound reference
+  private keyUpHandler: (event: KeyboardEvent) => void;
+  private classChangeHandler: (event: CustomEvent) => void;
+  private pressedKeys: Set<string> = new Set();
+  private useLegacyBlast: boolean = false;
+  
+  // Animation loop management
   private updateInterval: number | null = null;
-  private animationFrame: number | null = null;
-  private pressedKeys: Set<string> = new Set(); // Track currently pressed keys
-  private useLegacyBlast: boolean = false; // Dev toggle for blast type
-
+  // REMOVED: animationFrame (no longer using separate animation loop)
+  private isDisposed = false; // CRITICAL FIX: Prevent use after disposal
+  
   constructor() {
-    this.cooldownState = {
-      isReady: true,
-      remainingTime: 0,
-      progress: 1,
-      className: 'blast'
-    };
-
+    // Bind event handlers
     this.keyDownHandler = this.handleKeyDown.bind(this);
-    this.keyUpHandler = this.handleKeyUp.bind(this); // Store bound reference
-    this.classChangeHandler = this.handleClassChange.bind(this); // Store bound reference
+    this.keyUpHandler = this.handleKeyUp.bind(this);
+    this.classChangeHandler = this.handleClassChange.bind(this);
     this.setupEventListeners();
+    console.log('🎯 AbilityManager initialized');
+  }
+  
+  // CRITICAL FIX: Add proper cleanup method
+  public dispose(): void {
+    if (this.isDisposed) return;
+    this.isDisposed = true;
+    
+    console.log('🧹 Disposing AbilityManager...');
+    
+    // REMOVED: Animation frame cleanup (no longer using separate loop)
+    // Ability updates now handled by main loop instead of separate animation frame
+    
+    // Clear interval timer
+    if (this.updateInterval !== null) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
+    
+    // Remove event listeners
+    document.removeEventListener('keydown', this.keyDownHandler);
+    document.removeEventListener('keyup', this.keyUpHandler);
+    window.removeEventListener('playerClassChanged', this.classChangeHandler as EventListener);
+    
+    // Clear pressed keys
+    this.pressedKeys.clear();
+    
+    // Clear context
+    this.context = null;
+    
+    console.log('✅ AbilityManager disposed');
   }
 
   /**
@@ -90,10 +125,7 @@ export class AbilityManager {
         this.updateInterval = null;
       }
       
-      if (this.animationFrame) {
-        cancelAnimationFrame(this.animationFrame);
-        this.animationFrame = null;
-      }
+      // REMOVED: animationFrame cleanup (no longer using separate animation loop)
       
       console.log('✅ AbilityManager destroyed successfully');
     } catch (error) {
@@ -267,41 +299,38 @@ export class AbilityManager {
   }
 
   /**
-   * Start the update loop for cooldowns and ability states
+   * Start the update loop for cooldowns ONLY (ability states moved to main loop)
    */
   private startUpdateLoop(): void {
     // Update cooldown state regularly
     this.updateInterval = setInterval(() => {
+      if (this.isDisposed) return; // CRITICAL FIX: Stop if disposed
       this.updateCooldownState();
     }, 50); // 20fps updates
 
-    // Update ability-specific states in animation frame
-    const updateAbilityStates = () => {
-      if (this.context) {
-        // Update blast state - PERFORMANCE FIX: Only run active system, not both
-        updateBlast();
-        // DISABLED: Legacy blast updates to prevent duplicate computation
-        // Legacy blast still available for rollback but doesn't consume CPU
-        // if (import.meta.env.DEV) {
-        //   updateLegacyBlast();
-        // }
-        
-        // Update grapple physics and visuals
-        updateGrapple({
-          playerBody: this.context.playerBody,
-          world: this.context.world,
-          camera: this.context.camera,
-          scene: this.context.scene
-        } as GrappleAbilityContext);
-        
-        // Update blink state
-        updateBlink();
-      }
-      
-      this.animationFrame = requestAnimationFrame(updateAbilityStates);
-    };
+    // REMOVED: Separate ability states animation loop - now handled by main loop
+    // This was causing recursive Rapier errors when running parallel to physics step
+  }
+
+  /**
+   * Update ability states - called from main animation loop AFTER physics step
+   */
+  public updateAbilities(_deltaTime: number): void {
+    if (this.isDisposed || !this.context) return;
     
-    updateAbilityStates();
+    // Update blast state - PERFORMANCE FIX: Only run active system, not both
+    updateBlast();
+    
+    // Update grapple physics and visuals
+    updateGrapple({
+      playerBody: this.context.playerBody,
+      world: this.context.world,
+      camera: this.context.camera,
+      scene: this.context.scene
+    } as GrappleAbilityContext);
+    
+    // Update blink state
+    updateBlink();
   }
 
   /**

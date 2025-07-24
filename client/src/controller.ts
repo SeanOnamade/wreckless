@@ -953,11 +953,6 @@ export class FirstPersonController {
     const horizontalSpeed = Math.sqrt(this.moveVector.x * this.moveVector.x + this.moveVector.z * this.moveVector.z) / deltaTime;
     const isFootstepCondition = this.isGrounded && horizontalSpeed > 0.1;
     
-    // Debug: Log footstep state changes (occasionally)
-    if (Math.random() < 0.001) { // Very rare logging
-      console.log(`👟 Footstep state - grounded: ${this.isGrounded}, hasInput: ${hasInput}, currentSpeed: ${this.currentSpeed.toFixed(1)}, horizontalSpeed: ${horizontalSpeed.toFixed(1)}, playing: ${isFootstepCondition}, wasMoving: ${this.wasMoving}`);
-    }
-    
     if (isFootstepCondition) {
       const now = Date.now();
       
@@ -1401,77 +1396,91 @@ export class FirstPersonController {
    * Cleanup all event listeners and resources to prevent memory leaks
    */
   public destroy(): void {
-    console.log('🧹 FirstPersonController: Starting cleanup...');
-    
-    // Clear combat timer
-    this.stopCombatTimer();
-    
-    // Remove all document event listeners
+    // Remove all event listeners
     if (this.boundKeydownHandler) {
       document.removeEventListener('keydown', this.boundKeydownHandler);
+      this.boundKeydownHandler = undefined;
     }
     if (this.boundKeyupHandler) {
       document.removeEventListener('keyup', this.boundKeyupHandler);
+      this.boundKeyupHandler = undefined;
     }
     if (this.boundMousedownHandler) {
       document.removeEventListener('mousedown', this.boundMousedownHandler);
+      this.boundMousedownHandler = undefined;
     }
     if (this.boundMouseupHandler) {
       document.removeEventListener('mouseup', this.boundMouseupHandler);
+      this.boundMouseupHandler = undefined;
     }
     if (this.boundContextmenuHandler) {
       document.removeEventListener('contextmenu', this.boundContextmenuHandler);
+      this.boundContextmenuHandler = undefined;
     }
     if (this.boundMousemoveHandler) {
       document.removeEventListener('mousemove', this.boundMousemoveHandler);
+      this.boundMousemoveHandler = undefined;
     }
     if (this.boundClickHandler) {
       document.removeEventListener('click', this.boundClickHandler);
+      this.boundClickHandler = undefined;
     }
     if (this.boundPointerlockchangeHandler) {
       document.removeEventListener('pointerlockchange', this.boundPointerlockchangeHandler);
+      this.boundPointerlockchangeHandler = undefined;
     }
     
-    // Remove all window event listeners
+    // Remove window event listeners
     if (this.boundBlastImpulseHandler) {
       window.removeEventListener('blastImpulse', this.boundBlastImpulseHandler);
+      this.boundBlastImpulseHandler = undefined;
     }
     if (this.boundSpeedBoostHandler) {
       window.removeEventListener('speedBoostGranted', this.boundSpeedBoostHandler);
+      this.boundSpeedBoostHandler = undefined;
     }
     if (this.boundCombatStateHandler) {
-      window.removeEventListener('requestCombatState', this.boundCombatStateHandler);
+      window.removeEventListener('triggerCombatState', this.boundCombatStateHandler);
+      this.boundCombatStateHandler = undefined;
     }
     if (this.boundBlastSelfImpulseHandler) {
       window.removeEventListener('blastSelfImpulse', this.boundBlastSelfImpulseHandler);
+      this.boundBlastSelfImpulseHandler = undefined;
     }
     if (this.boundBlinkMomentumHandler) {
       window.removeEventListener('blinkMomentumImpulse', this.boundBlinkMomentumHandler);
+      this.boundBlinkMomentumHandler = undefined;
     }
     if (this.boundSwingStateHandler) {
       window.removeEventListener('swingStateChanged', this.boundSwingStateHandler);
+      this.boundSwingStateHandler = undefined;
     }
     if (this.boundSwingReleaseHandler) {
       window.removeEventListener('swingReleaseImpulse', this.boundSwingReleaseHandler);
+      this.boundSwingReleaseHandler = undefined;
     }
     
-    // Clear all bound handler references
-    this.boundKeydownHandler = undefined;
-    this.boundKeyupHandler = undefined;
-    this.boundMousedownHandler = undefined;
-    this.boundMouseupHandler = undefined;
-    this.boundContextmenuHandler = undefined;
-    this.boundMousemoveHandler = undefined;
-    this.boundClickHandler = undefined;
-    this.boundPointerlockchangeHandler = undefined;
-    this.boundBlastImpulseHandler = undefined;
-    this.boundSpeedBoostHandler = undefined;
-    this.boundCombatStateHandler = undefined;
-    this.boundBlastSelfImpulseHandler = undefined;
-    this.boundBlinkMomentumHandler = undefined;
-    this.boundSwingStateHandler = undefined;
-    this.boundSwingReleaseHandler = undefined;
+    // Stop combat timer
+    this.stopCombatTimer();
     
-    console.log('✅ FirstPersonController: Cleanup complete - 15+ event listeners removed');
+    // Clear preserved momentum
+    this.preservedMomentum.set(0, 0, 0);
+    
+    // Reset all state
+    this.keys = {};
+    this.mouseButtons = { left: false, right: false };
+    this.isPointerLocked = false;
+    this.isGrounded = false;
+    this.canJump = true;
+    this.isSliding = false;
+    this.isRocketJumping = false;
+    this.rocketJumpSpeed = 0;
+    this.isSwinging = false;
+    this.isBlinkMomentum = false;
+    this.blinkMomentumSpeed = 0;
+    this.isSpeedBoosted = false;
+    this.speedBoostEndTime = 0;
+    
+    console.log('🎮 FirstPersonController destroyed and cleaned up');
   }
 } 
