@@ -91,7 +91,7 @@ export class CheckpointSystem {
       });
       
       if (import.meta.env.DEV) {
-        console.log('✨ Shared checkpoint resources initialized');
+        // Shared checkpoint resources initialized successfully
       }
     }
   }
@@ -196,7 +196,7 @@ export class CheckpointSystem {
     this.checkpoints.set(id, checkpointData);
     
     if (import.meta.env.DEV) {
-      console.log(`✓ Checkpoint ${id} created with beacon at position:`, position);
+      // Checkpoint created successfully with beacon
     }
   }
   
@@ -355,17 +355,84 @@ export class CheckpointSystem {
   }
   
   /**
-   * Simplified checkpoint detection with valid progression check - single distance check
+   * Check if player is inside the beacon cylinder (beam collision)
+   * Optimized to use distanceToSquared for performance consistency
+   * @param playerPos - Player's current position
+   * @param checkpointPos - Checkpoint base position
+   * @returns true if player is within the beacon's cylindrical collision area
    */
-  update(playerPosition: THREE.Vector3, playerVelocity?: THREE.Vector3): void {
-    const now = performance.now();
-    
-    for (const checkpoint of this.checkpoints.values()) {
-      // Fast distance check (avoid sqrt with distanceToSquared)
-      const distanceSquared = playerPosition.distanceToSquared(checkpoint.position);
+  private isInsideBeaconCylinder(playerPos: THREE.Vector3, checkpointPos: THREE.Vector3): boolean {
+    try {
+      // Input validation - protect against null/undefined positions
+      if (!playerPos || !checkpointPos) return false;
+      
+      // Calculate horizontal distance from beacon center line (optimized - no sqrt)
+      const dx = playerPos.x - checkpointPos.x;
+      const dz = playerPos.z - checkpointPos.z;
+      const horizontalDistanceSquared = dx * dx + dz * dz;
+      
+      // Check if within beacon radius (with padding for easier gameplay)
+      const detectionRadius = 4.0; // Larger than visual beacon (2.4) for better UX
+      const detectionRadiusSquared = detectionRadius * detectionRadius;
+      if (horizontalDistanceSquared > detectionRadiusSquared) return false;
+      
+      // Check vertical bounds - beacon extends from base to full height
+      const minY = checkpointPos.y;
+      const maxY = checkpointPos.y + this.BEACON_HEIGHT;
+      
+      return playerPos.y >= minY && playerPos.y <= maxY;
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn('⚠️ CheckpointSystem: Error in beacon cylinder detection:', error);
+      }
+      return false; // Safe fallback
+    }
+  }
+
+  /**
+   * Check if player is inside either the base sphere OR the beacon cylinder
+   * @param playerPos - Player's current position
+   * @param checkpoint - Checkpoint data containing position and size
+   * @returns true if player is within either collision area (sphere OR cylinder)
+   */
+  private isInsideCheckpoint(playerPos: THREE.Vector3, checkpoint: CheckpointData): boolean {
+    try {
+      // Input validation - protect against null/undefined inputs
+      if (!playerPos || !checkpoint?.position) return false;
+      
+      // Original sphere detection at base (fast check using distanceToSquared)
+      const distanceSquared = playerPos.distanceToSquared(checkpoint.position);
       const radiusSquared = checkpoint.size * checkpoint.size;
       
       if (distanceSquared <= radiusSquared) {
+        return true; // Hit the base sphere
+      }
+      
+      // Additional cylindrical detection for the beacon beam
+      return this.isInsideBeaconCylinder(playerPos, checkpoint.position);
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn('⚠️ CheckpointSystem: Error in checkpoint collision detection:', error);
+      }
+      return false; // Safe fallback
+    }
+  }
+  
+  /**
+   * Simplified checkpoint detection with both sphere and beam collision support
+   * @param playerPosition - Current player position
+   * @param playerVelocity - Optional player velocity for speed calculations
+   */
+  update(playerPosition: THREE.Vector3, playerVelocity?: THREE.Vector3): void {
+    try {
+      // Input validation - protect against invalid player position
+      if (!playerPosition) return;
+      
+      const now = performance.now();
+    
+    for (const checkpoint of this.checkpoints.values()) {
+      // Check BOTH base sphere AND beacon cylinder
+      if (this.isInsideCheckpoint(playerPosition, checkpoint)) {
         // Check debounce (only for this specific checkpoint)
         if (now - checkpoint.lastTriggerTime < this.DEBOUNCE_TIME) continue;
         
@@ -393,7 +460,9 @@ export class CheckpointSystem {
             }
           }));
           
-          console.log(`✅ Valid checkpoint progression: ${checkpoint.id} (speed: ${playerSpeed.toFixed(1)} m/s)`);
+          if (import.meta.env.DEV) {
+            // Valid checkpoint progression logged for debugging
+          }
         } else {
           if (import.meta.env.DEV) {
             // console.log(`⚪ Invalid checkpoint: ${checkpoint.id} (not next in sequence)`); // Suppressed spam
@@ -416,6 +485,12 @@ export class CheckpointSystem {
     
     // Update beautiful golden sphere pulsing for all checkpoints
     this.updateDetectionZonePulse();
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn('⚠️ CheckpointSystem: Error in update loop:', error);
+      }
+      // Continue execution - don't crash the game loop
+    }
   }
   
   private flashCheckpoint(checkpoint: CheckpointData): void {
@@ -534,7 +609,9 @@ export class CheckpointSystem {
       CheckpointSystem.disposeSharedResources();
     }
     
-    console.log('🧹 Enhanced checkpoint system disposed');
+    if (import.meta.env.DEV) {
+      // Enhanced checkpoint system disposed successfully
+    }
   }
   
   /**
@@ -559,7 +636,7 @@ export class CheckpointSystem {
     CheckpointSystem.instanceCount = 0;
     
     if (import.meta.env.DEV) {
-      console.log('🧹 Shared checkpoint resources disposed');
+      // Shared checkpoint resources disposed successfully
     }
   }
   
@@ -596,6 +673,8 @@ export class CheckpointSystem {
     // Update beacon visibility for new lap
     this.updateBeacons();
     
-    console.log('🔄 Checkpoint system reset');
+    if (import.meta.env.DEV) {
+      // Checkpoint system reset successfully
+    }
   }
 }
