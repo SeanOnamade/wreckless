@@ -46,6 +46,7 @@ import { CheckpointHitEffect } from './effects/CheckpointHitEffect';
 
 // Scene Backdrop System
 import { SceneBackdrop } from './visual/SceneBackdrop';
+import { LavaKillzone } from './visual/LavaKillzone';
 
 // Ability visual effects
 import { BlinkScreenFlash } from './effects/BlinkScreenFlash';
@@ -93,6 +94,13 @@ const scene = new THREE.Scene();
 // Initialize scene backdrop
 const sceneBackdrop = new SceneBackdrop(scene);
 sceneBackdrop.initialize();
+
+// Initialize lava killzone
+const lavaKillzone = new LavaKillzone(scene);
+lavaKillzone.initialize();
+
+// Make lava killzone globally accessible for settings
+(window as any).lavaKillzone = lavaKillzone;
 
 // Camera setup (increased far plane to prevent sky clipping)
 const camera = new THREE.PerspectiveCamera(
@@ -947,6 +955,9 @@ window.addEventListener('beforeunload', () => {
   if (autoCharacterLoader) {
     autoCharacterLoader.dispose();
   }
+  if (lavaKillzone) {
+    lavaKillzone.dispose();
+  }
   TargetDummy.cleanupGlobalAnimations();
 });
 
@@ -1101,6 +1112,13 @@ function animate() {
       }
     } catch (error) {
       console.error('⚠️ SceneBackdrop update error:', error);
+    }
+    
+    // Update lava killzone animation
+    try {
+      lavaKillzone.update();
+    } catch (error) {
+      console.error('⚠️ LavaKillzone update error:', error);
     }
     
     // Update movement trail

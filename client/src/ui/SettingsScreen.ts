@@ -153,6 +153,10 @@ export class SettingsScreen {
     const audioSection = this.createAudioSection();
     settingsContainer.appendChild(audioSection);
 
+    // Visual section
+    const visualSection = this.createVisualSection();
+    settingsContainer.appendChild(visualSection);
+
     // UI section
     const uiSection = this.createUISection();
     settingsContainer.appendChild(uiSection);
@@ -482,6 +486,70 @@ export class SettingsScreen {
     section.appendChild(portraitStyleGroup);
     
     return section;
+  }
+
+  /**
+   * Create the visual settings section
+   */
+  private createVisualSection(): HTMLDivElement {
+    const section = document.createElement('div');
+    section.style.cssText = `
+      margin-bottom: 30px;
+      padding: 25px;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(0, 230, 255, 0.3);
+      border-radius: 8px;
+    `;
+    
+    // Section title
+    const sectionTitle = document.createElement('h3');
+    sectionTitle.style.cssText = `
+      margin: 0 0 20px 0;
+      color: #00E6FF;
+      font-size: 18px;
+      font-weight: bold;
+    `;
+    sectionTitle.textContent = '🌋 VISUAL EFFECTS';
+    
+    // Lava killzone toggle
+    const lavaToggle = this.createToggleControl(
+      'Enable Lava Killzone',
+      'lava-enabled',
+      (enabled) => this.handleLavaToggle(enabled)
+    );
+    
+    section.appendChild(sectionTitle);
+    section.appendChild(lavaToggle);
+    
+    return section;
+  }
+
+  /**
+   * Handle lava killzone toggle with error handling
+   */
+  private handleLavaToggle(enabled: boolean): void {
+    try {
+      const lavaKillzone = (window as any).lavaKillzone;
+      if (lavaKillzone && typeof lavaKillzone.setEnabled === 'function') {
+        lavaKillzone.setEnabled(enabled);
+        console.log(`🌋 Lava killzone ${enabled ? 'enabled' : 'disabled'}`);
+      } else {
+        console.warn('⚠️ Lava killzone system not available');
+        // Fallback: just save to localStorage for when system becomes available
+        localStorage.setItem('wreckless-lava-enabled', enabled.toString());
+      }
+    } catch (error) {
+      console.error('⚠️ Failed to toggle lava killzone:', error);
+      
+      // Revert checkbox state on error
+      const lavaToggle = this.container.querySelector('#lava-enabled') as HTMLInputElement;
+      if (lavaToggle) {
+        lavaToggle.checked = !enabled; // Revert to previous state
+      }
+      
+      // Show user feedback (optional)
+      // Could add a toast notification here in the future
+    }
   }
 
   /**
@@ -972,6 +1040,26 @@ export class SettingsScreen {
     portraitRadios.forEach(radio => {
       radio.checked = radio.value === currentStyle;
     });
+
+    // Update lava enabled checkbox with error handling
+    const lavaToggle = this.container.querySelector('#lava-enabled') as HTMLInputElement;
+    if (lavaToggle) {
+      try {
+        const lavaKillzone = (window as any).lavaKillzone;
+        if (lavaKillzone && typeof lavaKillzone.isEnabled === 'function') {
+          lavaToggle.checked = lavaKillzone.isEnabled();
+        } else {
+          // Fallback to localStorage if lavaKillzone isn't available yet
+          const stored = localStorage.getItem('wreckless-lava-enabled');
+          lavaToggle.checked = stored !== null ? stored === 'true' : true;
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to read lava killzone state:', error);
+        // Use localStorage as fallback
+        const stored = localStorage.getItem('wreckless-lava-enabled');
+        lavaToggle.checked = stored !== null ? stored === 'true' : true;
+      }
+    }
   }
   
   /**
