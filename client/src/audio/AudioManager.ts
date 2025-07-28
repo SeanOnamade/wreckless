@@ -73,7 +73,7 @@ export class AudioManager {
       await this.initializeMusic();
       await this.initializeAmbientSounds();
       this.isInitialized = true;
-      console.log('🎵 AudioManager initialized successfully');
+      // console.log('🎵 AudioManager initialized successfully');
     } catch (error) {
       console.warn('🎵 AudioManager initialization failed:', error);
     }
@@ -88,7 +88,7 @@ export class AudioManager {
       // Preload the music
       this.musicAudio.preload = 'auto';
       
-      console.log('🎵 Background music initialized');
+      // console.log('🎵 Background music initialized');
     } catch (error) {
       console.warn('🎵 Failed to initialize background music:', error);
     }
@@ -107,7 +107,7 @@ export class AudioManager {
       
 
       
-      console.log('🌬️ Ambient wind initialized');
+      // console.log('🌬️ Ambient wind initialized');
     } catch (error) {
       console.warn('🌬️ Failed to initialize ambient wind:', error);
     }
@@ -304,7 +304,10 @@ export class AudioManager {
       audio.currentTime = 0;
       await audio.play();
     } catch (error) {
-      console.warn(`🔊 Failed to play SFX: ${key}`, error);
+      // Only log non-interruption errors to reduce spam
+      if (error instanceof Error && error.name !== 'AbortError') {
+        console.warn(`🔊 Failed to play SFX: ${key}`, error);
+      }
     }
   }
 

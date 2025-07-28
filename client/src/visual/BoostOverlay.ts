@@ -21,7 +21,7 @@ export class BoostOverlay {
   constructor() {
     this.createOverlay();
     this.setupEventListeners();
-    console.log('🚀 Boost Overlay initialized');
+    // Debug.system('🚀 Boost Overlay initialized'); // Commented - too verbose
   }
 
   private createOverlay(): void {

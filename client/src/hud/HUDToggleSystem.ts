@@ -17,7 +17,7 @@ export class HUDToggleSystem {
     this.setupCSSClasses();
     this.createHintElement();
     this.setupGameStateListener();
-    console.log('🎛️ HUD Toggle System initialized (Tab to toggle clean mode)');
+    // console.log('🎛️ HUD Toggle System initialized (Tab to toggle clean mode)');
   }
 
   private setupCSSClasses(): void {
@@ -70,7 +70,7 @@ export class HUDToggleSystem {
       this.updateHintVisibility();
       document.body.appendChild(this.hintElement);
       
-      console.log('🎛️ Debug hint element created');
+      // console.log('🎛️ Debug hint element created');
     } catch (error) {
       console.error('🚨 Failed to create debug hint element:', error);
       this.hintElement = null;
@@ -250,7 +250,7 @@ export class HUDToggleSystem {
       // Check immediately
       setTimeout(checkMenuState, 100);
       
-      console.log('🎛️ Game state observer initialized');
+      // console.log('🎛️ Game state observer initialized');
     } catch (error) {
       console.error('🚨 Failed to setup game state observer, falling back to interval:', error);
       // Fallback to interval if MutationObserver fails

@@ -41,6 +41,10 @@ export class TargetDummy implements MeleeTarget {
   private isDestroyed = false;
   private isInitialized = false;
   
+  // Performance optimization - throttle particle animations to 30fps
+  private lastParticleUpdateTime = 0;
+  private particleUpdateInterval = 33; // 30fps for particle effects
+  
   // CRASH PREVENTION: Limit concurrent animations to prevent buildup
   private readonly MAX_ANIMATION_FRAMES_PER_DUMMY = 4;
   
@@ -612,6 +616,14 @@ export class TargetDummy implements MeleeTarget {
           this.returnAndUntrackPoolContext(animContext.id);
           return; // Guard against destruction
         }
+        
+        // Throttle particle updates to 30fps for better performance
+        const now = performance.now();
+        if (now - this.lastParticleUpdateTime < this.particleUpdateInterval) {
+          requestAnimationFrame(animateSparkle);
+          return;
+        }
+        this.lastParticleUpdateTime = now;
         
         const elapsed = Date.now() - animContext.startTime;
         const progress = Math.min(elapsed / 400, 1); // 400ms animation

@@ -17,7 +17,7 @@ export class SettingsScreen {
     
     this.container = this.createUI();
     this.setupEventListeners();
-    console.log('⚙️ SettingsScreen component created');
+    // console.log('⚙️ SettingsScreen component created');
   }
   
   /**

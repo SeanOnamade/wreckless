@@ -63,7 +63,7 @@ export class LoadingScreen {
     const step = this.loadingSteps.get(stepId);
     if (step && !step.complete) {
       step.complete = true;
-      console.log(`✅ Loading step complete: ${stepId}`);
+      // console.log(`✅ Loading step complete: ${stepId}`);
       
       if (statusMessage) {
         this.updateStatus(statusMessage);
@@ -89,7 +89,7 @@ export class LoadingScreen {
   
   public updateStatus(message: string): void {
     this.statusText.textContent = message;
-    console.log(`📋 Loading: ${message}`);
+    // console.log(`📋 Loading: ${message}`);
   }
   
   private updateProgress(): void {

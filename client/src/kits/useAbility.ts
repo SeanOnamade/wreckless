@@ -70,7 +70,7 @@ export class AbilityManager {
     this.keyUpHandler = this.handleKeyUp.bind(this);
     this.classChangeHandler = this.handleClassChange.bind(this);
     this.setupEventListeners();
-    console.log('🎯 AbilityManager initialized');
+    // Debug.system('🎯 AbilityManager initialized'); // Commented - too verbose
   }
   
   // CRITICAL FIX: Add proper cleanup method

@@ -25,8 +25,7 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   }
 
   // Create physics world
-  const gravity = { x: 0.0, y: -9.81, z: 0.0 };
-  const world = new rapier.World(gravity);
+  const world = new rapier.World({ x: 0.0, y: -9.81, z: 0.0 });
 
   // Initialize track loader and load model
   loadingScreen?.updateStatus('Loading race track...');
@@ -34,7 +33,7 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   try {
     await loadExternalTrack(scene, world);
     loadingScreen?.setStepComplete('race-track', 'Race track loaded');
-    console.log('✅ Track loaded successfully');
+    // console.log('✅ Track loaded successfully');
   } catch (error) {
     console.error('❌ Track loading failed:', error);
     console.warn('⚠️ Continuing without external track');

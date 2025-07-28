@@ -591,7 +591,7 @@ export class AutoCharacterLoader {
     // Set initial visibility based on HUD style
     this.updatePortraitVisibility();
     
-    console.log(`🖼️ Character portrait UI created (${AutoCharacterLoader.isCharacterAnimationsEnabled() ? 'animated' : 'static'} mode) - positioned to avoid HUD conflicts`);
+    // console.log(`🖼️ Character portrait UI created (${AutoCharacterLoader.isCharacterAnimationsEnabled() ? 'animated' : 'static'} mode) - positioned to avoid HUD conflicts`);
   }
 
   /**
@@ -701,7 +701,7 @@ export class AutoCharacterLoader {
     // Load default image (grapple since that's the default class)
     this.loadStaticPortrait('grapple');
     
-    console.log('🖼️ Static portrait infrastructure set up');
+    // console.log('🖼️ Static portrait infrastructure set up');
   }
 
   /**
@@ -725,7 +725,7 @@ export class AutoCharacterLoader {
       // Update portrait styling to match character class
               this.updatePortraitTitle(characterClass);
       
-      console.log(`🖼️ Loaded static portrait: ${characterClass}`);
+      // console.log(`🖼️ Loaded static portrait: ${characterClass}`);
     } else {
       console.warn(`❌ No portrait image found for class: ${characterClass}`);
     }

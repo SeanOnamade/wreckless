@@ -56,7 +56,7 @@ export class ClassSelection {
     this.container = this.createUI();
     this.setupEventListeners();
     this.createCharacterModal();
-    console.log('🎯 ClassSelection component created');
+    // console.log('🎯 ClassSelection component created');
   }
   
   /**

@@ -15,9 +15,9 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
   }
     
     const loader = new GLTFLoader();
-    console.log('🏁 Loading track from /lowpoly_racetrack.glb...');
+    // console.log('🏁 Loading track from /lowpoly_racetrack.glb...');
     const gltf = await loader.loadAsync('/lowpoly_racetrack.glb');
-    console.log('🏁 Track GLB loaded, processing scene...');
+    // console.log('🏁 Track GLB loaded, processing scene...');
     const track = gltf.scene;
     
     // Scale and position the track
@@ -29,7 +29,7 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
     const collisionGeometries: THREE.BufferGeometry[] = [];
     
     if (import.meta.env.DEV) {
-      console.log('🏁 Loading track collision from all meshes...');
+      // console.log('🏁 Loading track collision from all meshes...');
     }
     
     // Collect all meshes and process them for collision
@@ -52,7 +52,7 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
     });
     
     if (import.meta.env.DEV) {
-      console.log(`📊 Processing ${allMeshes.length} meshes for collision...`);
+      // console.log(`📊 Processing ${allMeshes.length} meshes for collision...`);
     }
     
     // Add the visual track to the scene
@@ -65,7 +65,7 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
       world.createCollider(collider, body);
     } else {
       if (import.meta.env.DEV) {
-        console.log(`🔗 Processing ${collisionGeometries.length} geometries for collision...`);
+        // console.log(`🔗 Processing ${collisionGeometries.length} geometries for collision...`);
         console.log(`🔧 Clipping geometry below Y=2.5 to prevent void-walking...`);
       }
       
@@ -82,7 +82,7 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
       }
       
       if (import.meta.env.DEV) {
-        console.log(`🔗 Merging ${clippedGeometries.length} clipped geometries for collision...`);
+        // console.log(`🔗 Merging ${clippedGeometries.length} clipped geometries for collision...`);
       }
       
       // Merge clipped geometries into a single collision mesh
@@ -103,7 +103,7 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
            world.createCollider(collider, body);
            
            if (import.meta.env.DEV) {
-      console.log(`✅ Trimesh collider created with ${vertices.length / 3} vertices and ${indices.length / 3} triangles`);
+      // console.log(`✅ Trimesh collider created with ${vertices.length / 3} vertices and ${indices.length / 3} triangles`);
     }
            
            // DISABLED: Safety rail collision causes void-walking
@@ -146,7 +146,7 @@ export async function loadExternalTrack(scene: THREE.Scene, world: RAPIER.World)
     }
     
     if (import.meta.env.DEV) {
-      console.log(`✅ Lowpoly racetrack loaded successfully!`);
+      // console.log(`✅ Lowpoly racetrack loaded successfully!`);
     }
     
   } catch (error) {

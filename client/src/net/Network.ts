@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import Debug from '../utils/Debug.js';
 
 // Input state interface for clean data structure
 interface InputState {
@@ -107,7 +108,7 @@ class NetworkManager {
 
     this.socket.on('connect', () => {
       this.connectionStatus = 'connected';
-      console.log('✅ Network: Connected to server (ID:', this.socket?.id, ')');
+      Debug.network('✅ Network: Connected to server (ID:', this.socket?.id, ')');
       this.startPositionSync(); // Start sending position updates
     });
 

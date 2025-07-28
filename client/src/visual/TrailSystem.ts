@@ -30,9 +30,9 @@ export class TrailSystem {
   private smoothingFactor = 0.3; // Good balance for smooth curves
   private velocitySmoothing = 0.8; // More smoothing for fluid trails
   
-  // Performance optimization
+  // Performance optimization - reduced to 30fps for better performance
   private lastUpdateTime = 0;
-  private updateFrequency = 20; // ~50 FPS update rate for better performance
+  private updateFrequency = 33; // ~30 FPS update rate (was 50 FPS)
   
   // Clean, vibrant colors for smooth lines
   private baseColor = new THREE.Color(0.4, 0.8, 1.2); // Nice cyan default

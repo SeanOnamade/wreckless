@@ -24,7 +24,7 @@ export class PlayerHealth {
       this.handleRespawn(customEvent.detail.reason);
     });
     
-    console.log('💚 Player Health System initialized (100/100 HP)');
+    // Debug.system('💚 Player Health System initialized (100/100 HP)'); // Commented - too verbose
   }
 
   /**

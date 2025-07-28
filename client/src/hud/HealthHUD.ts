@@ -29,7 +29,7 @@ export class HealthHUD {
     
     this.createHUD();
     this.setupEventListeners();
-    console.log('💚 Health HUD initialized');
+    // console.log('💚 Health HUD initialized');
   }
 
   /**

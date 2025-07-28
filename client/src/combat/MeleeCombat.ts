@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import Debug from '../utils/Debug.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { PlayerClass } from '../kits/classKit';
 import { getCurrentPlayerKit } from '../kits/classKit';
@@ -177,7 +178,7 @@ export class MeleeCombat {
   private performPvPMeleeAttack(_className: PlayerClass, _playerVelocity?: THREE.Vector3, _now?: number): boolean {
     if (!_now) _now = Date.now();
     
-    console.log(`🗡️ [PvP] Checking for player targets only (ignoring dummies in passthrough mode)...`);
+    Debug.combat(`🗡️ [PvP] Checking for player targets only (ignoring dummies in passthrough mode)...`);
     
     // PvP attack - check for player targets only
     
@@ -192,7 +193,7 @@ export class MeleeCombat {
     });
     
     if (playerTargets.length === 0) {
-      console.log(`🗡️ [PvP] No player targets found - dummies use HitVolume passthrough mode (manual click ignored)`);
+      Debug.combat(`🗡️ [PvP] No player targets found - dummies use HitVolume passthrough mode (manual click ignored)`);
       
       // Set cooldown even though no damage was applied
       this.lastMeleeTime = _now!

@@ -26,8 +26,8 @@ class PerformanceProfiler {
   private enabled: boolean = false;
   private frameMetrics: FrameMetrics[] = [];
   private lastFrameTime: number = 0;
-  private maxSamples: number = 300; // Keep last 5 seconds at 60fps
-  private logInterval: number = 5000; // Log every 5 seconds
+  private maxSamples: number = 1800; // Keep last 30 seconds at 60fps
+  private logInterval: number = 30000; // Log every 30 seconds
   private lastLogTime: number = 0;
   
   // Frame time thresholds
@@ -141,7 +141,7 @@ class PerformanceProfiler {
     const { averageFPS, droppedFrames, totalFrames, p95FrameTime, maxFrameTime } = stats;
     const dropRate = (droppedFrames / totalFrames * 100).toFixed(1);
 
-    console.group('🔍 Performance Stats (5s window)');
+    console.group('🔍 Performance Stats (30s window)');
     console.log(`Average FPS: ${averageFPS.toFixed(1)}`);
     console.log(`Frame drops: ${droppedFrames}/${totalFrames} (${dropRate}%)`);
     console.log(`95th percentile: ${p95FrameTime.toFixed(1)}ms`);

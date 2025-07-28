@@ -457,7 +457,7 @@ initPhysics(scene, camera, loadingScreen).then((world) => {
   });
   
   // Preload all character animations ONCE during startup
-  console.log('🎭 Starting one-time animation preload...');
+  // console.log('🎭 Starting one-time animation preload...');
   autoCharacterLoader.preloadAllCharacterAnimations();
   
   // Legacy systems DISABLED to prevent conflicts
@@ -471,7 +471,7 @@ initPhysics(scene, camera, loadingScreen).then((world) => {
     const { playerClass } = customEvent.detail;
     
     if (autoCharacterLoader) {
-      console.log(`🎭 Using cached animations for: ${playerClass}`);
+      // console.log(`🎭 Using cached animations for: ${playerClass}`);
       
       // Use cached animations - no duplicate loading!
       await autoCharacterLoader.loadCharacterForClass(playerClass as PlayerClass);
@@ -826,7 +826,7 @@ initPhysics(scene, camera, loadingScreen).then((world) => {
   
   // Add developer class switching (keys 1, 2, 3)
   if (import.meta.env.DEV) {
-    console.log('🎮 Ability System initialized:');
+    Debug.system('🎮 Ability System initialized:');
     console.log('  ⚡ Press E to use ability');
     console.log('  ✨ Press 1 for Blink class');
     console.log('  🔥 Press 2 for Blast class');
@@ -969,7 +969,7 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-console.log('🎮 Game initialized successfully');
+Debug.system('🎮 Game initialized successfully');
 
 // Fallback: Force hide loading screen after 10 seconds if still visible
 setTimeout(() => {
@@ -1058,6 +1058,7 @@ function updateVisualFeedback(camera: THREE.Camera): void {
 }
 
 import PerformanceProfiler from './utils/PerformanceProfiler.js';
+import Debug from './utils/Debug.js';
 
 // Initialize timing variables  
 let lastTime = performance.now();

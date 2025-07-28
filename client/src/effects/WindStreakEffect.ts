@@ -18,6 +18,10 @@ export class WindStreakEffect implements CameraEffect {
   private currentOpacity = 0;
   private fadeSpeed = 4.0; // How fast opacity changes (higher = faster transitions)
   
+  // Performance optimization - throttle updates to 30fps
+  private lastUpdateTime = 0;
+  private updateInterval = 33; // 30fps (was 60fps)
+  
   // Shake effect parameters
   private shakeTime = 0;
   private shakeIntensity = 2.0; // How much the streaks shake (pixels)
@@ -102,6 +106,11 @@ export class WindStreakEffect implements CameraEffect {
 
   update(_camera: THREE.Camera, deltaTime: number): void {
     if (!this.isInitialized || !this.overlayElement) return;
+    
+    // Throttle updates to 30fps for better performance
+    const now = performance.now();
+    if (now - this.lastUpdateTime < this.updateInterval) return;
+    this.lastUpdateTime = now;
 
     // Calculate target opacity based on current speed
     const speedAboveMin = Math.max(0, this.currentSpeed - this.minSpeed);

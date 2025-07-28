@@ -16,10 +16,10 @@ if (typeof window !== 'undefined') {
   (window as any).testPositionCorrection = () => NetworkManager_Instance.testPositionCorrection();
   (window as any).testPositionSync = () => NetworkManager_Instance.testPositionSync();
   (window as any).networkStats = () => NetworkManager_Instance.getNetworkStats();
-  console.log('🔧 Dev: Access network debug info with window.debugNetwork()');
-  console.log('🔧 Dev: Enhanced multiplayer debug with window.debugMultiplayer()');
-  console.log('🔧 Dev: Request server debug with window.requestServerDebug()');
-  console.log('🔧 Dev: Test position corrections with window.testPositionCorrection()');
-  console.log('🔧 Dev: Test position sync with window.testPositionSync()');
-  console.log('🔧 Dev: Monitor network performance with window.networkStats()');
+  // console.log('🔧 Dev: Access network debug info with window.debugNetwork()');
+  // console.log('🔧 Dev: Enhanced multiplayer debug with window.debugMultiplayer()');
+  // console.log('🔧 Dev: Request server debug with window.requestServerDebug()');
+  // console.log('🔧 Dev: Test position corrections with window.testPositionCorrection()');
+  // console.log('🔧 Dev: Test position sync with window.testPositionSync()');
+  // console.log('🔧 Dev: Monitor network performance with window.networkStats()');
 } 

@@ -42,7 +42,7 @@ export class LobbyScreen {
     
     this.container = this.createUI();
     this.setupEventListeners();
-    console.log('🌐 LobbyScreen component created (placeholder)');
+    // console.log('🌐 LobbyScreen component created (placeholder)');
   }
   
   /**
