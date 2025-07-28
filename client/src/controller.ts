@@ -167,7 +167,7 @@ export class FirstPersonController {
    */
   public resetKeyStates(): void {
     this.keys = {};
-    console.log('🎮 Key states reset to prevent stuck keys');
+    // console.log('🎮 Key states reset to prevent stuck keys');
   }
 
   /**
@@ -232,7 +232,7 @@ export class FirstPersonController {
     // Stop combat timer
     this.stopCombatTimer();
 
-    console.log('🏠 Player reset to spawn position');
+    // console.log('🏠 Player reset to spawn position');
   }
   
   /**

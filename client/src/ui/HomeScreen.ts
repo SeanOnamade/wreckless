@@ -31,9 +31,9 @@ export class HomeScreen {
     this.container.style.opacity = '1';
     this.container.style.zIndex = '2200';
     
-    console.log('🏠 HomeScreen shown - setting display to flex, z-index:', this.container.style.zIndex);
-    console.log('🏠 HomeScreen container in DOM:', this.container.parentNode !== null);
-    console.log('🏠 HomeScreen computed style:', window.getComputedStyle(this.container).display);
+    // console.log('🏠 HomeScreen shown - setting display to flex, z-index:', this.container.style.zIndex);
+    // console.log('🏠 HomeScreen container in DOM:', this.container.parentNode !== null);
+    // console.log('🏠 HomeScreen computed style:', window.getComputedStyle(this.container).display);
     
     // Check if we should auto-continue to multiplayer after reload
     this.checkAutoMultiplayer();
@@ -50,7 +50,7 @@ export class HomeScreen {
   public hide(): void {
     this.isVisible = false;
     this.container.style.display = 'none';
-    console.log('🏠 HomeScreen hidden');
+    // console.log('🏠 HomeScreen hidden');
   }
   
   /**

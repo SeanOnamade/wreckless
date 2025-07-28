@@ -110,7 +110,7 @@ export class LobbyScreen {
     // Clear player data
     this.allPlayersData = {};
     
-    console.log('🔄 Lobby state reset to defaults');
+    // console.log('🔄 Lobby state reset to defaults');
   }
   
   /**
@@ -419,10 +419,10 @@ export class LobbyScreen {
   private startLobbyUpdates(): void {
     if (this.updateInterval) return;
     
-    // Update lobby every 500ms
+    // Update lobby every 1000ms (reduced frequency to prevent frame drops)
     this.updateInterval = setInterval(() => {
       this.updateLobbyInfo();
-    }, 500);
+    }, 1000);
     
     // Initial update
     this.updateLobbyInfo();

@@ -80,7 +80,7 @@ export class ClassSelection {
       }
     }
     
-    console.log('🎯 ClassSelection shown');
+    // console.log('🎯 ClassSelection shown');
     
     // Exit pointer lock when menu shows
     if (document.pointerLockElement) {
@@ -94,7 +94,7 @@ export class ClassSelection {
   public hide(): void {
     this.isVisible = false;
     this.container.style.display = 'none';
-    console.log('🎯 ClassSelection hidden');
+    // console.log('🎯 ClassSelection hidden');
   }
   
   /**

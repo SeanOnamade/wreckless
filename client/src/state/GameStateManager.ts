@@ -16,6 +16,17 @@ export interface GameStateContext {
 }
 
 export class GameStateManager {
+  /**
+   * Schedule a callback on the next frame, with fallback for hidden tabs
+   */
+  private scheduleNextFrame(callback: () => void): void {
+    if (document.hidden) {
+      // Fallback for hidden tabs where rAF is throttled
+      setTimeout(callback, 0);
+    } else {
+      requestAnimationFrame(callback);
+    }
+  }
   private currentState: GameState = 'initializing';
   private context: GameStateContext = {};
   private stateChangeCallbacks: ((state: GameState, context: GameStateContext) => void)[] = [];
@@ -139,7 +150,7 @@ export class GameStateManager {
       return false;
     }
     
-    console.log(`🔄 State transition: ${previousState} → ${newState}`, this.context);
+    // console.log(`🔄 State transition: ${previousState} → ${newState}`, this.context);
     
     // Perform state-specific setup
     this.onStateEnter(newState);
@@ -321,16 +332,19 @@ export class GameStateManager {
     // Reset context
     this.context = {};
     
-    // Reset existing game systems
-    if (this.roundSystem) {
-      this.roundSystem.resetRound();
-    }
-    
-    // Dispatch reset events for existing systems
-    window.dispatchEvent(new CustomEvent('roundReset'));
-    window.dispatchEvent(new CustomEvent('resetPlayerPosition'));
-    window.dispatchEvent(new CustomEvent('clearCombatLog'));
-    window.dispatchEvent(new CustomEvent('resetAllDummies'));
+    // Defer all reset operations to next frame to prevent UI blocking
+    // This includes round system reset to avoid double-firing events
+    this.scheduleNextFrame(() => {
+      // Reset existing game systems first
+      if (this.roundSystem) {
+        this.roundSystem.resetRound();
+      }
+      
+      // Then dispatch additional reset events
+      window.dispatchEvent(new CustomEvent('resetPlayerPosition'));
+      window.dispatchEvent(new CustomEvent('clearCombatLog'));
+      window.dispatchEvent(new CustomEvent('resetAllDummies'));
+    });
     
     this.transitionTo('homescreen');
   }
@@ -350,16 +364,19 @@ export class GameStateManager {
       gameMode: 'multiplayer' 
     };
     
-    // Reset existing game systems
-    if (this.roundSystem) {
-      this.roundSystem.resetRound();
-    }
-    
-    // Dispatch reset events for existing systems
-    window.dispatchEvent(new CustomEvent('roundReset'));
-    window.dispatchEvent(new CustomEvent('resetPlayerPosition'));
-    window.dispatchEvent(new CustomEvent('clearCombatLog'));
-    window.dispatchEvent(new CustomEvent('resetAllDummies'));
+    // Defer all reset operations to next frame to prevent UI blocking
+    // This includes round system reset to avoid double-firing events
+    this.scheduleNextFrame(() => {
+      // Reset existing game systems first
+      if (this.roundSystem) {
+        this.roundSystem.resetRound();
+      }
+      
+      // Then dispatch additional reset events
+      window.dispatchEvent(new CustomEvent('resetPlayerPosition'));
+      window.dispatchEvent(new CustomEvent('clearCombatLog'));
+      window.dispatchEvent(new CustomEvent('resetAllDummies'));
+    });
     
     this.transitionTo('lobby', { gameMode: 'multiplayer' });
   }
@@ -451,7 +468,7 @@ export class GameStateManager {
         this.hideAllUI();
         this.blockInput(); // Block player movement in menu
         this.homeScreen?.show();
-        console.log('🏠 GameStateManager: Homescreen state entered, UI should be visible');
+        // console.log('🏠 GameStateManager: Homescreen state entered, UI should be visible');
         break;
         
       case 'class-selection':
@@ -490,19 +507,23 @@ export class GameStateManager {
    * Hide all menu UI components
    */
   private hideAllUI() {
+    // Hide UI components immediately for responsive feel
     this.homeScreen?.hide();
     this.classSelection?.hide();
     this.lobbyScreen?.hide();
     this.settingsScreen?.hide();
     
-    // CRITICAL FIX: Also hide pause menu during any state transition
-    window.dispatchEvent(new CustomEvent('force-close-pause-menu'));
-    
-    // Also hide existing round UI when showing menu screens
-    if (this.roundStartUI?.hide) {
-      this.roundStartUI.hide();
-      console.log('🏠 GameStateManager: Hiding RoundStartUI');
-    }
+    // Defer heavy DOM operations to prevent frame blocking
+    this.scheduleNextFrame(() => {
+      // CRITICAL FIX: Also hide pause menu during any state transition
+      window.dispatchEvent(new CustomEvent('force-close-pause-menu'));
+      
+      // Also hide existing round UI when showing menu screens
+      if (this.roundStartUI?.hide) {
+        this.roundStartUI.hide();
+        // console.log('🏠 GameStateManager: Hiding RoundStartUI');
+      }
+    });
   }
   
   /**
@@ -511,7 +532,7 @@ export class GameStateManager {
   private showGameUI() {
     // Game HUD components are already initialized and self-managing
     // Just ensure they're visible
-    console.log('🎮 Game UI active - existing HUD components managing themselves');
+    // console.log('🎮 Game UI active - existing HUD components managing themselves');
   }
   
   /**

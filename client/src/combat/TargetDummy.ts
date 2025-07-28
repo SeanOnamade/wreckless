@@ -97,10 +97,13 @@ export class TargetDummy implements MeleeTarget {
   private static returnPooledAnimationContext(contextId: number): void {
     // BUGFIX: Find context by ID, don't use ID as array index
     const context = TargetDummy.animationPool.find(ctx => ctx.id === contextId);
-    if (context) {
-      context.inUse = false;
-      context.cleanup();
+    if (context && context.inUse) {
+      // Ensure cleanup runs before marking context as available
+      if (context.cleanup) {
+        context.cleanup();
+      }
       context.cleanup = () => {};
+      context.inUse = false;
     }
   }
   
@@ -132,6 +135,13 @@ export class TargetDummy implements MeleeTarget {
       limit: TargetDummy.MAX_GLOBAL_ANIMATION_FRAMES,
       rate: TargetDummy.MAX_ANIMATIONS_PER_SECOND
     };
+  }
+
+  /**
+   * Get active animation count for performance monitoring
+   */
+  public static getActiveAnimationCount(): number {
+    return TargetDummy.globalAnimationFrames.size;
   }
 
   constructor(
@@ -511,6 +521,10 @@ export class TargetDummy implements MeleeTarget {
           // Set cleanup function for the pooled context
           const poolContext = TargetDummy.animationPool.find(ctx => ctx.id === animContext.id);
           if (poolContext) {
+            // Clear previous cleanup to prevent double-cancellation
+            if (poolContext.cleanup) {
+              poolContext.cleanup();
+            }
             poolContext.cleanup = () => {
               cancelAnimationFrame(frameId);
               this.activeAnimationFrames.delete(frameId);

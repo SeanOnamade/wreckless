@@ -270,7 +270,7 @@ export class LoadingScreen {
         if (this.container.parentNode) {
           this.container.parentNode.removeChild(this.container);
         }
-        console.log('🎮 Loading screen hidden');
+        // console.log('🎮 Loading screen hidden');
         resolve();
       }, 500);
     });

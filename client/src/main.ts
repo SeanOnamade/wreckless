@@ -309,11 +309,11 @@ window.addEventListener('passthroughHit', () => {
 window.addEventListener('roundReset', () => {
   if (lapController) {
     lapController.reset();
-    console.log('🔄 Lap controller reset');
+    // console.log('🔄 Lap controller reset');
   }
   if (checkpointSystem) {
     checkpointSystem.reset();
-    console.log('🔄 Checkpoint system reset');
+    // console.log('🔄 Checkpoint system reset');
   }
 });
 
@@ -343,14 +343,14 @@ window.addEventListener('resetToSpawn', () => {
       movementTrail.resetToPosition(newPosition);
     }
     
-    console.log('🏠 Player reset to spawn position');
+    // console.log('🏠 Player reset to spawn position');
   }
 });
 
 // Listen for combat log clear
 window.addEventListener('clearCombatLog', () => {
   window.dispatchEvent(new CustomEvent('combatLogClear'));
-  console.log('🔄 Combat log cleared');
+  // console.log('🔄 Combat log cleared');
 });
 
 // Listen for dummy reset
@@ -705,7 +705,7 @@ initPhysics(scene, camera, loadingScreen).then((world) => {
   window.addEventListener('roundReset', () => {
     if (gameHUD) {
       gameHUD.resetCheckpointProgress();
-      console.log('🔄 Game HUD checkpoints reset');
+      // console.log('🔄 Game HUD checkpoints reset');
     }
   });
   
@@ -1057,8 +1057,11 @@ function updateVisualFeedback(camera: THREE.Camera): void {
   }
 }
 
+import PerformanceProfiler from './utils/PerformanceProfiler.js';
+
 // Initialize timing variables  
 let lastTime = performance.now();
+const profiler = PerformanceProfiler.getInstance();
 
 // Animation loop
 function animate() {
@@ -1070,8 +1073,11 @@ function animate() {
     lastTime = currentTime;
     
     // Update physics world
+    let physicsTime = 0;
     if (physicsWorld) {
+      const physicsStart = performance.now();
       physicsWorld.step(deltaTime);
+      physicsTime = performance.now() - physicsStart;
       
       // Get movement data from controller (same source as debug UI)
       const velocity = physicsWorld.fpsController.getVelocity();
@@ -1244,6 +1250,10 @@ function animate() {
     
     // Final render
     renderer.render(scene, camera);
+    
+    // Record frame performance  
+    const activeAnimations = TargetDummy.getActiveAnimationCount();
+    profiler.recordFrame(activeAnimations, physicsTime);
     
   } catch (error) {
     console.error('⚠️ Critical animation loop error:', error);
