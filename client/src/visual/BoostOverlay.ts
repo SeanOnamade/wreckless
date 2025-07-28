@@ -14,6 +14,10 @@ export class BoostOverlay {
   private boostDuration = 0;
   private animationFrameId: number | null = null;
   
+  // Store event handlers so we can remove them later
+  private speedBoostActiveHandler: ((event: Event) => void) | null = null;
+  private speedBoostEndedHandler: (() => void) | null = null;
+  
   constructor() {
     this.createOverlay();
     this.setupEventListeners();
@@ -102,16 +106,21 @@ export class BoostOverlay {
   }
 
   private setupEventListeners(): void {
-    // Listen for boost activation
-    window.addEventListener('speedBoostActive', (event: Event) => {
+    // Store the handlers so we can remove them later
+    this.speedBoostActiveHandler = (event: Event) => {
       const customEvent = event as CustomEvent;
       this.startBoost(customEvent.detail);
-    });
+    };
+
+    this.speedBoostEndedHandler = () => {
+      this.endBoost();
+    };
+    
+    // Listen for boost activation
+    window.addEventListener('speedBoostActive', this.speedBoostActiveHandler);
 
     // Listen for boost end
-    window.addEventListener('speedBoostEnded', () => {
-      this.endBoost();
-    });
+    window.addEventListener('speedBoostEnded', this.speedBoostEndedHandler);
   }
 
   private startBoost(boostData: any): void {
@@ -211,10 +220,23 @@ export class BoostOverlay {
    * Cleanup when destroying
    */
   dispose(): void {
+    // Stop any active animation
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
     }
     
+    // Remove event listeners (the fix!)
+    if (this.speedBoostActiveHandler) {
+      window.removeEventListener('speedBoostActive', this.speedBoostActiveHandler);
+      this.speedBoostActiveHandler = null;
+    }
+    
+    if (this.speedBoostEndedHandler) {
+      window.removeEventListener('speedBoostEnded', this.speedBoostEndedHandler);
+      this.speedBoostEndedHandler = null;
+    }
+    
+    // Remove DOM elements
     if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }

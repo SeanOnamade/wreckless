@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { safePhysicsExecute } from '../physics/PhysicsSafetyManager';
 
 export interface BlinkAbilityContext {
   playerBody: RAPIER.RigidBody;
@@ -219,17 +220,21 @@ function checkBlinkTarget(world: RAPIER.World, targetPosition: THREE.Vector3): b
   // Check for intersections at target position, excluding sensors (dummies)
   let hasIntersection = false;
   let ignoredSensors = 0;
-  world.intersectionsWithShape(testPos, testRot, testShape, (collider) => {
-    // Check if this collider should be ignored (sensor or kinematic)
-    if (collider.isSensor() || collider.parent()?.bodyType() === RAPIER.RigidBodyType.KinematicPositionBased) {
-      ignoredSensors++;
-      return true; // Continue checking, ignore sensors and kinematic bodies
-    }
-    
-    // If we find a solid collision, the position is invalid
-    hasIntersection = true;
-    return false; // Stop checking after first solid intersection
-  });
+  
+  // Use safe physics execution to prevent recursive errors
+  safePhysicsExecute(() => {
+    world.intersectionsWithShape(testPos, testRot, testShape, (collider) => {
+      // Check if this collider should be ignored (sensor or kinematic)
+      if (collider.isSensor() || collider.parent()?.bodyType() === RAPIER.RigidBodyType.KinematicPositionBased) {
+        ignoredSensors++;
+        return true; // Continue checking, ignore sensors and kinematic bodies
+      }
+      
+      // If we find a solid collision, the position is invalid
+      hasIntersection = true;
+      return false; // Stop checking after first solid intersection
+    });
+  }, 'Blink collision check');
   
   if (ignoredSensors > 0) {
     console.log(`⚡ Blink target check: Ignored ${ignoredSensors} sensor colliders (dummies)`);

@@ -4,6 +4,7 @@ import { SPAWN_POS, loadExternalTrack } from './track/ExternalTrack';
 import { FirstPersonController } from './controller';
 import { DeveloperTools } from './dev/DeveloperTools';
 import type { LoadingScreen } from './ui/LoadingScreen';
+import { PhysicsSafetyManager } from './physics/PhysicsSafetyManager';
 
 export interface PhysicsWorld {
   world: RAPIER.World;
@@ -11,6 +12,7 @@ export interface PhysicsWorld {
   fpsController: FirstPersonController;
   devTools: DeveloperTools;
   step: (deltaTime: number) => void;
+  isSafeForPhysicsQueries: () => boolean;
 }
 
 export default async function initPhysics(scene: THREE.Scene, camera: THREE.Camera, loadingScreen?: LoadingScreen): Promise<PhysicsWorld> {
@@ -79,17 +81,29 @@ export default async function initPhysics(scene: THREE.Scene, camera: THREE.Came
   // Create developer tools
   const devTools = new DeveloperTools(playerBody);
   
-  // Update function
+  // Get the global physics safety manager
+  const safetyManager = PhysicsSafetyManager.getInstance();
+  
+  // Update function with comprehensive safety tracking
   const step = (deltaTime: number) => {
-    world.step();
+    safetyManager.startPhysicsStep();
+    try {
+      world.step();
+    } finally {
+      safetyManager.endPhysicsStep();
+    }
     fpsController.update(deltaTime);
   };
+  
+  // Safety check function for Rapier API calls
+  const isSafeForPhysicsQueries = () => safetyManager.isSafeForPhysicsQueries();
   
   return {
     world,
     playerBody,
     fpsController,
     devTools,
-    step
+    step,
+    isSafeForPhysicsQueries
   };
 } 

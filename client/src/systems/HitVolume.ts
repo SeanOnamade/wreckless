@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { FirstPersonController } from '../controller';
 import type { MeleeCombat } from '../combat/MeleeCombat';
+import type { PhysicsWorld } from '../physics';
+import { safePhysicsExecute } from '../physics/PhysicsSafetyManager';
 import { 
   COMBAT_CONFIG, 
   COMBAT_MODE_CONFIG,
@@ -103,7 +105,8 @@ class PhysicsQueryManager {
   
   private executePhysicsQueries(queries: PhysicsQuery[]): void {
     for (const query of queries) {
-      try {
+      // Use global safety manager for robust physics query execution
+      safePhysicsExecute(() => {
         // Execute the actual physics query safely
         query.hitVolume.world.intersectionsWithShape(query.position, query.rotation, query.shape, (collider: RAPIER.Collider) => {
           const userData = collider.parent()?.userData as any;
@@ -156,9 +159,7 @@ class PhysicsQueryManager {
           
           return true; // Continue checking
         });
-      } catch (error) {
-        console.warn('⚠️ Physics query execution error:', error);
-      }
+      }, `HitVolume query ${query.id}`);
     }
   }
   
@@ -173,6 +174,7 @@ class PhysicsQueryManager {
  * Handles frame-by-frame movement, blink teleportation, and swing path damage
  */
 export class HitVolume {
+  public physicsWorld: PhysicsWorld; // Made public for physics query manager
   public world: RAPIER.World; // Made public for physics query manager
   public controller: FirstPersonController; // Made public for physics query manager
   private meleeCombat: MeleeCombat;
@@ -198,8 +200,9 @@ export class HitVolume {
   // Cached test shapes for performance
   private cachedTestShapes = new Map<number, RAPIER.Shape>();
 
-  constructor(world: RAPIER.World, controller: FirstPersonController, meleeCombat: MeleeCombat) {
-    this.world = world;
+  constructor(physicsWorld: PhysicsWorld, controller: FirstPersonController, meleeCombat: MeleeCombat) {
+    this.physicsWorld = physicsWorld;
+    this.world = physicsWorld.world;
     this.controller = controller;
     this.meleeCombat = meleeCombat;
     
@@ -647,7 +650,7 @@ let globalHitVolume: HitVolume | null = null;
  * Register HitVolume system with game components
  */
 export function registerHitVolumes(
-  world: RAPIER.World,
+  physicsWorld: PhysicsWorld,
   controller: FirstPersonController, 
   meleeCombat: MeleeCombat
 ): HitVolume {
@@ -655,7 +658,7 @@ export function registerHitVolumes(
     globalHitVolume.destroy();
   }
   
-  globalHitVolume = new HitVolume(world, controller, meleeCombat);
+  globalHitVolume = new HitVolume(physicsWorld, controller, meleeCombat);
   
   return globalHitVolume;
 }

@@ -139,10 +139,10 @@ export class LobbyScreen {
     this.activeTimeouts = [];
     
     // Remove event listeners
-    window.removeEventListener('keydown', this.keydownHandler);
+    document.removeEventListener('keydown', this.keydownHandler);  // Fixed: was window, should be document
     window.removeEventListener('lobbyClassUpdate', this.lobbyClassUpdateHandler);
     window.removeEventListener('resetRaceStarting', this.resetRaceStartingHandler);
-    window.removeEventListener('animationLoadingStatus', this.animationStatusHandler);
+    window.removeEventListener('multiplayerAnimationStatus', this.animationStatusHandler);  // Fixed: was animationLoadingStatus
     
     // Clear animation status
     this.animationReadyPlayers.clear();

@@ -767,7 +767,7 @@ initPhysics(scene, camera, loadingScreen).then((world) => {
   meleeCombat = new MeleeCombat(world.world, camera, world.playerBody);
   
   // Initialize HitVolume system for pass-through damage
-  registerHitVolumes(world.world, world.fpsController, meleeCombat);
+  registerHitVolumes(world, world.fpsController, meleeCombat);
   
   // Initialize dummy placement manager for level design
   dummyPlacementManager = new DummyPlacementManager(scene, world.world, camera, meleeCombat);
